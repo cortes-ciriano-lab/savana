@@ -95,7 +95,20 @@ def pool_output_clusters(args, clusters, outdir):
 
 def apply_somatic_filters(validated_breakpoints):
 	""" use heuristics to eliminate noise and germline variants """
-	somatic_breakpoints = []
+	somatic_breakpoints_lenient = []
+	for bp in validated_breakpoints:
+		if bp.support['tumour'] == 0:
+			continue
+		elif bp.support['normal']/bp.support['tumour'] < 0.1:
+			originating_cluster_stats = bp.originating_cluster.get_stats()
+			end_cluster_stats = bp.end_cluster.get_stats()
+			if originating_cluster_stats['starts_std_dev'] < 150 and originating_cluster_stats['event_heuristic'] < 3:
+				if bp.breakpoint_notation == "<INS>" and bp.support['tumour'] > 25:
+					somatic_breakpoints_lenient.append(bp)
+				elif bp.breakpoint_notation != "<INS>" and bp.support['tumour'] > 5:
+					somatic_breakpoints_lenient.append(bp)
+
+	somatic_breakpoints_strict = []
 	for bp in validated_breakpoints:
 		if bp.support['normal'] > 0:
 			continue
@@ -104,16 +117,16 @@ def apply_somatic_filters(validated_breakpoints):
 			end_cluster_stats = bp.end_cluster.get_stats()
 			if bp.support['tumour'] > 12 and originating_cluster_stats['uncertainty'] <= 15:
 				if originating_cluster_stats['event_heuristic'] <= 0.025:
-					somatic_breakpoints.append(bp)
+					somatic_breakpoints_strict.append(bp)
 					continue
 			elif bp.support['tumour'] > 12 and end_cluster_stats['uncertainty'] <= 30:
-				somatic_breakpoints.append(bp)
+				somatic_breakpoints_strict.append(bp)
 				continue
 			elif end_cluster_stats['uncertainty'] <= 10:
-				somatic_breakpoints.append(bp)
+				somatic_breakpoints_strict.append(bp)
 				continue
 
-	return somatic_breakpoints
+	return somatic_breakpoints_lenient, somatic_breakpoints_strict
 
 def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
@@ -167,12 +180,20 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		time_function("Output consensus breakpoints", checkpoints, time_str)
 
 	# 4) CATEGORIZE BREAKPOINTS
-	somatic_breakpoints = apply_somatic_filters(validated_breakpoints)
-	vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, validated_breakpoints[0])
-	for bp in somatic_breakpoints:
-		vcf_string += bp.as_vcf(ref_fasta)
-	with open(os.path.join(outdir, "somatic.sv_breakpoints.vcf"), 'w') as output:
-		output.write(vcf_string)
+	somatic_breakpoints_lenient, somatic_breakpoints_strict = apply_somatic_filters(validated_breakpoints)
+	# output lenient vcf
+	lenient_vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, validated_breakpoints[0])
+	for bp in somatic_breakpoints_lenient:
+		lenient_vcf_string += bp.as_vcf(ref_fasta)
+	with open(os.path.join(outdir, "somatic.sv_breakpoints.lenient.vcf"), 'w') as output:
+		output.write(lenient_vcf_string)
+	# output strict vcf
+	strict_vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, validated_breakpoints[0])
+	for bp in somatic_breakpoints_strict:
+		strict_vcf_string += bp.as_vcf(ref_fasta)
+	with open(os.path.join(outdir, "somatic.sv_breakpoints.strict.vcf"), 'w') as output:
+		output.write(strict_vcf_string)
+
 	if args.debug:
 		time_function("Applied somatic filters", checkpoints, time_str)
 
@@ -255,10 +276,20 @@ def main():
 		write_cluster_bed(consensus_clusters, outdir)
 		calculate_cluster_stats(consensus_clusters, outdir)
 
-	output_vcf = os.path.join(outdir, 'somatic.sv_breakpoints.vcf')
+	# validate strict
+	output_vcf = os.path.join(outdir, 'somatic.sv_breakpoints.strict.vcf')
 	if args.validation:
 		try:
-			validation.validate_vcf(outdir, output_vcf, args.validation)
+			validation.validate_vcf(outdir, output_vcf, args.validation, 'strict')
+		except Exception as e:
+			print(f'\nWARNING: Validation of breakpoints against {args.validation} failed due to "{str(e)}"')
+			print(f'You can retry by running "python savana/validation.py --outdir testing --input {output_vcf} --validation {args.validation}"')
+
+	# validate lenient
+	output_vcf = os.path.join(outdir, 'somatic.sv_breakpoints.lenient.vcf')
+	if args.validation:
+		try:
+			validation.validate_vcf(outdir, output_vcf, args.validation, 'lenient')
 		except Exception as e:
 			print(f'\nWARNING: Validation of breakpoints against {args.validation} failed due to "{str(e)}"')
 			print(f'You can retry by running "python savana/validation.py --outdir testing --input {output_vcf} --validation {args.validation}"')

@@ -31,10 +31,10 @@ logo = """
 """
 
 #TODO: run the full list through validation, not just somatic, then can remove the UNKNOWN
-def add_stats_validation(outdir, tp, fp):
+def add_stats_validation(outdir, tp, fp, filtering):
 	""" append validation status column to variant stats file """
 	input_file = os.path.join(outdir, 'variant.stats')
-	output_file = os.path.join(outdir, 'variant.validated.stats')
+	output_file = os.path.join(outdir, f'variant.validated.{filtering}.stats')
 	labels = {**{t['label']:"TRUE_POSITIVE" for t in tp},**{t['label']:"FALSE_POSITIVE" for t in fp}}
 	with open(input_file) as i, open(output_file,'w') as o:
 		reader = csv.reader(i, delimiter='\t')
@@ -52,7 +52,7 @@ def add_stats_validation(outdir, tp, fp):
 		writer.writerows(edited_rows)
 	return
 
-def validate_vcf(outdir, compare_vcf, validation_vcf):
+def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
 	""" compare output vcf with 'truthset' validation vcf """
 	#TODO: remove all categorization from this function, only pass the somatic VCF
 	validation_str = []
@@ -125,14 +125,8 @@ def validate_vcf(outdir, compare_vcf, validation_vcf):
 				compareset_entry['tumour_support'] = int(tumour_support.group(1)) if tumour_support else 0
 				compareset_entry['normal_support'] = int(normal_support.group(1)) if normal_support else 0
 			compareset.append(compareset_entry)
-	# apply germline heuristic - temporarily removing to redevelop
-	#somatic_compareset = list(filter(lambda x: (x['normal_support'] < 1 and x['tumour_support'] >= 3), compareset))
-	#somatic_compareset = compareset
 	# sort by support so that those with less normal support and more tumour support are seen first
 	somatic_compareset = list(sorted(compareset, key=lambda x: (x['normal_support'], (-1)*x['tumour_support'])))
-	#germline_compareset = list(filter(lambda x: (x['normal_support'] >= 1), compareset))
-	#low_quality_compareset = list(filter(lambda x: (x['normal_support'] < 1 and x['tumour_support'] < 3), compareset))
-
 	# get number of true positives, false positives, and false negatives
 	tp, fp, fn = [], [], []
 	already_validated = {}
@@ -161,17 +155,6 @@ def validate_vcf(outdir, compare_vcf, validation_vcf):
 	validation_str.append('\nMISSED BREAKPOINTS')
 	for bp in fn:
 		validation_str.append(f'{bp["label"]} not validated')
-
-	# also check for truthset variants that were miscategorized as germline
-	"""
-	miscategorized = []
-	for bp in germline_compareset:
-		for ts in truthset:
-			if not ts['seen'] and bp not in miscategorized and ts['start_chr'] == bp['start_chr']:
-				if abs(ts['start_loc']-bp['start_loc']) <= 50:
-					ts['incorrectly_categorized'] = True
-					miscategorized.append(bp)
-	"""
 
 	# calculate support by sv type
 	sv_type_counts = {}
@@ -215,9 +198,9 @@ def validate_vcf(outdir, compare_vcf, validation_vcf):
 	# if present, include validation information in existing variants.stats file
 	variant_file = os.path.join(outdir, 'variant.stats')
 	if os.path.exists(variant_file):
-		add_stats_validation(outdir, tp, fp)
+		add_stats_validation(outdir, tp, fp, filtering)
 	
-	f = open(os.path.join(outdir, 'validation.stats'), "w+")
+	f = open(os.path.join(outdir, f'validation.{filtering}.stats'), "w+")
 	for string in validation_str:
 		f.write(string+"\n")
 	f.close()
