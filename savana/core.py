@@ -1,0 +1,397 @@
+"""
+Class definitions for SAVANA: ConsensusBreakpoint, PotentialBreakpoint, and Cluster
+Created: 13/04/2021
+Python 3.9.6
+Hillary Elrick
+"""
+#!/bin/python3
+
+import json
+import uuid
+
+from copy import copy
+from statistics import mean, median, pstdev
+
+def generate_uuid():
+	""" hex representation of a multiprocessing-safe unique id """
+	return uuid.uuid4().hex
+
+class ConsensusBreakpoint():
+	""" class for a second-round called breakpoint (stores originating cluster information """
+	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation=None, insert=None):
+		self.uid = generate_uuid()
+		self.start_chr = locations[0]['chr']
+		self.start_loc = int(locations[0]['loc'])
+		self.end_chr = locations[1]['chr']
+		self.end_loc = int(locations[1]['loc'])
+		self.source = source
+		if source == 'INS' and not insert:
+			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
+		self.inserted_sequence = insert
+		self.originating_cluster = originating_cluster
+		self.end_cluster = end_cluster if end_cluster else originating_cluster
+		self.labels = labels
+		self.count = None # used later for standardising across output files
+		self.breakpoint_notation = breakpoint_notation
+		# use the labels to calculate support by counting reads
+		self.support = {'normal': 0, 'tumour': 0}
+		for label, reads in self.labels.items():
+			self.support[label]+=len(reads)
+		# calculate the length
+		self.sv_length = None
+		if self.breakpoint_notation == "<INS>":
+			self.sv_length = str(len(self.inserted_sequence))
+		elif self.start_chr != self.end_chr:
+			self.sv_length = 0
+		else:
+			self.sv_length = abs(int(self.end_loc)-int(self.start_loc))
+
+	def as_dict(self):
+		""" return dict representation of breakpoint"""
+		self_dict = {
+			"start_chr": self.start_chr,
+			"start_loc": self.start_loc,
+			"end_chr": self.end_chr,
+			"end_loc": self.end_loc,
+			"inserted_sequence": self.inserted_sequence,
+			"source": self.source,
+			"originating_cluster": self.originating_cluster.uid,
+			"end_cluster": self.end_cluster,
+			"labels": "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()]),
+			"breakpoint_notation": self.breakpoint_notation
+		}
+		return self_dict
+
+	def as_bedpe(self, count):
+		""" return bedpe line(s) representation of breakpoint """
+		if not self.count:
+			self.count = count
+		bedpe_line = [
+			self.start_chr,
+			str(self.start_loc),
+			str(self.start_loc),
+			self.end_chr,
+			str(self.end_loc),
+			str(self.end_loc)
+		]
+		if self.source == "INS":
+			# add 1bp to the bedpe location for igv rendering
+			bedpe_line[4] = str(int(bedpe_line[4])+1)
+			bedpe_line[5] = str(int(bedpe_line[5])+1)
+		label_string = "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()])
+		bp_length = str(abs(int(self.end_loc)-int(self.start_loc)))
+		cluster = str(self.originating_cluster.uid)
+		bedpe_line.append(f'{self.source}|ID_{count}|{bp_length}bp|{cluster}|{label_string}|{self.breakpoint_notation}')
+
+		return "\t".join(bedpe_line)+"\n"
+
+	def as_read_support(self, count):
+		""" return read support line representation of a breakpoint """
+		if ',' in ("".join(self.labels.get('tumour',[])+self.labels.get('normal',[]))):
+			# quote everything since read name columns are CSV
+			read_support_line = [
+				f'ID_{count}',
+				'"'+'","'.join(self.labels.get('tumour',[]))+'"',
+				'"'+'","'.join(self.labels.get('normal',[]))+'"'
+			]
+		else:
+			read_support_line = [
+				f'ID_{count}',
+				",".join(self.labels.get('tumour',[])),
+				",".join(self.labels.get('normal',[]))
+			]
+		return "\t".join(read_support_line)+"\n"
+
+	def as_variant_stats(self, count, stats_column_order):
+		""" return variant line with its stats """
+		variant_stats_lines = []
+		start_cluster_stats, end_cluster_stats = [],[]
+		for key in stats_column_order:
+			start_cluster_stats.append(self.originating_cluster.get_stats()[key])
+			end_cluster_stats.append(self.end_cluster.get_stats()[key])
+		variant_stats_lines.append([
+			f'{self.start_chr}:{self.start_loc}',
+			f'ID_{count}_1',
+			f'{self.breakpoint_notation}',
+			f'{self.sv_length}',
+			f'{self.originating_cluster.uid}',
+			f'{self.end_cluster.uid}',
+			f'{self.support["tumour"]}',
+			f'{self.support["normal"]}'
+		]+[str(s) for s in start_cluster_stats]+[str(s) for s in end_cluster_stats])
+
+		if self.breakpoint_notation != "<INS>":
+			variant_stats_lines.append([
+				f'{self.end_chr}:{self.end_loc}',
+				f'ID_{count}_2',
+				f'{self.breakpoint_notation}',
+				f'{self.sv_length}',
+				f'{self.originating_cluster.uid}',
+				f'{self.end_cluster.uid}',
+				f'{self.support["tumour"]}',
+				f'{self.support["normal"]}'
+			]+[str(s) for s in start_cluster_stats]+[str(s) for s in end_cluster_stats])
+
+		variant_stats_str = ''
+		for line in variant_stats_lines:
+			variant_stats_str+="\t".join(line)+"\n"
+		return variant_stats_str
+
+	def get_alts(self, start_base, end_base):
+		""" return the vcf ALT notation for a breakpoint (both lines) """
+		if self.breakpoint_notation == "<INS>":
+			# only one line for insertions
+			return ["<INS>"]
+		alts = ['', '']
+		if self.breakpoint_notation.startswith("+"):
+			alts[0]+=f'{start_base}' # start: +
+			if self.breakpoint_notation.endswith("+"):
+				alts[0]+=f']{self.end_chr}:{self.end_loc}]' # first: ++
+				alts[1]+=f'{end_base}]{self.start_chr}:{self.start_loc}]' # second: ++
+			else:
+				alts[0]+=f'[{self.end_chr}:{self.end_loc}[' # first: +-
+				alts[1]+=f']{self.start_chr}:{self.start_loc}]{end_base}' # second: -+
+		else:
+			if self.breakpoint_notation.endswith("+"):
+				alts[0]+=f']{self.end_chr}:{self.end_loc}]' # first: -+
+				alts[1]+=f'{end_base}[{self.start_chr}:{self.start_loc}[' # second: +-
+			else:
+				alts[0]+=f'[{self.end_chr}:{self.end_loc}[' # --
+				alts[1]+=f'[{self.start_chr}:{self.start_loc}[{end_base}' # --
+			alts[0]+=f'{start_base}' # start: -
+
+		return alts
+
+	def get_stats_str(self):
+		""" return the stats of the originating cluster """
+		stats_str = f'ORIGINATING_CLUSTER={self.originating_cluster.uid};END_CLUSTER={self.end_cluster.uid};'
+		stats_originating = self.originating_cluster.get_stats()
+		for key, value in stats_originating.items():
+			stats_str+=f'ORIGIN_{key.upper()}={value};'
+		stats_end = self.end_cluster.get_stats()
+		for key, value in stats_end.items():
+			stats_str+=f'END_{key.upper()}={value};'
+		return stats_str[:-1] # remove last ';'
+
+	def as_vcf(self, ref_fasta):
+		""" return vcf line(s) representation of the breakpoint """
+		#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT
+		try:
+			start_base = ref_fasta.fetch(self.start_chr, self.start_loc - 1, self.start_loc)
+		except Exception as e:
+			start_base = 'N'
+		try:
+			end_base = ref_fasta.fetch(self.end_chr, self.end_loc - 1, self.end_loc)
+		except Exception as e:
+			end_base = 'N'
+		alts = self.get_alts(start_base, end_base)
+		# construct info column
+		gt_tag = ''
+		if self.support['normal'] >= 1:
+			gt_tag = '0/0'
+		else:
+			gt_tag = '0/1'
+		support_str = ';'.join([f'{label.upper()}_SUPPORT={label_count}' for label, label_count in self.support.items()])
+		stats_str = self.get_stats_str()
+		info = f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}'
+		# put together vcf line(s)
+		vcf_lines = [[
+			self.start_chr,
+			str(self.start_loc),
+			f'ID_{self.count}_1',
+			start_base,
+			alts[0],
+			'.',
+			'PASS',
+			info,
+			'GT',
+			gt_tag
+		]]
+		if self.breakpoint_notation != "<INS>":
+			vcf_lines.append([
+				self.end_chr,
+				str(self.end_loc),
+				f'ID_{self.count}_2',
+				end_base,
+				alts[1],
+				'.',
+				'PASS',
+				info,
+				'GT',
+				gt_tag
+			])
+
+		vcf_string = ''
+		for line in vcf_lines:
+			vcf_string+="\t".join(line)+"\n"
+		return vcf_string
+
+	# string representation
+	def __str__(self):
+		return json.dumps(self.as_dict())
+	def __repr__(self):
+		return self.__str__()
+
+class PotentialBreakpoint():
+	""" class for a potential breakpoint identified from a CIGAR string or split-read """
+	def __init__(self, locations, source, read, label, breakpoint_notation, insert=None):
+		self.uid = generate_uuid()
+		self.start_chr = locations[0]['chr']
+		self.start_loc = int(locations[0]['loc'])
+		self.end_chr = locations[1]['chr']
+		self.end_loc = int(locations[1]['loc'])
+		self.inserted_sequence = insert
+		self.source = source # SUPP, INS, or DEL
+		if source == 'INS' and not insert:
+			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
+		self.read_name = read.query_name
+		self.mapq = read.mapping_quality
+		self.label = label
+		self.breakpoint_notation = breakpoint_notation
+
+	def as_dict(self):
+		""" return dict representation of breakpoint"""
+		self_dict = {
+			"start_chr": self.start_chr,
+			"start_loc": self.start_loc,
+			"end_chr": self.end_chr,
+			"end_loc": self.end_loc,
+			"inserted_sequence": self.inserted_sequence,
+			"source": self.source,
+			"read_name": self.read_name,
+			"mapq": self.mapq,
+			"label": self.label,
+			"breakpoint_notation": self.breakpoint_notation
+		}
+		return self_dict
+
+	# string representation
+	def __str__(self):
+		return json.dumps(self.as_dict())
+	def __repr__(self):
+		return self.__str__()
+
+	# implemented for interval tree sorting by start
+	def __lt__(self, other):
+		if self.start_chr == other.start_chr:
+			if self.start_loc < other.start_loc:
+				return True
+		return False
+	def __eq__(self, other):
+		if self.start_chr == other.start_chr:
+			if self.start_loc == other.start_loc:
+				return True
+		return False
+	def __hash__(self):
+		return hash(self.uid)
+	def __reversed__(self):
+		reversed_breakpoint = copy(self)
+		setattr(reversed_breakpoint, 'start_chr', self.end_chr)
+		setattr(reversed_breakpoint, 'start_loc', self.end_loc)
+		setattr(reversed_breakpoint, 'end_chr', self.start_chr)
+		setattr(reversed_breakpoint, 'end_loc', self.start_loc)
+		return reversed_breakpoint
+
+class Cluster():
+	""" class for a cluster containing breakpoint objects within a buffer & sharing an SV type """
+	def __init__(self, initial_breakpoint):
+		self.uid = generate_uuid()
+		self.chr = initial_breakpoint.start_chr
+		self.start = initial_breakpoint.start_loc
+		if initial_breakpoint.source == "SUPP":
+			# only cluster supp breakpoints on start
+			self.end = self.start
+		else:
+			self.end = initial_breakpoint.end_loc
+		self.source = initial_breakpoint.source
+		self.breakpoints = [initial_breakpoint]
+		self.supporting_reads = {initial_breakpoint.read_name}
+		self.stats = None
+
+	def overlaps(self, other, buffer):
+		""" determine if a breakpoint should be merged to a cluster """
+		if self.breakpoints[0].breakpoint_notation != other.breakpoint_notation:
+			print(f'Tried to add {other.breakpoint_notaion} breakpoint to {self.breakpoints[0].breakpoint_notation} cluster')
+			return False
+		self_start_buff = self.start - buffer
+		self_end_buff = self.end + buffer
+		other_start_buff = other.start_loc - buffer
+		other_end_buff = (other.start_loc + buffer) if other.source == "SUPP" else (other.end_loc + buffer)
+		if other_start_buff <= self_end_buff and other_start_buff >= self_start_buff:
+			return True
+		if other_end_buff >= self_start_buff and other_end_buff <= self_end_buff:
+			return True
+		return False
+
+	def add(self, new_breakpoint):
+		""" add a breakpoint to the cluster, updating relevant values """
+		# consider whether the cluster is forward or reverse
+		if self.start <= self.end:
+			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc < self.start) else self.start
+		else:
+			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc > self.start) else self.start
+		if new_breakpoint.source == "SUPP":
+			if self.start <= self.end:
+				self.end = 	new_breakpoint.start_loc if (new_breakpoint.start_loc > self.end) else self.end
+			else:
+				self.end = 	new_breakpoint.start_loc if (new_breakpoint.start_loc < self.end) else self.end
+		else:
+			if self.start <= self.end:
+				self.end = new_breakpoint.end_loc if (new_breakpoint.end_loc > self.end) else self.end
+			else:
+				self.end = new_breakpoint.end_loc if (new_breakpoint.end_loc < self.end) else self.end
+		self.breakpoints.append(new_breakpoint)
+		self.supporting_reads.add(new_breakpoint.read_name)
+		self.stats = None # reset stats when new breakpoint added
+
+	def as_dict(self):
+		""" return dict representation of cluster """
+		self_dict = {
+			"chr": self.chr,
+			"start": self.start,
+			"end": self.end,
+			"breakpoints": []
+		}
+		for bp in self.breakpoints:
+			self_dict['breakpoints'].append(bp.as_dict())
+		return self_dict
+
+	def get_stats(self):
+		""" return dict of the stdev of start, event size, and mean size in cluster """
+		if not self.stats:
+			starts = []
+			event_sizes = []
+			for bp in self.breakpoints:
+				starts.append(bp.start_loc)
+				if self.source == "SUPP":
+					event_sizes.append(1)
+				elif self.source == "INS":
+					event_sizes.append(len(bp.inserted_sequence))
+				elif self.source == "DEL":
+					event_sizes.append(abs(bp.start_loc - bp.end_loc))
+			stat_dict = {
+				'starts_std_dev': pstdev(starts),
+				'starts_median': median(starts),
+				'event_size_std_dev': pstdev(event_sizes),
+				'event_size_median': median(event_sizes),
+				'event_size_mean': mean(event_sizes)
+			}
+			stat_dict['uncertainty'] = (stat_dict['starts_std_dev']+1)*(stat_dict['event_size_std_dev']+1)
+			if stat_dict['event_size_median'] > 0:
+				stat_dict['event_heuristic'] = (stat_dict['event_size_std_dev']/stat_dict['event_size_median'])
+			else:
+				stat_dict['event_heuristic'] = None
+
+			# round values to 2 decimal places
+			self.stats = {key : round(stat_dict[key], 2) for key in stat_dict}
+
+		return self.stats
+
+	# string representation
+	def __str__(self):
+		return json.dumps(self.as_dict())
+	def __repr__(self):
+		return self.__str__()
+
+if __name__ == "__main__":
+	print("Class definitions for SAVANA")

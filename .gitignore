@@ -1,0 +1,7 @@
+data
+igv-mount
+.archive*
+.vscode
+.DS_Store
+._*
+__pycache__
