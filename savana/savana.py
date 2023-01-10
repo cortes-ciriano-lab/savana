@@ -38,13 +38,12 @@ def pool_get_potential_breakpoints(bam_files, args):
 	chunk_size = 500000 # 5.0e5 or (half a million)
 	pool_potential = Pool(processes=args.threads)
 	pool_potential_args = []
-	contigs_to_consider = helper.get_contigs(args.contigs)
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
 	for label, bam_file in bam_files.items():
 		for contig in bam_file.get_index_statistics():
-			if contigs_to_consider and contig.contig not in contigs_to_consider:
+			if contig.contig not in contigs_to_consider:
 				if args.debug:
-					pass #TODO: uncomment this for release but right now it's very annoying
-					#print(f'Skipping reads aligned to {contig.contig} - not in contigs file')
+					print(f'Skipping reads aligned to {contig.contig} - not in contigs file')
 				continue
 			if contig.mapped == 0:
 				continue
@@ -264,7 +263,7 @@ def main():
 	elif not os.path.exists(f'{args.ref}.fai'):
 		sys.exit(f'Default reference fasta index: "{args.ref}.fai" does not exist. Please provide full path')
 	else:
-		args.ref_index = f'{args.ref}.fai'
+		args.ref_index = f'{args.ref}.fai' if not args.ref_index else args.ref_index
 		print(f'Using {args.ref_index} as reference fasta index')
 
 	# initialize timing
