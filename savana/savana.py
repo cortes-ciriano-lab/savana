@@ -229,12 +229,14 @@ def main():
 	args = parser.parse_args()
 
 	print(logo)
-	git_repo = git.Repo(search_parent_directories=True)
+	src_location = __file__
+	git_repo = git.Repo(src_location, search_parent_directories=True)
 	git_hash = git_repo.head.object.hexsha
 	git_branch = git_repo.active_branch
 	print("Beta Version")
 	print(f'Branch: {git_branch}')
-	print(f'Commit Hash: {git_hash}\n')
+	print(f'Commit: {git_hash}')
+	print(f'Source: {src_location}\n')
 
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args.outdir)
