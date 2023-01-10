@@ -208,12 +208,21 @@ def get_chimeric_regions(read, mapq_filter):
 				chimeric_regions.append(chimeric_region)
 	return chimeric_regions
 
-def get_contigs(contig_file):
+def get_contigs(contig_file, ref_index):
 	""" given a file of contigs to consider, return them in a list """
 	if contig_file:
-		with open(contig_file) as f:
+		with open(contig_file, encoding="utf-8") as f:
 			contigs = f.readlines()
 			contigs = [contig.rstrip() for contig in contigs]
+			return contigs
+	elif ref_index:
+		# use the fai to get the contig names
+		with open(ref_index, encoding="utf-8") as f:
+			tab_reader = csv.reader(f, delimiter='\t')
+			contigs = []
+			for line in tab_reader:
+				contig = line[0]
+				contigs.append(contig)
 			return contigs
 	return None
 
