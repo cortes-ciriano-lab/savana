@@ -21,14 +21,14 @@ SAVANA requires Python 3.9 with the following dependencies:
 
 All of which can be installed via conda OR pip:
 ### Install Dependencies with Conda 
-Create a new environment and install dependencies with the `environment.yml` file:
+To intall and manage dependencies with conda, create a new environment and install dependencies with the `environment.yml` file:
 ```
-conda create --name <env> --file environment.yml
+conda env create --name <env> --file environment.yml
 ```
 ### Install Dependencies with pip
-Install dependencies with the `requirements.txt` file:
+Alternatively, you can install and manage dependencies with pip using the `requirements.txt` file:
 ```
-pip install -i requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Run SAVANA
@@ -48,8 +48,8 @@ ref|Full path to reference genome that was used to align the `tumour` and `norma
 ### Optional Arugments
 Argument|Description
 ---|---
-ref_index|Full path to reference genome fasta index (ref path + ".fai" by default)
-contigs|Contigs/chromosomes to consider (default is all). Example in `example/chr.hg38.txt`
+ref_index|Full path to reference genome fasta index (ref path + ".fai" used by default)
+contigs|Contigs/chromosomes to consider (default is all in fai file). Example in `example/chr.hg38.txt`
 length|Minimum length SV to consider (default=30)
 mapq|Minimum MAPQ of reads to consider (default=5)
 buffer|Buffer to add when clustering adjacent potential breakpoints (default=10)
