@@ -4,15 +4,15 @@ Created: 06/09/2022
 Python 3.9.6
 Hillary Elrick
 """
-#!/bin/python3
+#!/usr/bin/env python3
 
 from statistics import median
 import pysam
 
 from math import floor, ceil
 
-import helper
-from core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
+import savana.helper as helper
+from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 
 def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order):
 	""" reconstruct the breakpoints from the supplementary alignments """

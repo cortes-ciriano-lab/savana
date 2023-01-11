@@ -4,7 +4,7 @@ Created: 13/04/2021
 Python 3.9.6
 Hillary Elrick
 """
-#!/bin/python3
+#!/usr/bin/env python3
 
 import json
 import uuid

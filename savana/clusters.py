@@ -4,6 +4,7 @@ Created: 06/09/2022
 Python 3.9.6
 Hillary Elrick
 """
+#!/usr/bin/env python3
 
 import os
 import json
@@ -13,7 +14,7 @@ from statistics import median, mean
 import pysam
 import pybedtools
 
-from core import Cluster
+from savana.core import Cluster
 
 def cluster_breakpoints(breakpoints, args):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """
