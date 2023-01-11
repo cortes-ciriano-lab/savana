@@ -11,8 +11,8 @@ import pysam
 
 from math import floor, ceil
 
-import helper
-from core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
+import savana.helper as helper
+from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 
 def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order):
 	""" reconstruct the breakpoints from the supplementary alignments """

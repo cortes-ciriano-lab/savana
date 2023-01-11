@@ -9,21 +9,17 @@ Hillary Elrick
 import sys
 import os
 import argparse
-import subprocess
 
 from time import time
-from statistics import mean
 from math import ceil
 from multiprocessing import Pool, cpu_count
 
 import pysam
-import git
 
-import helper
-import validation
-from breakpoints import *
-from clusters import *
-
+import savana.helper as helper
+import savana.validation as validation
+from savana.breakpoints import *
+from savana.clusters import *
 
 logo = """
 ███████  █████  ██    ██  █████  ███    ██  █████
@@ -32,6 +28,7 @@ logo = """
      ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██
 ███████ ██   ██   ████   ██   ██ ██   ████ ██   ██
 """
+__version__ = "0.2.0"
 
 def pool_get_potential_breakpoints(bam_files, args):
 	""" split the genome into 500kBp chunks and identify PotentialBreakpoints """
@@ -228,13 +225,8 @@ def main():
 	args = parser.parse_args()
 
 	print(logo)
+	print(f'Version {__version__} - beta')
 	src_location = __file__
-	git_repo = git.Repo(src_location, search_parent_directories=True)
-	git_hash = git_repo.head.object.hexsha
-	git_branch = git_repo.active_branch
-	print("Beta Version")
-	print(f'Branch: {git_branch}')
-	print(f'Commit: {git_hash}')
 	print(f'Source: {src_location}\n')
 
 	# create output dir if it doesn't exist

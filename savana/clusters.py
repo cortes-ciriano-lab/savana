@@ -14,7 +14,7 @@ from statistics import median, mean
 import pysam
 import pybedtools
 
-from core import Cluster
+from savana.core import Cluster
 
 def cluster_breakpoints(breakpoints, args):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """

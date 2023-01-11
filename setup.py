@@ -11,13 +11,15 @@ with open("README.md", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="savana",
-    version="0.1.0",
+    version="0.2.0",
     author="Hillary Elrick",
     author_email="helrick@ebi.ac.uk",
+    url="https://github.com/cortes-ciriano-lab/savana",
     description="SAVANA - somatic structural variant caller for long reads",
     long_description=long_description,
-    url="https://github.com/cortes-ciriano-lab/savana",
+    long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
+    entry_points={'console_scripts': ['savana=savana.savana:main']},
     classifiers=(
         "Programming Language :: Python :: 3.9",
         "Operating System :: Unix",

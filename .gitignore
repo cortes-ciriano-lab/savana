@@ -1,4 +1,7 @@
 data
+build
+savana.egg-info
+record.txt
 igv-mount
 .archive*
 .vscode

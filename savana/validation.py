@@ -14,9 +14,8 @@ import csv
 
 import git
 
-from breakpoints import *
-from clusters import *
-
+from savana.breakpoints import *
+from savana.clusters import *
 
 logo = """
 ███████  █████  ██    ██  █████  ███    ██  █████
