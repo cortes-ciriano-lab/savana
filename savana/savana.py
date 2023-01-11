@@ -4,7 +4,7 @@ Created: 21/09/2021
 Python 3.9.6
 Hillary Elrick
 """
-#!/bin/python3
+#!/usr/bin/env python3
 
 import sys
 import os
@@ -26,11 +26,11 @@ from clusters import *
 
 
 logo = """
-███████  █████  ██    ██  █████  ███    ██  █████      
-██      ██   ██ ██    ██ ██   ██ ████   ██ ██   ██     
-███████ ███████ ██    ██ ███████ ██ ██  ██ ███████     
-     ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██     
-███████ ██   ██   ████   ██   ██ ██   ████ ██   ██     
+███████  █████  ██    ██  █████  ███    ██  █████
+██      ██   ██ ██    ██ ██   ██ ████   ██ ██   ██
+███████ ███████ ██    ██ ███████ ██ ██  ██ ███████
+     ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██
+███████ ██   ██   ████   ██   ██ ██   ████ ██   ██
 """
 
 def pool_get_potential_breakpoints(bam_files, args):
@@ -211,7 +211,7 @@ def time_function(desc, checkpoints, time_str, final=False):
 
 def main():
 	""" main function for SAVANA - collects command line arguments and executes algorithm """
-	parser = argparse.ArgumentParser(description="SAVANA - somatic SV caller", epilog=logo)
+	parser = argparse.ArgumentParser(description="SAVANA - somatic SV caller")
 	parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
 	parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
 	parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')

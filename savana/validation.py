@@ -4,7 +4,7 @@ Created: 21/09/2021
 Python 3.9.6
 Hillary Elrick
 """
-#!/bin/python3
+#!/usr/bin/env python3
 
 import re
 import sys
@@ -19,13 +19,13 @@ from clusters import *
 
 
 logo = """
-███████  █████  ██    ██  █████  ███    ██  █████      
-██      ██   ██ ██    ██ ██   ██ ████   ██ ██   ██     
-███████ ███████ ██    ██ ███████ ██ ██  ██ ███████     
-     ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██     
-███████ ██   ██   ████   ██   ██ ██   ████ ██   ██     
-            ___    __     __  _         
- _  _____ _/ (_)__/ /__ _/ /_(_)__  ___ 
+███████  █████  ██    ██  █████  ███    ██  █████
+██      ██   ██ ██    ██ ██   ██ ████   ██ ██   ██
+███████ ███████ ██    ██ ███████ ██ ██  ██ ███████
+     ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██
+███████ ██   ██   ████   ██   ██ ██   ████ ██   ██
+            ___    __     __  _
+ _  _____ _/ (_)__/ /__ _/ /_(_)__  ___
 | |/ / _ `/ / / _  / _ `/ __/ / _ \/ _ \\
 |___/\_,_/_/_/\_,_/\_,_/\__/_/\___/_//_/
 """
@@ -199,7 +199,6 @@ def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
 	variant_file = os.path.join(outdir, 'variant.stats')
 	if os.path.exists(variant_file):
 		add_stats_validation(outdir, tp, fp, filtering)
-	
 	f = open(os.path.join(outdir, f'validation.{filtering}.stats'), "w+")
 	for string in validation_str:
 		f.write(string+"\n")

@@ -4,6 +4,7 @@ Created: 26/01/2022
 Python 3.9.6
 Hillary Elrick
 """
+#!/usr/bin/env python3
 
 import re
 import os

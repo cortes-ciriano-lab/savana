@@ -4,7 +4,7 @@ Created: 06/09/2022
 Python 3.9.6
 Hillary Elrick
 """
-#!/bin/python3
+#!/usr/bin/env python3
 
 from statistics import median
 import pysam
