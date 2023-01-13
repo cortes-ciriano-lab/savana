@@ -28,7 +28,6 @@ logo = """
      ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██
 ███████ ██   ██   ████   ██   ██ ██   ████ ██   ██
 """
-__version__ = "0.2.0"
 
 def pool_get_potential_breakpoints(bam_files, args):
 	""" split the genome into 500kBp chunks and identify PotentialBreakpoints """
@@ -222,10 +221,11 @@ def main():
 	parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 	parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to use as validation (optional)')
+	parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
 	args = parser.parse_args()
 
 	print(logo)
-	print(f'Version {__version__} - beta')
+	print(f'Version {helper.__version__} - beta')
 	src_location = __file__
 	print(f'Source: {src_location}\n')
 

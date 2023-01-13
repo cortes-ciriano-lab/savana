@@ -6,12 +6,14 @@ Hillary Elrick
 """
 import setuptools
 
+from savana import helper
+
 with open("README.md", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="savana",
-    version="0.2.0",
+    version=f"{helper.__version__}",
     author="Hillary Elrick",
     author_email="helrick@ebi.ac.uk",
     url="https://github.com/cortes-ciriano-lab/savana",
@@ -19,7 +21,12 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
-    entry_points={'console_scripts': ['savana=savana.savana:main']},
+    entry_points={
+        'console_scripts': [
+            'savana=savana.savana:main',
+            'savana-validation=savana.validation:main'
+        ]
+    },
     classifiers=(
         "Programming Language :: Python :: 3.9",
         "Operating System :: Unix",
