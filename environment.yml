@@ -8,6 +8,5 @@ channels:
   - defaults
 dependencies:
   - python=3.9.6
-  - gitpython=3.1.27
   - pybedtools=0.9.0
   - pysam=0.16.0

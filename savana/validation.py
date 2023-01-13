@@ -12,8 +12,7 @@ import os
 import argparse
 import csv
 
-import git
-
+import savana.helper as helper
 from savana.breakpoints import *
 from savana.clusters import *
 
@@ -207,19 +206,16 @@ def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
 
 def main():
 	""" main function for SAVANA validation - collects command line arguments and executes algorithm """
-	parser = argparse.ArgumentParser(description="SAVANA - Validation", epilog=logo)
+	parser = argparse.ArgumentParser(description="SAVANA - Validation")
 	parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	parser.add_argument('--input', nargs='?', type=str, required=False, help='VCF file to validate')
 	parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to validate against')
 	args = parser.parse_args()
 
 	print(logo)
-	git_repo = git.Repo(search_parent_directories=True)
-	git_hash = git_repo.head.object.hexsha
-	git_branch = git_repo.active_branch
-	print("Beta Version")
-	print(f'Branch: {git_branch}')
-	print(f'Commit Hash: {git_hash}\n')
+	print(f'Version {helper.__version__} - beta')
+	src_location = __file__
+	print(f'Source: {src_location}\n')
 
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args.outdir)
