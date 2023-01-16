@@ -6,6 +6,8 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
 
 ## Contents
 * [Installation](#installation)
+  + [With Conda](#with-conda)
+  + [From Source](#from-source)
 * [Run SAVANA](#run-savana)
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
@@ -14,28 +16,70 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
 
 ## Installation
 
+### With Conda 
+
+The easiest way to install SAVANA is via conda:
+```
+conda install -c bioconda savana
+```
+
+### From Source 
+
+_Alternately_, you can install SAVANA from source.
+
 SAVANA requires Python 3.9 with the following dependencies:
 - pysam
 - pybedtools
 - gitpython
 
-All of which can be installed via conda OR pip:
-### Install Dependencies with Conda 
+All of which can be installed via conda __OR__ pip:
+#### Install Dependencies with Conda 
 To intall and manage dependencies with conda, create a new environment and install dependencies with the `environment.yml` file:
 ```
 conda env create --name <env> --file environment.yml
 ```
-### Install Dependencies with pip
+#### Install Dependencies with pip
 Alternatively, you can install and manage dependencies with pip using the `requirements.txt` file:
 ```
 pip install -r requirements.txt
 ```
 
+Once you've installed the required dependencies, you can install SAVANA by cloning this repository and running:
+```
+python3 -m pip install . -vv
+```
+Inside the main folder. You can test that SAVANA was installed successfully by running `savana --help`, which should display the following text:
+```
+> savana --help
+usage: savana [-h] --tumour [TUMOUR] --normal [NORMAL] --ref [REF] [--ref_index [REF_INDEX]] [--contigs [CONTIGS]] [--length [LENGTH]] [--mapq [MAPQ]] [--buffer [BUFFER]] [--depth [DEPTH]] [--threads [THREADS]] --outdir [OUTDIR] [--debug] [--validation [VALIDATION]] [--version]
+
+SAVANA - somatic SV caller
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --tumour [TUMOUR]     Tumour BAM file (must have index)
+  --normal [NORMAL]     Normal BAM file (must have index)
+  --ref [REF]           Full path to reference genome
+  --ref_index [REF_INDEX]
+                        Full path to reference genome fasta index (ref path + ".fai" by default)
+  --contigs [CONTIGS]   Contigs/chromosomes to consider (optional, default=All)
+  --length [LENGTH]     Minimum length SV to consider (default=30)
+  --mapq [MAPQ]         MAPQ filter on reads which are considered (default=5)
+  --buffer [BUFFER]     Buffer to add when clustering adjacent potential breakpoints (default=10)
+  --depth [DEPTH]       Threshold for number of supporting reads (default=3)
+  --threads [THREADS]   Number of threads to use (default=max)
+  --outdir [OUTDIR]     Output directory (can exist but must be empty)
+  --debug               Output extra debugging info and files
+  --validation [VALIDATION]
+                        VCF file to use as validation (optional)
+  --version             show program's version number and exit
+```
+
 ## Run SAVANA
 
-After cloning the repository, you can run SAVANA with the minumum set of arguments:
+After installing, you can run SAVANA with the minumum set of arguments:
 ```
-python savana/savana.py --tumour <tumour-bam> --normal <normal-bam> --outdir <outdir> --ref <ref-fasta>
+savana --tumour <tumour-bam> --normal <normal-bam> --outdir <outdir> --ref <ref-fasta>
 ```
 ### Mandatory Arguments
 Argument|Description
