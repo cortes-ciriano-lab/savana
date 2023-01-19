@@ -6,8 +6,8 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
 
 ## Contents
 * [Installation](#installation)
-  + [With Conda](#with-conda)
-  + [From Source](#from-source)
+  + [Install SAVANA with Conda](#install-savana-with-conda)
+  + [Install SAVANA from Source](#install-savana-from-source)
 * [Run SAVANA](#run-savana)
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
@@ -16,14 +16,13 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
 
 ## Installation
 
-### With Conda 
+### Install SAVANA with Conda
 
 The easiest way to install SAVANA is via conda:
 ```
 conda install -c bioconda savana
 ```
-
-### From Source 
+### Install SAVANA from Source
 
 _Alternately_, you can install SAVANA from source.
 
@@ -43,12 +42,12 @@ Alternatively, you can install and manage dependencies with pip using the `requi
 ```
 pip install -r requirements.txt
 ```
-
-Once you've installed the required dependencies, you can install SAVANA by cloning this repository and running:
+#### Install SAVANA with pip (from source)
+Once you've installed the required dependencies, you can install SAVANA by cloning this repository, navigating to the main folder, and running:
 ```
 python3 -m pip install . -vv
 ```
-Inside the main folder. You can test that SAVANA was installed successfully by running `savana --help`, which should display the following text:
+You can test that SAVANA was installed successfully by running `savana --help`, which should display the following text:
 ```
 > savana --help
 usage: savana [-h] --tumour [TUMOUR] --normal [NORMAL] --ref [REF] [--ref_index [REF_INDEX]] [--contigs [CONTIGS]] [--length [LENGTH]] [--mapq [MAPQ]] [--buffer [BUFFER]] [--depth [DEPTH]] [--threads [THREADS]] --outdir [OUTDIR] [--debug] [--validation [VALIDATION]] [--version]
