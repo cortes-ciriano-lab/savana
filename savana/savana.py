@@ -97,11 +97,15 @@ def apply_somatic_filters(validated_breakpoints):
 		elif bp.support['normal']/bp.support['tumour'] < 0.1:
 			originating_cluster_stats = bp.originating_cluster.get_stats()
 			end_cluster_stats = bp.end_cluster.get_stats()
-			if originating_cluster_stats['starts_std_dev'] < 150 and originating_cluster_stats['event_heuristic'] < 3:
-				if bp.breakpoint_notation == "<INS>" and bp.support['tumour'] > 25:
-					somatic_breakpoints_lenient.append(bp)
-				elif bp.breakpoint_notation != "<INS>" and bp.support['tumour'] > 5:
-					somatic_breakpoints_lenient.append(bp)
+			try:
+				if originating_cluster_stats['starts_std_dev'] < 150 and originating_cluster_stats['event_heuristic'] < 3:
+					if bp.breakpoint_notation == "<INS>" and bp.support['tumour'] > 25:
+						somatic_breakpoints_lenient.append(bp)
+					elif bp.breakpoint_notation != "<INS>" and bp.support['tumour'] > 5:
+						somatic_breakpoints_lenient.append(bp)
+			except Exception as e:
+				# in case of None for any stat
+				continue
 
 	somatic_breakpoints_strict = []
 	for bp in validated_breakpoints:
@@ -110,15 +114,19 @@ def apply_somatic_filters(validated_breakpoints):
 		if bp.support['tumour'] > 7:
 			originating_cluster_stats = bp.originating_cluster.get_stats()
 			end_cluster_stats = bp.end_cluster.get_stats()
-			if bp.support['tumour'] > 12 and originating_cluster_stats['uncertainty'] <= 15:
-				if originating_cluster_stats['event_heuristic'] <= 0.025:
+			try:
+				if bp.support['tumour'] > 12 and originating_cluster_stats['uncertainty'] <= 15:
+					if originating_cluster_stats['event_heuristic'] <= 0.025:
+						somatic_breakpoints_strict.append(bp)
+						continue
+				elif bp.support['tumour'] > 12 and end_cluster_stats['uncertainty'] <= 30:
 					somatic_breakpoints_strict.append(bp)
 					continue
-			elif bp.support['tumour'] > 12 and end_cluster_stats['uncertainty'] <= 30:
-				somatic_breakpoints_strict.append(bp)
-				continue
-			elif end_cluster_stats['uncertainty'] <= 10:
-				somatic_breakpoints_strict.append(bp)
+				elif end_cluster_stats['uncertainty'] <= 10:
+					somatic_breakpoints_strict.append(bp)
+					continue
+			except Exception as e:
+				# in case of None for any stat
 				continue
 
 	return somatic_breakpoints_lenient, somatic_breakpoints_strict

@@ -382,8 +382,15 @@ class Cluster():
 			else:
 				stat_dict['event_heuristic'] = None
 
-			# round values to 2 decimal places
-			self.stats = {key : round(stat_dict[key], 2) for key in stat_dict}
+			# round to 2 decimal places for stats dict attribute
+			self.stats = {}
+			for key, value in stat_dict.items():
+				try:
+					self_value = round(value, 2)
+				except Exception as e:
+					# skip rounding if error thrown
+					self_value = value
+				self.stats[key] = self_value
 
 		return self.stats
 
