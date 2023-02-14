@@ -1,5 +1,5 @@
 """
-SAVANA strucural variant caller for long-read data - main program
+SAVANA strucural variant caller for long-read data - validation sub-command
 Created: 21/09/2021
 Python 3.9.6
 Hillary Elrick
