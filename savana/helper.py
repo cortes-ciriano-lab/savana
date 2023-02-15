@@ -12,7 +12,7 @@ import csv
 
 from datetime import datetime
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -238,19 +238,21 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 		"##source=SAVANA.Beta",
 		f'##reference={ref_fasta}',
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+		'##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
+		'##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakends">',
 		'##INFO=<ID=NORMAL_SUPPORT,Number=1,Type=Float,Description="Number of variant supporting normal reads">',
 		'##INFO=<ID=TUMOUR_SUPPORT,Number=1,Type=Float,Description="Number of variant supporting tumour reads">',
 		'##INFO=<ID=SVLEN,Number=1,Type=Float,Description="Length of the SV">',
 		'##INFO=<ID=ORIGINATING_CLUSTER,Number=.,Type=String,Description="SAVANA internal originating cluster id supporting variant">',
 		'##INFO=<ID=END_CLUSTER,Number=.,Type=String,Description="SAVANA internal end cluster id supporting variant">',
-		'##INFO=<ID=BP_NOTATION,Number=.,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
+		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
 	])
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
 	breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()
 	for stat in breakpoint_stats_origin:
-		vcf_header_str.append(f'##INFO=<ID=ORIGIN_{stat.upper()},Number=1,Type=Float,Description="Originating cluster heuristic stat to measure {stat}">')
+		vcf_header_str.append(f'##INFO=<ID=ORIGIN_{stat.upper()},Number=1,Type=Float,Description="Originating cluster value for {stat}">')
 	for stat in breakpoint_stats_end:
-		vcf_header_str.append(f'##INFO=<ID=END_{stat.upper()},Number=1,Type=Float,Description="End cluster heuristic stat to measure {stat}">')
+		vcf_header_str.append(f'##INFO=<ID=END_{stat.upper()},Number=1,Type=Float,Description="End cluster value for {stat}">')
 	assembly_name = os.path.basename(ref_fasta)
 	with open(ref_fasta_index) as f:
 		reader = csv.reader(f, delimiter='\t')
