@@ -230,8 +230,7 @@ def main():
 	if not os.path.exists(args.validation):
 		sys.exist(f'Provided validation vcf: "{args.validation}" does not exist. Please provide full path')
 
-	validate_vcf(outdir, args.input, args.validation, 'strict')
-	validate_vcf(outdir, args.input, args.validation, 'lenient')
+	validate_vcf(outdir, args.input, args.validation, 'custom')
 
 if __name__ == "__main__":
 	main()
