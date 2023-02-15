@@ -12,6 +12,7 @@ import argparse
 
 from time import time
 from math import ceil
+from pathlib import Path
 from multiprocessing import Pool, cpu_count
 
 import pysam
@@ -171,13 +172,13 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)
 		variant_stats_string += bp.as_variant_stats(count, variant_stats_cols)
-	with open(os.path.join(outdir, "sv_breakpoints.vcf"), 'w') as output:
+	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf'), 'w') as output:
 		output.write(vcf_string)
-	with open(os.path.join(outdir, "sv_breakpoints.bedpe"), 'w') as output:
+	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe'), 'w') as output:
 		output.write(bedpe_string)
-	with open(os.path.join(outdir, "sv_breakpoints_read_support.tsv"), 'w') as output:
+	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints_read_support.tsv'), 'w') as output:
 		output.write(read_support_string)
-	with open(os.path.join(outdir, "variant.stats"), 'w') as output:
+	with open(os.path.join(outdir, 'variant.stats'), 'w') as output:
 		output.write(variant_stats_string)
 	if args.debug:
 		time_function("Output consensus breakpoints", checkpoints, time_str)
@@ -188,13 +189,13 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	lenient_vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, validated_breakpoints[0])
 	for bp in somatic_breakpoints_lenient:
 		lenient_vcf_string += bp.as_vcf(ref_fasta)
-	with open(os.path.join(outdir, "somatic.sv_breakpoints.lenient.vcf"), 'w') as output:
+	with open(os.path.join(outdir, f'{args.sample}.somatic.sv_breakpoints.lenient.vcf'), 'w') as output:
 		output.write(lenient_vcf_string)
 	# output strict vcf
 	strict_vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, validated_breakpoints[0])
 	for bp in somatic_breakpoints_strict:
 		strict_vcf_string += bp.as_vcf(ref_fasta)
-	with open(os.path.join(outdir, "somatic.sv_breakpoints.strict.vcf"), 'w') as output:
+	with open(os.path.join(outdir, f'{args.sample}.somatic.sv_breakpoints.strict.vcf'), 'w') as output:
 		output.write(strict_vcf_string)
 
 	if args.debug:
@@ -227,6 +228,7 @@ def main():
 	parser.add_argument('--depth', nargs='?', type=int, default=3, help='Threshold for number of supporting reads (default=3)')
 	parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 	parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+	parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
 	parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 	parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to use as validation (optional)')
 	parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
@@ -236,6 +238,11 @@ def main():
 	print(f'Version {helper.__version__} - beta')
 	src_location = __file__
 	print(f'Source: {src_location}\n')
+
+	# set sample name to default if req.
+	if not args.sample:
+		args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
+	print(f'Running as sample {args.sample}')
 
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args.outdir)
@@ -278,7 +285,7 @@ def main():
 		calculate_cluster_stats(consensus_clusters, outdir)
 
 	# validate strict
-	output_vcf = os.path.join(outdir, 'somatic.sv_breakpoints.strict.vcf')
+	output_vcf = os.path.join(outdir, f'{args.sample}.somatic.sv_breakpoints.strict.vcf')
 	if args.validation:
 		try:
 			validation.validate_vcf(outdir, output_vcf, args.validation, 'strict')
@@ -287,7 +294,7 @@ def main():
 			print(f'You can retry by running "python savana/validation.py --outdir testing --input {output_vcf} --validation {args.validation}"')
 
 	# validate lenient
-	output_vcf = os.path.join(outdir, 'somatic.sv_breakpoints.lenient.vcf')
+	output_vcf = os.path.join(outdir, f'{args.sample}.somatic.sv_breakpoints.lenient.vcf')
 	if args.validation:
 		try:
 			validation.validate_vcf(outdir, output_vcf, args.validation, 'lenient')
