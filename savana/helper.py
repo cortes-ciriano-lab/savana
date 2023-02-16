@@ -265,23 +265,5 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 
 	return "\n".join(vcf_header_str)+"\n"
 
-def generate_variant_stats_header(example_breakpoint):
-	""" given an example breakpoint, generate column names """
-	stats_header = [
-		'location',
-		'label',
-		'bp_type',
-		'sv_len',
-		'originating_cluster',
-		'end_cluster',
-		'tumour_support',
-		'normal_support'
-	]
-	cluster_stats = example_breakpoint.originating_cluster.get_stats().keys()
-	for cluster_type in ['originating','end']:
-		stats_header+=[f'{cluster_type}_{s}' for s in cluster_stats]
-
-	return "\t".join(stats_header)+"\n", cluster_stats
-
 if __name__ == "__main__":
 	print("Helper functions for the Somatic SV Caller")

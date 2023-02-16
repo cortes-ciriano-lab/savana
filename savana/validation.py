@@ -28,28 +28,6 @@ logo = """
 |___/\_,_/_/_/\_,_/\_,_/\__/_/\___/_//_/
 """
 
-#TODO: run the full list through validation, not just somatic, then can remove the UNKNOWN
-def add_stats_validation(outdir, tp, fp, filtering):
-	""" append validation status column to variant stats file """
-	input_file = os.path.join(outdir, 'variant.stats')
-	output_file = os.path.join(outdir, f'variant.validated.{filtering}.stats')
-	labels = {**{t['label']:"TRUE_POSITIVE" for t in tp},**{t['label']:"FALSE_POSITIVE" for t in fp}}
-	with open(input_file) as i, open(output_file,'w') as o:
-		reader = csv.reader(i, delimiter='\t')
-		writer = csv.writer(o, delimiter='\t', lineterminator='\n')
-		# edit header
-		row = next(reader)
-		row.append("validation")
-		edited_rows = [row]
-		for row in reader:
-			if row[1] in labels:
-				row.append(labels[row[1]])
-			else:
-				row.append("UNKNOWN")
-			edited_rows.append(row)
-		writer.writerows(edited_rows)
-	return
-
 def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
 	""" compare output vcf with 'truthset' validation vcf """
 	#TODO: remove all categorization from this function, only pass the somatic VCF
@@ -192,15 +170,6 @@ def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
 	for sv_type, values in sv_type_counts.items():
 		pcnt = round(values['seen']/(values['missed']+values['seen'])*100, 2)
 		validation_str.append(f'{sv_type}: identified {values["seen"]} of {values["seen"]+values["missed"]} ({pcnt}%)')
-
-	# if present, include validation information in existing variants.stats file
-	variant_file = os.path.join(outdir, 'variant.stats')
-	if os.path.exists(variant_file):
-		add_stats_validation(outdir, tp, fp, filtering)
-	f = open(os.path.join(outdir, f'validation.{filtering}.stats'), "w+")
-	for string in validation_str:
-		f.write(string+"\n")
-	f.close()
 
 	return
 

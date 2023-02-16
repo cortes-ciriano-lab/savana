@@ -122,21 +122,17 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	bedpe_string = ''
 	vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, breakpoints[0])
 	read_support_string = ''
-	variant_stats_string, variant_stats_cols = helper.generate_variant_stats_header(breakpoints[0])
 	ref_fasta = pysam.FastaFile(args.ref)
 	for count, bp in enumerate(breakpoints):
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)
-		variant_stats_string += bp.as_variant_stats(count, variant_stats_cols)
 	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf'), 'w') as output:
 		output.write(vcf_string)
 	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe'), 'w') as output:
 		output.write(bedpe_string)
 	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints_read_support.tsv'), 'w') as output:
 		output.write(read_support_string)
-	with open(os.path.join(outdir, 'variant.stats'), 'w') as output:
-		output.write(variant_stats_string)
 	if args.debug:
 		time_function("Output consensus breakpoints", checkpoints, time_str)
 
@@ -226,12 +222,11 @@ def main():
 	if args.debug:
 		time_function("Applied somatic filters", checkpoints, time_str)
 
-
-	# validate strict
+	# validate vcf
 	output_vcf = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	if args.validation:
 		try:
-			validation.validate_vcf(outdir, output_vcf, args.validation, 'strict')
+			validation.validate_vcf(outdir, output_vcf, args.validation, 'all')
 		except Exception as e:
 			print(f'\nWARNING: Validation of breakpoints against {args.validation} failed due to "{str(e)}"')
 			print(f'You can retry by running "python savana/validation.py --outdir testing --input {output_vcf} --validation {args.validation}"')
