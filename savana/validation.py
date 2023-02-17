@@ -28,9 +28,8 @@ logo = """
 |___/\_,_/_/_/\_,_/\_,_/\__/_/\___/_//_/
 """
 
-def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
+def validate_vcf(outdir, compare_vcf, validation_vcf):
 	""" compare output vcf with 'truthset' validation vcf """
-	#TODO: remove all categorization from this function, only pass the somatic VCF
 	validation_str = []
 	validation_str.append(f'\nEvaluating compared to provided validation file: \'{validation_vcf}\'')
 	truthset = []
@@ -171,35 +170,13 @@ def validate_vcf(outdir, compare_vcf, validation_vcf, filtering):
 		pcnt = round(values['seen']/(values['missed']+values['seen'])*100, 2)
 		validation_str.append(f'{sv_type}: identified {values["seen"]} of {values["seen"]+values["missed"]} ({pcnt}%)')
 
+	# output validation statistics
+	f = open(os.path.join(outdir, f'validation.stats'), "w+")
+	for string in validation_str:
+		f.write(string+"\n")
+	f.close()
+
 	return
 
-def main():
-	""" main function for SAVANA validation - collects command line arguments and executes algorithm """
-	parser = argparse.ArgumentParser(description="SAVANA - Validation")
-	parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-	parser.add_argument('--input', nargs='?', type=str, required=False, help='VCF file to validate')
-	parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to validate against')
-	args = parser.parse_args()
-
-	print(logo)
-	print(f'Version {helper.__version__} - beta')
-	src_location = __file__
-	print(f'Source: {src_location}\n')
-
-	# create output dir if it doesn't exist
-	outdir = os.path.join(os.getcwd(), args.outdir)
-	if not os.path.exists(outdir):
-		print(f'Creating directory {outdir} to store results')
-		os.mkdir(outdir)
-	elif os.listdir(outdir):
-		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
-
-	if not os.path.exists(args.input):
-		sys.exist(f'Provided input vcf: "{args.input}" does not exist. Please provide full path')
-	if not os.path.exists(args.validation):
-		sys.exist(f'Provided validation vcf: "{args.validation}" does not exist. Please provide full path')
-
-	validate_vcf(outdir, args.input, args.validation, 'custom')
-
 if __name__ == "__main__":
-	main()
+	print("Validation functions for SAVANA")

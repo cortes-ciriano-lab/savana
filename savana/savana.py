@@ -149,33 +149,10 @@ def time_function(desc, checkpoints, time_str, final=False):
 	print(formatted_time)
 	return
 
-def main():
-	""" main function for SAVANA - collects command line arguments and executes algorithm """
-	parser = argparse.ArgumentParser(description="SAVANA - somatic SV caller")
-	parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-	parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
-	parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
-	parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
-	parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
-	parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
-	parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
-	parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer to add when clustering adjacent potential breakpoints (default=10)')
-	parser.add_argument('--depth', nargs='?', type=int, default=3, help='Threshold for number of supporting reads (default=3)')
-	parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
-	parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-	parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
-	parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
-	parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to use as validation (optional)')
-	parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
-	args = parser.parse_args()
-
-	print(logo)
-	print(f'Version {helper.__version__} - beta')
-	src_location = __file__
-	print(f'Source: {src_location}\n')
-
-	# set sample name to default if req.
+def savana_run(args):
+	""" main function for SAVANA """
 	if not args.sample:
+		# set sample name to default if req.
 		args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
 	print(f'Running as sample {args.sample}')
 
@@ -226,7 +203,7 @@ def main():
 	output_vcf = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	if args.validation:
 		try:
-			validation.validate_vcf(outdir, output_vcf, args.validation, 'all')
+			validation.validate_vcf(outdir, output_vcf, args.validation)
 		except Exception as e:
 			print(f'\nWARNING: Validation of breakpoints against {args.validation} failed due to "{str(e)}"')
 			print(f'You can retry by running "python savana/validation.py --outdir testing --input {output_vcf} --validation {args.validation}"')
@@ -236,6 +213,66 @@ def main():
 	f.write("\n".join(time_str))
 	f.write("\n")
 	f.close()
+
+def savana_evaluate(args):
+	""" main function for savana evaluate """
+	# create output dir if it doesn't exist
+	outdir = os.path.join(os.getcwd(), args.outdir)
+	if not os.path.exists(outdir):
+		print(f'Creating directory {outdir} to store results')
+		os.mkdir(outdir)
+	elif os.listdir(outdir):
+		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	else:
+		print(f'Using {outdir} to store output')
+
+	if not os.path.exists(args.input):
+		sys.exist(f'Provided input vcf: "{args.input}" does not exist. Please provide full path')
+	if not os.path.exists(args.validation):
+		sys.exist(f'Provided validation vcf: "{args.validation}" does not exist. Please provide full path')
+
+	validation.validate_vcf(outdir, args.input, args.validation)
+	print("Done.")
+
+def main():
+	""" main function for SAVANA - collects command line arguments and executes algorithm """
+
+	# parse arguments - separated into subcommands
+	global_parser = argparse.ArgumentParser(prog="savana", description="SAVANA - somatic SV caller")
+	global_parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
+	subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands')
+
+	# savana run
+	run_parser = subparsers.add_parser("run", help="run SAVANA on tumour and normal long-read BAMs to detect SVs")
+	run_parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+	run_parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+	run_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
+	run_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
+	run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
+	run_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
+	run_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
+	run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer to add when clustering adjacent potential breakpoints (default=10)')
+	run_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Threshold number of supporting reads required to keep a cluster (default=3)')
+	run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
+	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
+	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+	run_parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to use as validation (optional)')
+	run_parser.set_defaults(func=savana_run)
+
+	# savana evaluate
+	evaluate_parser = subparsers.add_parser("evaluate", help="evaluate and label SAVANA VCF given a VCF to evaluate against")
+	evaluate_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+	evaluate_parser.add_argument('--input', nargs='?', type=str, required=False, help='VCF file to evaluate')
+	evaluate_parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to evaluate against')
+	evaluate_parser.set_defaults(func=savana_evaluate)
+
+	args = global_parser.parse_args()
+	print(logo)
+	print(f'Version {helper.__version__} - beta')
+	src_location = __file__
+	print(f'Source: {src_location}\n')
+	args.func(args)
 
 if __name__ == "__main__":
 	main()

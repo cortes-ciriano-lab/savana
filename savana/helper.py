@@ -12,7 +12,7 @@ import csv
 
 from datetime import datetime
 
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -266,4 +266,4 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 	return "\n".join(vcf_header_str)+"\n"
 
 if __name__ == "__main__":
-	print("Helper functions for the Somatic SV Caller")
+	print("Helper functions for SAVANA")
