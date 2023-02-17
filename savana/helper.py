@@ -10,6 +10,7 @@ import re
 import os
 import csv
 
+from time import time
 from datetime import datetime
 
 __version__ = "0.3.0"
@@ -264,6 +265,17 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 	vcf_header_str.append("#"+"\t".join(['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT',sample_name]))
 
 	return "\n".join(vcf_header_str)+"\n"
+
+def time_function(desc, checkpoints, time_str, final=False):
+	""" prints the number of seconds elapsed compared to previous checkpoint """
+	checkpoints.append(time())
+	if not final:
+		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[-2], 2)} seconds'
+	else:
+		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[0], 2)} seconds'
+	time_str.append(formatted_time)
+	print(formatted_time)
+	return
 
 if __name__ == "__main__":
 	print("Helper functions for SAVANA")

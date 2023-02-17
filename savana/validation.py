@@ -7,26 +7,12 @@ Hillary Elrick
 #!/usr/bin/env python3
 
 import re
-import sys
 import os
-import argparse
 import csv
 
 import savana.helper as helper
 from savana.breakpoints import *
 from savana.clusters import *
-
-logo = """
-███████  █████  ██    ██  █████  ███    ██  █████
-██      ██   ██ ██    ██ ██   ██ ████   ██ ██   ██
-███████ ███████ ██    ██ ███████ ██ ██  ██ ███████
-     ██ ██   ██  ██  ██  ██   ██ ██  ██ ██ ██   ██
-███████ ██   ██   ████   ██   ██ ██   ████ ██   ██
-            ___    __     __  _
- _  _____ _/ (_)__/ /__ _/ /_(_)__  ___
-| |/ / _ `/ / / _  / _ `/ __/ / _ \/ _ \\
-|___/\_,_/_/_/\_,_/\_,_/\__/_/\___/_//_/
-"""
 
 def validate_vcf(outdir, compare_vcf, validation_vcf):
 	""" compare output vcf with 'truthset' validation vcf """
