@@ -102,7 +102,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		helper.time_function("Output originating clusters", checkpoints, time_str)
 
 	# 3) CALL BREAKPOINTS
-	breakpoints = call_breakpoints(clusters, args.buffer)
+	breakpoints = call_breakpoints(clusters, args.buffer, bam_files)
 	if args.debug:
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
