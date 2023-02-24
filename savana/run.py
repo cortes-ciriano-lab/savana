@@ -12,6 +12,7 @@ from math import ceil
 from multiprocessing import Pool
 
 import pysam
+import pysam.bcftools as bcftools
 
 import savana.helper as helper
 from savana.breakpoints import *
@@ -106,20 +107,29 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
 	# 3.1) OUTPUT BREAKPOINTS
+	# define filenames
+	vcf_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
+	bedpe_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe')
+	tsv_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints_read_support.tsv')
+	# build strings
+	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
 	vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, breakpoints[0])
 	read_support_string = ''
-	ref_fasta = pysam.FastaFile(args.ref)
 	for count, bp in enumerate(breakpoints):
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)
-	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf'), 'w') as output:
+	# write output files
+	with open(vcf_file, 'w') as output:
 		output.write(vcf_string)
-	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe'), 'w') as output:
+	with open(bedpe_file, 'w') as output:
 		output.write(bedpe_string)
-	with open(os.path.join(outdir, f'{args.sample}.sv_breakpoints_read_support.tsv'), 'w') as output:
+	with open(tsv_file, 'w') as output:
 		output.write(read_support_string)
+	# sort vcf
+	bcftools.sort('-o', vcf_file, vcf_file, catch_stdout=False)
+
 	if args.debug:
 		helper.time_function("Output consensus breakpoints", checkpoints, time_str)
 
