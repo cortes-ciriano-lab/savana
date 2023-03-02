@@ -196,7 +196,24 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 
 	return potential_breakpoints
 
-def call_breakpoints(clustered_breakpoints, buffer, bam_files):
+def add_local_depth(breakpoints, bam_files):
+	""" given breakpoints, add the local depth of tumour/normal """
+	# TODO: parallelize
+	for label, bam_file in bam_files.items():
+		for bp in breakpoints:
+			local_depths = {}
+			""" e.g.) {'tumour': [start_depth, end_depth], 'normal': [start_depth, end_depth]} """
+			reads = [read for read in bam_file.fetch(bp.start_chr, bp.start_loc, bp.start_loc+1, multiple_iterators=True)]
+			reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
+			bp.local_depths.setdefault(label,[]).append(str(len(reads)))
+			if not bp.source == "INS":
+				# add the second edge (append to list)
+				reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1, multiple_iterators=True)]
+				reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
+				bp.local_depths.setdefault(label,[]).append(str(len(reads)))
+	return
+
+def call_breakpoints(clustered_breakpoints, buffer):
 	""" identify consensus breakpoints from list of consensus breakpoints """
 	# N.B. all breakpoints must be from same chromosome!
 	final_breakpoints = []
@@ -213,10 +230,9 @@ def call_breakpoints(clustered_breakpoints, buffer, bam_files):
 				longest_seq = bp.inserted_sequence
 		source_breakpoints = insertion_cluster.breakpoints
 		label_counts = count_num_labels(source_breakpoints)
-		local_coverage = helper.get_local_coverage(insertion_cluster.chr, median(starts), median(ends), bam_files)
 		final_breakpoints.append(ConsensusBreakpoint(
 			[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
-			"INS", insertion_cluster, None, label_counts, [local_coverage], bp_type, longest_seq))
+			"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
 
 	# call all other types
 	for bp_type in ["+-", "++", "-+", "--"]:
@@ -261,11 +277,9 @@ def call_breakpoints(clustered_breakpoints, buffer, bam_files):
 					label_counts = count_num_labels(end_cluster_breakpoints)
 					median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
 					median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
-					start_local_coverage = helper.get_local_coverage(cluster.chr, median_start, median_start+1, bam_files)
-					end_local_coverage = helper.get_local_coverage(end_cluster.chr, median_end, median_end+1, bam_files)
 					final_breakpoints.append(ConsensusBreakpoint(
 						[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-						bp_type, cluster, end_cluster, label_counts, [start_local_coverage, end_local_coverage], bp_type))
+						bp_type, cluster, end_cluster, label_counts, bp_type))
 
 	return final_breakpoints
 

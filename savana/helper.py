@@ -246,6 +246,8 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 		'##INFO=<ID=SVLEN,Number=1,Type=Float,Description="Length of the SV">',
 		'##INFO=<ID=ORIGINATING_CLUSTER,Number=.,Type=String,Description="SAVANA internal originating cluster id supporting variant">',
 		'##INFO=<ID=END_CLUSTER,Number=.,Type=String,Description="SAVANA internal end cluster id supporting variant">',
+		'##INFO=<ID=TUMOUR_DP,Number=.,Type=Float,Description="Local depth in tumour at the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP,Number=.,Type=Float,Description="Local depth in normal at the breakpoint(s) of an SV">',
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
 	])
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()

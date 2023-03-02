@@ -102,11 +102,15 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		helper.time_function("Output originating clusters", checkpoints, time_str)
 
 	# 3) CALL BREAKPOINTS
-	breakpoints = call_breakpoints(clusters, args.buffer, bam_files)
+	breakpoints = call_breakpoints(clusters, args.buffer)
 	if args.debug:
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
+	# 4) ADD LOCAL DEPTH TO BREAKPOINTS
+	add_local_depth(breakpoints, bam_files)
+	if args.debug:
+		helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 
-	# 3.1) OUTPUT BREAKPOINTS
+	# 4.1) OUTPUT BREAKPOINTS
 	# define filenames
 	vcf_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	bedpe_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe')

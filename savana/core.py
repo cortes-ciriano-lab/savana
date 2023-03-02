@@ -18,7 +18,7 @@ def generate_uuid():
 
 class ConsensusBreakpoint():
 	""" class for a second-round called breakpoint (stores originating cluster information """
-	def __init__(self, locations, source, originating_cluster, end_cluster, labels, local_coverages, breakpoint_notation=None, insert=None):
+	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation=None, insert=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
@@ -32,7 +32,7 @@ class ConsensusBreakpoint():
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
 		self.labels = labels
 		self.count = None # used later for standardising across output files
-		self.local_coverages = local_coverages
+		self.local_depths = {} # add later
 		self.breakpoint_notation = breakpoint_notation
 		# use the labels to calculate support by counting reads
 		self.support = {'normal': 0, 'tumour': 0}
@@ -166,9 +166,8 @@ class ConsensusBreakpoint():
 	def get_stats_str(self):
 		""" return the stats of the originating cluster """
 		stats_str = f'ORIGINATING_CLUSTER={self.originating_cluster.uid};END_CLUSTER={self.end_cluster.uid};'
-		for count, local_cov_dicts in enumerate(self.local_coverages):
-			for label, lcov in local_cov_dicts.items():
-				stats_str+=f'{count}_{label.upper()}_LOCAL_COVERAGE={lcov};'
+		for label, depths in self.local_depths.items():
+			stats_str+=f'{label.upper()}_DP={",".join(depths)};'
 		stats_originating = self.originating_cluster.get_stats()
 		for key, value in stats_originating.items():
 			stats_str+=f'ORIGIN_{key.upper()}={value};'
