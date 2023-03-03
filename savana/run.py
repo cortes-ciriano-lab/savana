@@ -77,6 +77,21 @@ def pool_output_clusters(args, clusters, outdir):
 	pool_output.close()
 	pool_output.join()
 
+def pool_add_local_depth(args, breakpoints, bam_files):
+	pool_local_depth = Pool(processes=args.threads)
+	pool_local_depth_args = []
+	# convert bam_files into filenames (rather than objects - breaks parallelization)
+	for label in bam_files.keys():
+		bam_files[label] = bam_files[label].filename
+	# split list into equal chunks from https://stackoverflow.com/a/2135920
+	quotient, remainder = divmod(len(breakpoints), args.threads)
+	breakpoints_split = (breakpoints[i*quotient+min(i, remainder):(i+1)*quotient+min(i+1, remainder)] for i in range(args.threads))
+	for split in breakpoints_split:
+		pool_local_depth_args.append((split, bam_files))
+	pool_local_depth.starmap(add_local_depth, pool_local_depth_args)
+	pool_local_depth.close()
+	pool_local_depth.join()
+
 def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using multiprocessing with {args.threads} threads\n')
@@ -106,7 +121,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	if args.debug:
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 	# 4) ADD LOCAL DEPTH TO BREAKPOINTS
-	add_local_depth(breakpoints, bam_files)
+	pool_add_local_depth(args, breakpoints, bam_files)
 	if args.debug:
 		helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 

@@ -196,10 +196,11 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 
 	return potential_breakpoints
 
-def add_local_depth(breakpoints, bam_files):
+def add_local_depth(breakpoints, bam_filenames):
 	""" given breakpoints, add the local depth of tumour/normal """
 	# TODO: parallelize
-	for label, bam_file in bam_files.items():
+	for label, bam_filename in bam_filenames.items():
+		bam_file = pysam.AlignmentFile(bam_filename, "rb")
 		for bp in breakpoints:
 			local_depths = {}
 			""" e.g.) {'tumour': [start_depth, end_depth], 'normal': [start_depth, end_depth]} """
