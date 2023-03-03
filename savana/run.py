@@ -133,7 +133,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	# build strings
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
-	vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, breakpoints[0])
+	vcf_string = helper.generate_vcf_header(args, breakpoints[0])
 	read_support_string = ''
 	for count, bp in enumerate(breakpoints):
 		bedpe_string += bp.as_bedpe(count)
