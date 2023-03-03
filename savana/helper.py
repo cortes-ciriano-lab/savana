@@ -239,6 +239,7 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 		f'##reference={ref_fasta}',
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
 		'##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
+		'##INFO=<ID=INSSEQ,Number=1,Type=String,Description="Inserted sequence for an insertion">',
 		'##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakends">',
 		'##INFO=<ID=NORMAL_SUPPORT,Number=1,Type=Float,Description="Number of variant supporting normal reads">',
 		'##INFO=<ID=TUMOUR_SUPPORT,Number=1,Type=Float,Description="Number of variant supporting tumour reads">',
