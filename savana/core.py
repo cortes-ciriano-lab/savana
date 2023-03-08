@@ -380,17 +380,10 @@ class Cluster():
 					event_sizes.append(abs(bp.start_loc - bp.end_loc))
 			stat_dict = {
 				'starts_std_dev': pstdev(starts),
-				'starts_median': median(starts),
 				'event_size_std_dev': pstdev(event_sizes),
 				'event_size_median': median(event_sizes),
 				'event_size_mean': mean(event_sizes)
 			}
-			stat_dict['uncertainty'] = (stat_dict['starts_std_dev']+1)*(stat_dict['event_size_std_dev']+1)
-			if stat_dict['event_size_median'] > 0:
-				stat_dict['event_heuristic'] = (stat_dict['event_size_std_dev']/stat_dict['event_size_median'])
-			else:
-				stat_dict['event_heuristic'] = None
-
 			# round to 2 decimal places for stats dict attribute
 			self.stats = {}
 			for key, value in stat_dict.items():
