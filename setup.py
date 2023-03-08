@@ -24,7 +24,6 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'savana=savana.savana:main',
-            'savana-validation=savana.validation:main'
         ]
     },
     classifiers=(

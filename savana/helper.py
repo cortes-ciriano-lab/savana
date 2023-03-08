@@ -231,17 +231,29 @@ def get_contigs(contig_file, ref_index):
 	return None
 
 def generate_vcf_header(args, example_breakpoint):
-	""" given a fasta file and index, generate the VCF header """
+	""" given a fasta file, index, and example breakpoint generate the VCF header """
+	vcf_header_str = []
+	vcf_header_str.extend([
+		"##fileformat=VCFv4.2",
+		f'##fileDate={datetime.now().strftime("%Y%m%d")}',
+		f'##source=SAVANAv{__version__}'
+	])
+	# add contigs
+	assembly_name = os.path.basename(args.ref)
+	with open(args.ref_index) as f:
+		reader = csv.reader(f, delimiter='\t')
+		for line in list(reader):
+			contig = line[0]
+			length = line[1]
+			vcf_header_str.append(f'##contig=<ID={contig},length={length},assembly={assembly_name}>')
+	# generate command line args string
 	cmd_string = '##savana_args="'
 	for arg, value in vars(args).items():
 		if value and arg != "func":
 			cmd_string+=f' --{arg} {value}'
 	cmd_string+='"'
-	vcf_header_str = []
+	# add info fields
 	vcf_header_str.extend([
-		"##fileformat=VCFv4.2",
-		f'##fileDate={datetime.now().strftime("%Y%m%d")}',
-		f'##source=SAVANAv{__version__}',
 		cmd_string,
 		f'##reference={args.ref}',
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
@@ -256,19 +268,14 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=NORMAL_DP,Number=.,Type=Float,Description="Local depth in normal at the breakpoint(s) of an SV">',
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
 	])
+	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
 	breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()
 	for stat in breakpoint_stats_origin:
 		vcf_header_str.append(f'##INFO=<ID=ORIGIN_{stat.upper()},Number=1,Type=Float,Description="Originating cluster value for {stat}">')
 	for stat in breakpoint_stats_end:
 		vcf_header_str.append(f'##INFO=<ID=END_{stat.upper()},Number=1,Type=Float,Description="End cluster value for {stat}">')
-	assembly_name = os.path.basename(args.ref)
-	with open(args.ref_index) as f:
-		reader = csv.reader(f, delimiter='\t')
-		for line in list(reader):
-			contig = line[0]
-			length = line[1]
-			vcf_header_str.append(f'##contig=<ID={contig},length={length},assembly={assembly_name}>')
+	# add the final header line
 	sample_name = os.path.splitext(os.path.basename(args.tumour))[0]
 	vcf_header_str.append("#"+"\t".join(['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT',sample_name]))
 

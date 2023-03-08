@@ -10,9 +10,139 @@ import re
 import os
 import csv
 
+import cyvcf2
+
 import savana.helper as helper
 from savana.breakpoints import *
 from savana.clusters import *
+
+def label_vcf_cyvcf(args):
+	""" given the input, somatic, and germline VCFs, label the input VCF"""
+	# create the comparison set from somatic & germline VCFs
+	compare_set = []
+	vcfs_string=f'{args.somatic}'
+	for variant in cyvcf2.VCF(args.somatic):
+		compare_set.append({
+			'label': 'SOMATIC',
+			'seen': False,
+			'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
+			'start_loc': variant.start,
+			'length': variant.INFO.get('SVLEN'),
+			'type': variant.INFO.get('SVTYPE'),
+		})
+	if args.germline:
+		vcfs_string+=f'and {args.germline}'
+		for variant in cyvcf2.VCF(args.germline):
+			compare_set.append({
+				'label': 'GERMLINE',
+				'seen': False,
+				'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
+				'start_loc': variant.start,
+				'length': variant.INFO.get('SVLEN'),
+				'type': variant.INFO.get('SVTYPE')
+			})
+
+	# read in input vcf, add to header, iterate through variants, add label field
+	input_vcf = cyvcf2.VCF(args.input)	
+	# add LABEL field to header (reference somatic/germline VCF files)
+	labels_list = ['SOMATIC', 'GERMLINE', 'FOUND_IN_BOTH', 'NOT_IN_COMPARISON']
+	desc_string = str(f'One of \'{"|".join(labels_list)}\' evaluating against {vcfs_string}')
+	input_vcf.add_info_to_header({
+		'ID': 'LABEL',
+		'Type': 'String',
+		'Number': '1',
+		'Description': desc_string
+	})
+	out_vcf = cyvcf2.Writer(args.output, input_vcf)
+	for variant in input_vcf:
+		labels = []
+		variant_chrom = variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM
+		for compare_variant in compare_set:
+			if compare_variant['start_chr'] == variant_chrom:
+				distance = abs(compare_variant['start_loc'] - variant.start)
+				if distance <= args.buffer:
+					labels.append(compare_variant['label'])
+		if not labels:
+			variant.INFO['LABEL'] = labels_list[3]
+		elif len(set(labels)) > 1:
+			variant.INFO['LABEL'] = labels_list[2]
+		else:
+			variant.INFO['LABEL'] = labels[0]
+		out_vcf.write_record(variant)
+	out_vcf.close()
+	input_vcf.close()
+
+	return
+
+"""
+import traceback
+import pysam
+def label_vcf_pysam(args):
+	" given the input, somatic, and germline VCFs, label the input VCF""
+	print("EVALUATING WITH PYSAM")
+	# create the comparison set from somatic & germline VCFs
+	compare_set = []
+	try:
+		somatic_vcf = pysam.VariantFile(args.somatic)
+	except Exception as e:
+		print(f'Error parsing VCF {args.somatic} with pysam:')
+		traceback.print_exc()
+		return
+
+	for variant in somatic_vcf.fetch():
+		compare_set.append({
+			'label': 'SOMATIC',
+			'seen': False,
+			'start_chr'	: variant.contig[3:] if variant.contig.startswith('chr') else variant.contig, # strip chr start
+			'start_loc': variant.pos,
+			'length': variant.info['SVLEN'],
+			'type': variant.info['SVTYPE'] if 'SVTYPE' in variant.info else None
+		})
+	germline_string = ''
+	if args.germline:
+		germline_string+=f' and {args.germline}'
+		germline_vcf = pysam.VariantFile(args.germline)
+		for variant in germline_vcf.fetch():
+			compare_set.append({
+				'label': 'GERMLINE',
+				'seen': False,
+				'start_chr'	: variant.contig[3:] if variant.contig.startswith('chr') else variant.contig, # strip chr start
+				'start_loc': variant.pos,
+				'length': variant.info['SVLEN'],
+				'type': variant.info['SVTYPE'] if 'SVTYPE' in variant.info else None
+			})
+
+	# read in the input vcf
+	input_vcf = pysam.VariantFile(args.input)
+	# add LABEL field to header (reference somatic/germline VCF files)
+	labels_list = ['SOMATIC', 'GERMLINE', 'FOUND_IN_BOTH', 'NOT_IN_COMPARISON']
+	input_vcf.header.add_meta(key="INFO", items=[
+		('ID','LABEL'),('Type','String'), ('Number', 1),
+		('Description', f'One of \'{"|".join(labels_list)}\' evaluating against {args.somatic}{germline_string}')
+	])
+	vcf_out = pysam.VariantFile('out.vcf', 'w', header=input_vcf.header)
+	for variant in input_vcf.fetch():
+		labels = []
+		variant_chrom = variant.contig[3:] if variant.contig.startswith('chr') else variant.contig # strip chr start
+		for compare_variant in compare_set:
+			if compare_variant['start_chr'] == variant_chrom:
+				distance = abs(compare_variant['start_loc'] - variant.pos)
+				if distance <= args.buffer:
+					labels.append(compare_variant['label'])
+		if not labels:
+			variant.info.__setitem__('LABEL', labels_list[3])
+		elif len(set(labels)) > 1:
+			variant.info.__setitem__('LABEL', labels_list[2])
+		else:
+			variant.info.__setitem__('LABEL', labels[0])
+		# write edited variant with LABEL added
+
+	vcf_out.close()
+	input_vcf.close()
+
+	return
+"""
+
 
 def validate_vcf(outdir, compare_vcf, validation_vcf):
 	""" compare output vcf with 'truthset' validation vcf """
@@ -66,7 +196,6 @@ def validate_vcf(outdir, compare_vcf, validation_vcf):
 				converted_chrom = line[0][3:]
 			else:
 				converted_chrom = line[0] # no need to convert
-
 			# put into a dict
 			compareset_entry = {
 				'start_chr': converted_chrom,
@@ -165,4 +294,4 @@ def validate_vcf(outdir, compare_vcf, validation_vcf):
 	return
 
 if __name__ == "__main__":
-	print("Validation functions for SAVANA")
+	print("Evaluate functions for SAVANA")

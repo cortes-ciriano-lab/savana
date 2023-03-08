@@ -18,8 +18,8 @@ from multiprocessing import Pool, cpu_count
 import pysam
 
 import savana.run as run
+import savana.evaluate as evaluate
 import savana.helper as helper
-import savana.validation as validation
 from savana.breakpoints import *
 from savana.clusters import *
 
@@ -71,14 +71,6 @@ def savana_run(args):
 	if args.debug:
 		run.write_cluster_bed(consensus_clusters, outdir)
 		run.calculate_cluster_stats(consensus_clusters, outdir)
-	# validate vcf
-	output_vcf = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
-	if args.validation:
-		try:
-			validation.validate_vcf(outdir, output_vcf, args.validation)
-		except Exception as e:
-			print(f'\nWARNING: Validation of breakpoints against {args.validation} failed due to "{str(e)}"')
-			print(f'You can retry by running "python savana/validation.py --outdir testing --input {output_vcf} --validation {args.validation}"')
 	# finish timing
 	helper.time_function("Total time", checkpoints, time_str, final=True)
 	f = open(os.path.join(outdir, 'time.log'), "w+")
@@ -88,22 +80,16 @@ def savana_run(args):
 
 def savana_evaluate(args):
 	""" main function for savana evaluate """
-	# create output dir if it doesn't exist
-	outdir = os.path.join(os.getcwd(), args.outdir)
-	if not os.path.exists(outdir):
-		print(f'Creating directory {outdir} to store results')
-		os.mkdir(outdir)
-	elif os.listdir(outdir):
-		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
-	else:
-		print(f'Using {outdir} to store output')
 	# check input VCFs
 	if not os.path.exists(args.input):
 		sys.exist(f'Provided input vcf: "{args.input}" does not exist. Please provide full path')
-	if not os.path.exists(args.validation):
-		sys.exist(f'Provided validation vcf: "{args.validation}" does not exist. Please provide full path')
+	if not os.path.exists(args.somatic):
+		sys.exist(f'Provided somatic VCF: "{args.somatic}" does not exist. Please provide full path')
+	if args.germline and not os.path.exists(args.germline):
+		sys.exist(f'Provided germline VCF: "{args.germline}" does not exist. Please provide full path')
 	# perform validation
-	validation.validate_vcf(outdir, args.input, args.validation)
+	evaluate.label_vcf_cyvcf(args)
+	#evaluate.label_vcf_pysam(args) # bugs in pysam causing this not to work
 	print("Done.")
 
 def main():
@@ -129,14 +115,16 @@ def main():
 	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
 	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
-	run_parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to use as validation (optional)')
 	run_parser.set_defaults(func=savana_run)
 
 	# savana evaluate
-	evaluate_parser = subparsers.add_parser("evaluate", help="evaluate and label SAVANA VCF given a VCF to evaluate against")
-	evaluate_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-	evaluate_parser.add_argument('--input', nargs='?', type=str, required=False, help='VCF file to evaluate')
-	evaluate_parser.add_argument('--validation', nargs='?', type=str, required=False, help='VCF file to evaluate against')
+	evaluate_parser = subparsers.add_parser("evaluate", help="label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against")
+	evaluate_parser.add_argument('--input', nargs='?', type=str, required=True, help='VCF file to evaluate')
+	evaluate_parser.add_argument('--somatic', nargs='?', type=str, required=True, help='Somatic VCF file to evaluate against')
+	evaluate_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
+	evaluate_parser.add_argument('--buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
+	evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
+	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired (stdout otherwise)')
 	evaluate_parser.set_defaults(func=savana_evaluate)
 
 	args = global_parser.parse_args()
