@@ -369,9 +369,11 @@ class Cluster():
 		""" return dict of the stdev of start, event size, and mean size in cluster """
 		if not self.stats:
 			starts = []
+			mapqs = []
 			event_sizes = []
 			for bp in self.breakpoints:
 				starts.append(bp.start_loc)
+				mapqs.append(bp.mapq)
 				if self.source == "SUPP":
 					event_sizes.append(1)
 				elif self.source == "INS":
@@ -380,6 +382,7 @@ class Cluster():
 					event_sizes.append(abs(bp.start_loc - bp.end_loc))
 			stat_dict = {
 				'starts_std_dev': pstdev(starts),
+				'mapq_mean': mean(mapqs),
 				'event_size_std_dev': pstdev(event_sizes),
 				'event_size_median': median(event_sizes),
 				'event_size_mean': mean(event_sizes)
