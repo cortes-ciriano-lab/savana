@@ -50,7 +50,7 @@ python3 -m pip install . -vv
 You can test that SAVANA was installed successfully by running `savana --help`, which should display the following text:
 ```
 > savana --help
-usage: savana [-h] --tumour [TUMOUR] --normal [NORMAL] --ref [REF] [--ref_index [REF_INDEX]] [--contigs [CONTIGS]] [--length [LENGTH]] [--mapq [MAPQ]] [--buffer [BUFFER]] [--depth [DEPTH]] [--threads [THREADS]] --outdir [OUTDIR] [--debug] [--validation [VALIDATION]] [--version]
+usage: savana [-h] --tumour [TUMOUR] --normal [NORMAL] --ref [REF] [--ref_index [REF_INDEX]] [--contigs [CONTIGS]] [--length [LENGTH]] [--mapq [MAPQ]] [--buffer [BUFFER]] [--threads [THREADS]] --outdir [OUTDIR] [--debug] [--version]
 
 SAVANA - somatic SV caller
 
@@ -65,12 +65,9 @@ optional arguments:
   --length [LENGTH]     Minimum length SV to consider (default=30)
   --mapq [MAPQ]         MAPQ filter on reads which are considered (default=5)
   --buffer [BUFFER]     Buffer to add when clustering adjacent potential breakpoints (default=10)
-  --depth [DEPTH]       Threshold for number of supporting reads (default=3)
   --threads [THREADS]   Number of threads to use (default=max)
   --outdir [OUTDIR]     Output directory (can exist but must be empty)
   --debug               Output extra debugging info and files
-  --validation [VALIDATION]
-                        VCF file to use as validation (optional)
   --version             show program's version number and exit
 ```
 
@@ -96,10 +93,8 @@ contigs|Contigs/chromosomes to consider (default is all in fai file). Example in
 length|Minimum length SV to consider (default=30)
 mapq|Minimum MAPQ of reads to consider (default=5)
 buffer|Buffer to add when clustering adjacent potential breakpoints (default=10)
-depth|Threshold for number of supporting reads (default=3)
 threads|Number of threads to use (default is maximum available)
 debug|Optional flag to output extra debugging info and files
-validation|Optional VCF file to validate against
 
 ## Troubleshooting
 

@@ -36,14 +36,9 @@ def cluster_breakpoints(breakpoints, args):
 			# add to cluster on top of stack
 			cluster_stacks[bp_notation_type][-1].add(bp)
 	for bp_notation_type, stack in cluster_stacks.items():
-		filtered_cluster_stacks = stack
-		# remove clusters with fewer than arg.depth number of supporting reads
-		filtered_cluster_stacks = [c for c in stack if len(c.supporting_reads) >= args.depth]
-		final_filtered = []
-		for cluster in filtered_cluster_stacks:
-			# remove clusters with a lot of variability in their location?
-			final_filtered.append(cluster)
-		cluster_stacks[bp_notation_type] = final_filtered
+		# can't cluster with only one read - require two
+		filtered_cluster_stacks = [c for c in stack if len(c.supporting_reads) >= 2]
+		cluster_stacks[bp_notation_type] = filtered_cluster_stacks
 	return cluster_stacks
 
 def output_clusters(refined_clusters, outdir):
