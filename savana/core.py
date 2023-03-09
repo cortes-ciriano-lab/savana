@@ -166,15 +166,13 @@ class ConsensusBreakpoint():
 	def get_stats_str(self):
 		""" return the stats of the originating cluster """
 		stats_str = f'ORIGINATING_CLUSTER={self.originating_cluster.uid};END_CLUSTER={self.end_cluster.uid};'
-		for label, depths in self.local_depths.items():
-			stats_str+=f'{label.upper()}_DP={",".join(depths)};'
 		stats_originating = self.originating_cluster.get_stats()
 		for key, value in stats_originating.items():
 			stats_str+=f'ORIGIN_{key.upper()}={value};'
 		stats_end = self.end_cluster.get_stats()
 		for key, value in stats_end.items():
 			stats_str+=f'END_{key.upper()}={value};'
-		return stats_str[:-1] # remove last ';'
+		return stats_str
 
 	def as_vcf(self, ref_fasta):
 		""" return vcf line(s) representation of the breakpoint """
@@ -199,10 +197,17 @@ class ConsensusBreakpoint():
 		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
+			info[0]+=f'TUMOUR_DP={self.local_depths["tumour"][0]};'
+			info[0]+=f'NORMAL_DP={self.local_depths["normal"][0]};'
 		else:
 			info.append(info[0]) # duplicate info
+			# add edge-specific info
 			info[0] = f'SVTYPE=BND;MATEID=ID_{self.count}_2;' + info[0]
+			info[0]+=f'TUMOUR_DP={",".join(self.local_depths["tumour"])};'
+			info[0]+=f'NORMAL_DP={",".join(self.local_depths["normal"])};'
 			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
+			info[1]+=f'TUMOUR_DP={",".join(reversed(self.local_depths["tumour"]))};'
+			info[1]+=f'NORMAL_DP={",".join(reversed(self.local_depths["normal"]))};'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,
@@ -229,7 +234,6 @@ class ConsensusBreakpoint():
 				'GT',
 				gt_tag
 			])
-
 		vcf_string = ''
 		for line in vcf_lines:
 			vcf_string+="\t".join(line)+"\n"

@@ -210,7 +210,7 @@ def add_local_depth(breakpoints, bam_filenames):
 				reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1, multiple_iterators=True)]
 				reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
 				bp.local_depths.setdefault(label,[]).append(str(len(reads)))
-	return
+	return breakpoints
 
 def call_breakpoints(clustered_breakpoints, buffer):
 	""" identify consensus breakpoints from list of consensus breakpoints """
