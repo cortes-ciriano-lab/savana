@@ -191,9 +191,9 @@ class ConsensusBreakpoint():
 			gt_tag = '0/0'
 		else:
 			gt_tag = '0/1'
-        support_str = ';'.join([f'{label.upper()}_SUPPORT={label_count}' for label, label_count in self.support.items()])
+		support_str = ';'.join([f'{label.upper()}_SUPPORT={label_count}' for label, label_count in self.support.items()])
 		stats_str = self.get_stats_str()
-        info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
+		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = f'SVTYPE=INS;INSSEQ={self.inserted_sequence};' + info[0]
 		else:
