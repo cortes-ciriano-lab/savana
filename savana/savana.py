@@ -81,13 +81,21 @@ def savana_run(args):
 def savana_evaluate(args):
 	""" main function for savana evaluate """
 	# check input VCFs
+	vcf_string = ''
 	if not os.path.exists(args.input):
 		sys.exist(f'Provided input vcf: "{args.input}" does not exist. Please provide full path')
 	if not os.path.exists(args.somatic):
 		sys.exist(f'Provided somatic VCF: "{args.somatic}" does not exist. Please provide full path')
-	if args.germline and not os.path.exists(args.germline):
-		sys.exist(f'Provided germline VCF: "{args.germline}" does not exist. Please provide full path')
+	else:
+		vcf_string += f'somatic vcf: "{args.somatic}"'
+	if args.germline:
+		if not os.path.exists(args.germline):
+			sys.exist(f'Provided germline VCF: "{args.germline}" does not exist. Please provide full path')
+		else:
+			vcf_string += f' and germline vcf: "{args.germline}"'
+
 	# perform validation
+	print(f'Evaluating "{args.input}" against {vcf_string}')
 	evaluate.evaluate_vcf(args)
 	print("Done.")
 

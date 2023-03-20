@@ -99,10 +99,9 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	except Exception as e:
 		print(f'WARNING: Unable to calculate validation statistics due to "{str(e)}"')
 
-	f = open(args.stats, 'w')
-	for line in validation_str:
-		f.write(line)
-	f.close()
+	with open(args.stats, "w") as stats_file:
+		for line in validation_str:
+			stats_file.write(line+"\n")
 	print(f'Evaluation statistics written to "{args.stats}"')
 
 	return
