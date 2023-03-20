@@ -88,8 +88,7 @@ def savana_evaluate(args):
 	if args.germline and not os.path.exists(args.germline):
 		sys.exist(f'Provided germline VCF: "{args.germline}" does not exist. Please provide full path')
 	# perform validation
-	evaluate.label_vcf_cyvcf(args)
-	#evaluate.label_vcf_pysam(args) # bugs in pysam causing this not to work
+	evaluate.evaluate_vcf(args)
 	print("Done.")
 
 def main():

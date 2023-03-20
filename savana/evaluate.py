@@ -16,31 +16,105 @@ import savana.helper as helper
 from savana.breakpoints import *
 from savana.clusters import *
 
-def label_vcf_cyvcf(args):
-	""" given the input, somatic, and germline VCFs, label the input VCF"""
-	# create the comparison set from somatic & germline VCFs
-	compare_set = []
-	vcfs_string=f'{args.somatic}'
-	for variant in cyvcf2.VCF(args.somatic):
-		compare_set.append({
-			'label': 'SOMATIC',
-			'seen': False,
+def create_variant_dicts(vcf_file, label, stats):
+	""" given a vcf file, create a dict representation of relevant attributes for each variant """
+	variant_dicts = []
+	id_count = 0
+	for variant in cyvcf2.VCF(vcf_file):
+		variant_dict = {
+			'label': label,
+			'id': label+"_"+str(id_count),
 			'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
 			'start_loc': variant.start,
 			'length': variant.INFO.get('SVLEN'),
 			'type': variant.INFO.get('SVTYPE'),
-		})
+		}
+		if stats:
+			variant_dict['within_buffer'] = []
+		variant_dicts.append(variant_dict)
+		id_count += 1
+
+	return variant_dicts
+
+def compute_statistics(args, compare_set, input_set, vcfs_string):
+	""" given a compare set of variants, compute statistics on number of variants identifed """
+	validation_str = []
+	break_str = '----------'
+	validation_str.append(f'Number of INPUT variants found in "{vcfs_string}": {len([x for x in input_set if x["within_buffer"]])}/{len(input_set)}')
+	validation_str.append(f'Number of "SOMATIC" variants found in INPUT {len([x for x in compare_set if (x["label"] == "SOMATIC" and x["within_buffer"])])}/{len([x for x in compare_set if x["label"] == "SOMATIC"])}')
 	if args.germline:
-		vcfs_string+=f'and {args.germline}'
-		for variant in cyvcf2.VCF(args.germline):
-			compare_set.append({
-				'label': 'GERMLINE',
-				'seen': False,
-				'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
-				'start_loc': variant.start,
-				'length': variant.INFO.get('SVLEN'),
-				'type': variant.INFO.get('SVTYPE')
-			})
+		validation_str.append(f'Number of "GERMLINE" variants found in INPUT {len([x for x in compare_set if (x["label"] == "GERMLINE" and x["within_buffer"])])}/{len([x for x in compare_set if x["label"] == "GERMLINE"])}')
+
+	used_compare_set_ids = []
+	used_input_set_ids = []
+
+	for variant in input_set:
+		variant['validated'] = None
+		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
+		i = 0
+		while not variant['validated'] and i < len(within_buffer_sorted):
+			compare_variant, distance = within_buffer_sorted[i]
+			if compare_variant['id'] not in used_compare_set_ids:
+				variant['validated'] = (compare_variant, distance)
+				used_compare_set_ids.append(compare_variant['id'])
+			i+=1
+
+	# mark compare sets
+	for variant in compare_set:
+		variant['validated'] = None
+		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
+		i = 0
+		while not variant['validated'] and i < len(within_buffer_sorted):
+			input_variant, distance = within_buffer_sorted[i]
+			if input_variant['id'] not in used_input_set_ids:
+				variant['validated'] = (input_variant, distance)
+				used_input_set_ids.append(input_variant['id'])
+			i+=1
+
+	# SOMATIC CALCULATIONS
+	# validated somatic variants (true positives)
+	tp = [v for v in input_set if v['validated'] and v['validated'][0]['label'] == "SOMATIC"]
+	# unvalidated variants (false positives)
+	fp = [v for v in input_set if not v['validated']]
+	# report missed somatic variants (false negative)
+	fn = [v for v in compare_set if not v['validated'] and v['label'] == 'SOMATIC']
+	validation_str.append(f'\nSTATISTICS FOR SOMATIC VARIANTS')
+	validation_str.append('(Not allowing for two variants to be validated by the same event)')
+	validation_str.append(break_str)
+	validation_str.append(f'True Positives: {len(tp)}')
+	validation_str.append(f'False Positives: {len(fp)}')
+	validation_str.append(f'False Negatives: {len(fn)}')
+	validation_str.append(break_str)
+
+	try:
+		precision = len(tp)/(len(tp)+len(fp))
+		recall = len(tp)/(len(tp)+len(fn))
+		f_measure = (2*precision*recall)/(precision+recall)
+		validation_str.append(f'Precision: {round(precision, 3)}')
+		validation_str.append(f'Recall: {round(recall, 3)}')
+		validation_str.append(f'F-measure: {round(f_measure, 3)}')
+		validation_str.append(break_str)
+	except ZeroDivisionError as e:
+		print("WARNING: Unable to calculate validation statistics due to divide by zero exception")
+	except Exception as e:
+		print(f'WARNING: Unable to calculate validation statistics due to "{str(e)}"')
+
+	f = open(args.stats, 'w')
+	for line in validation_str:
+		f.write(line)
+	f.close()
+	print(f'Evaluation statistics written to "{args.stats}"')
+
+	return
+
+def evaluate_vcf(args):
+	""" given the input, somatic, and germline VCFs, label the input VCF"""
+	# create the comparison set from somatic & germline VCFs
+	compare_set = create_variant_dicts(args.somatic, 'SOMATIC', args.stats)
+	vcfs_string=f'{args.somatic}'
+	if args.germline:
+		vcfs_string+=f' and {args.germline}'
+		compare_set.extend(create_variant_dicts(args.germline, 'GERMLINE', args.stats))
 
 	# read in input vcf, add to header, iterate through variants, add label field
 	input_vcf = cyvcf2.VCF(args.input)	
@@ -53,15 +127,31 @@ def label_vcf_cyvcf(args):
 		'Number': '1',
 		'Description': desc_string
 	})
+	# output vcf using modified input_vcf as template
 	out_vcf = cyvcf2.Writer(args.output, input_vcf)
+	if args.stats:
+		input_set = []
 	for variant in input_vcf:
 		labels = []
 		variant_chrom = variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM
+		if args.stats:
+			input_set.append({
+				'label': 'INPUT',
+				'id': variant.ID,
+				'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
+				'start_loc': variant.start,
+				'length': variant.INFO.get('SVLEN'),
+				'type': variant.INFO.get('SVTYPE'),
+				'within_buffer': []
+			})
 		for compare_variant in compare_set:
 			if compare_variant['start_chr'] == variant_chrom:
 				distance = abs(compare_variant['start_loc'] - variant.start)
 				if distance <= args.buffer:
 					labels.append(compare_variant['label'])
+					if args.stats:
+						compare_variant['within_buffer'].append((input_set[-1], distance))
+						input_set[-1]['within_buffer'].append((compare_variant, distance))
 		if not labels:
 			variant.INFO['LABEL'] = labels_list[3]
 		elif len(set(labels)) > 1:
@@ -72,77 +162,10 @@ def label_vcf_cyvcf(args):
 	out_vcf.close()
 	input_vcf.close()
 
-	return
-
-"""
-import traceback
-import pysam
-def label_vcf_pysam(args):
-	" given the input, somatic, and germline VCFs, label the input VCF""
-	print("EVALUATING WITH PYSAM")
-	# create the comparison set from somatic & germline VCFs
-	compare_set = []
-	try:
-		somatic_vcf = pysam.VariantFile(args.somatic)
-	except Exception as e:
-		print(f'Error parsing VCF {args.somatic} with pysam:')
-		traceback.print_exc()
-		return
-
-	for variant in somatic_vcf.fetch():
-		compare_set.append({
-			'label': 'SOMATIC',
-			'seen': False,
-			'start_chr'	: variant.contig[3:] if variant.contig.startswith('chr') else variant.contig, # strip chr start
-			'start_loc': variant.pos,
-			'length': variant.info['SVLEN'],
-			'type': variant.info['SVTYPE'] if 'SVTYPE' in variant.info else None
-		})
-	germline_string = ''
-	if args.germline:
-		germline_string+=f' and {args.germline}'
-		germline_vcf = pysam.VariantFile(args.germline)
-		for variant in germline_vcf.fetch():
-			compare_set.append({
-				'label': 'GERMLINE',
-				'seen': False,
-				'start_chr'	: variant.contig[3:] if variant.contig.startswith('chr') else variant.contig, # strip chr start
-				'start_loc': variant.pos,
-				'length': variant.info['SVLEN'],
-				'type': variant.info['SVTYPE'] if 'SVTYPE' in variant.info else None
-			})
-
-	# read in the input vcf
-	input_vcf = pysam.VariantFile(args.input)
-	# add LABEL field to header (reference somatic/germline VCF files)
-	labels_list = ['SOMATIC', 'GERMLINE', 'FOUND_IN_BOTH', 'NOT_IN_COMPARISON']
-	input_vcf.header.add_meta(key="INFO", items=[
-		('ID','LABEL'),('Type','String'), ('Number', 1),
-		('Description', f'One of \'{"|".join(labels_list)}\' evaluating against {args.somatic}{germline_string}')
-	])
-	vcf_out = pysam.VariantFile('out.vcf', 'w', header=input_vcf.header)
-	for variant in input_vcf.fetch():
-		labels = []
-		variant_chrom = variant.contig[3:] if variant.contig.startswith('chr') else variant.contig # strip chr start
-		for compare_variant in compare_set:
-			if compare_variant['start_chr'] == variant_chrom:
-				distance = abs(compare_variant['start_loc'] - variant.pos)
-				if distance <= args.buffer:
-					labels.append(compare_variant['label'])
-		if not labels:
-			variant.info.__setitem__('LABEL', labels_list[3])
-		elif len(set(labels)) > 1:
-			variant.info.__setitem__('LABEL', labels_list[2])
-		else:
-			variant.info.__setitem__('LABEL', labels[0])
-		# write edited variant with LABEL added
-
-	vcf_out.close()
-	input_vcf.close()
+	if args.stats:
+		compute_statistics(args, compare_set, input_set, vcfs_string)
 
 	return
-"""
-
 
 def validate_vcf(outdir, compare_vcf, validation_vcf):
 	""" compare output vcf with 'truthset' validation vcf """
