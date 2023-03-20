@@ -49,12 +49,12 @@ def pool_get_potential_breakpoints(bam_files, args):
 	pool_potential.join()
 	return potential_breakpoints_results
 
-def pool_cluster_breakpoints(threads, buffer, chrom_potential_breakpoints):
+def pool_cluster_breakpoints(threads, buffer, ins_buffer, chrom_potential_breakpoints):
 	""" perform initial clustering of Potential Breakpoints """
 	pool_clustering = Pool(processes=threads)
 	pool_clustering_args = []
 	for breakpoints in chrom_potential_breakpoints.values():
-		pool_clustering_args.append((breakpoints, buffer))
+		pool_clustering_args.append((breakpoints, buffer, ins_buffer))
 	clustering_results = pool_clustering.starmap(cluster_breakpoints, pool_clustering_args)
 	pool_clustering.close()
 	pool_clustering.join()
@@ -110,7 +110,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 			chrom_potential_breakpoints.setdefault(chrom,[]).extend(potential_breakpoints)
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
-	clusters = pool_cluster_breakpoints(args.threads, args.buffer, chrom_potential_breakpoints)
+	clusters = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
 	if args.debug:
 		helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 

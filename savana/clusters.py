@@ -16,7 +16,7 @@ import pybedtools
 
 from savana.core import Cluster
 
-def cluster_breakpoints(breakpoints, buffer):
+def cluster_breakpoints(breakpoints, buffer, ins_buffer):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """
 	cluster_stacks = {
 		"+-": [],
@@ -33,8 +33,6 @@ def cluster_breakpoints(breakpoints, buffer):
 			new_cluster = Cluster(bp)
 			cluster_stacks[bp_notation_type].append(new_cluster)
 		elif bp_notation_type == "<INS>":
-			# use half of insert size as buffer - with a limt of 500bp, unless the user-set buffer is larger
-			ins_buffer = max(min(int(len(bp.inserted_sequence)/2), 500), buffer)
 			if not cluster_stacks[bp_notation_type][-1].overlaps(bp, ins_buffer):
 				# put a new cluster onto the sv stack
 				new_cluster = Cluster(bp)
