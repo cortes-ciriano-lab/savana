@@ -28,7 +28,21 @@ def cluster_breakpoints(breakpoints, buffer):
 	breakpoints.sort()
 	for bp in breakpoints:
 		bp_notation_type = str(bp.breakpoint_notation)
-		if len(cluster_stacks[bp_notation_type]) == 0 or not cluster_stacks[bp_notation_type][-1].overlaps(bp, args.buffer):
+		if len(cluster_stacks[bp_notation_type]) == 0:
+			# put a new cluster onto the sv stack
+			new_cluster = Cluster(bp)
+			cluster_stacks[bp_notation_type].append(new_cluster)
+		elif bp_notation_type == "<INS>":
+			# use half of insert size as buffer - with a limt of 500bp, unless the user-set buffer is larger
+			ins_buffer = max(min(int(len(bp.inserted_sequence)/2), 500), buffer)
+			if not cluster_stacks[bp_notation_type][-1].overlaps(bp, ins_buffer):
+				# put a new cluster onto the sv stack
+				new_cluster = Cluster(bp)
+				cluster_stacks[bp_notation_type].append(new_cluster)
+			else:
+				# add to cluster on top of stack
+				cluster_stacks[bp_notation_type][-1].add(bp)
+		elif bp_notation_type != "<INS>" and not cluster_stacks[bp_notation_type][-1].overlaps(bp, buffer):
 			# put a new cluster onto the sv stack
 			new_cluster = Cluster(bp)
 			cluster_stacks[bp_notation_type].append(new_cluster)
