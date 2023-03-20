@@ -16,7 +16,7 @@ import pybedtools
 
 from savana.core import Cluster
 
-def cluster_breakpoints(breakpoints, args):
+def cluster_breakpoints(breakpoints, buffer):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """
 	cluster_stacks = {
 		"+-": [],

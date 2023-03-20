@@ -49,12 +49,12 @@ def pool_get_potential_breakpoints(bam_files, args):
 	pool_potential.join()
 	return potential_breakpoints_results
 
-def pool_cluster_breakpoints(args, chrom_potential_breakpoints):
+def pool_cluster_breakpoints(threads, buffer, chrom_potential_breakpoints):
 	""" perform initial clustering of Potential Breakpoints """
-	pool_clustering = Pool(processes=args.threads)
+	pool_clustering = Pool(processes=threads)
 	pool_clustering_args = []
 	for breakpoints in chrom_potential_breakpoints.values():
-		pool_clustering_args.append((breakpoints, args))
+		pool_clustering_args.append((breakpoints, buffer))
 	clustering_results = pool_clustering.starmap(cluster_breakpoints, pool_clustering_args)
 	pool_clustering.close()
 	pool_clustering.join()
@@ -77,15 +77,15 @@ def pool_output_clusters(args, clusters, outdir):
 	pool_output.close()
 	pool_output.join()
 
-def pool_add_local_depth(args, breakpoints, bam_files):
-	pool_local_depth = Pool(processes=args.threads)
+def pool_add_local_depth(threads, breakpoints, bam_files):
+	pool_local_depth = Pool(processes=threads)
 	pool_local_depth_args = []
 	# convert bam_files into filenames (rather than objects - breaks parallelization)
 	for label in bam_files.keys():
 		bam_files[label] = bam_files[label].filename
 	# split list into equal chunks from https://stackoverflow.com/a/2135920
-	quotient, remainder = divmod(len(breakpoints), args.threads)
-	breakpoints_split = (breakpoints[i*quotient+min(i, remainder):(i+1)*quotient+min(i+1, remainder)] for i in range(args.threads))
+	quotient, remainder = divmod(len(breakpoints), threads)
+	breakpoints_split = (breakpoints[i*quotient+min(i, remainder):(i+1)*quotient+min(i+1, remainder)] for i in range(threads))
 	for split in breakpoints_split:
 		pool_local_depth_args.append((split, bam_files))
 	local_depth_results = pool_local_depth.starmap(add_local_depth, pool_local_depth_args)
@@ -110,7 +110,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 			chrom_potential_breakpoints.setdefault(chrom,[]).extend(potential_breakpoints)
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
-	clusters = pool_cluster_breakpoints(args, chrom_potential_breakpoints)
+	clusters = pool_cluster_breakpoints(args.threads, args.buffer, chrom_potential_breakpoints)
 	if args.debug:
 		helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
@@ -125,7 +125,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	if args.debug:
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 	# 4) ADD LOCAL DEPTH TO BREAKPOINTS
-	breakpoints = pool_add_local_depth(args, breakpoints, bam_files)
+	breakpoints = pool_add_local_depth(args.threads, breakpoints, bam_files)
 	if args.debug:
 		helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 
