@@ -89,7 +89,7 @@ def pool_output_clusters(args, clusters, outdir):
 	pool_output.close()
 	pool_output.join()
 
-def apply_somatic_filters(validated_breakpoints):
+def apply_somatic_filters(custom_tumour_depth, validated_breakpoints):
 	""" use heuristics to eliminate noise and germline variants """
 	somatic_breakpoints_lenient = []
 	for bp in validated_breakpoints:
@@ -100,9 +100,10 @@ def apply_somatic_filters(validated_breakpoints):
 			end_cluster_stats = bp.end_cluster.get_stats()
 			try:
 				if originating_cluster_stats['starts_std_dev'] < 150 and originating_cluster_stats['event_heuristic'] < 3:
-					if bp.breakpoint_notation == "<INS>" and bp.support['tumour'] > 25:
+					tumour_depth = [custom_tumour_depth-1, custom_tumour_depth-1] if custom_tumour_depth else [25,5]
+					if bp.breakpoint_notation == "<INS>" and tumour_depth[0]:
 						somatic_breakpoints_lenient.append(bp)
-					elif bp.breakpoint_notation != "<INS>" and bp.support['tumour'] > 5:
+					elif bp.breakpoint_notation != "<INS>" and bp.support['tumour'] > [1]:
 						somatic_breakpoints_lenient.append(bp)
 			except Exception as e:
 				# in case of None for any stat
@@ -112,15 +113,16 @@ def apply_somatic_filters(validated_breakpoints):
 	for bp in validated_breakpoints:
 		if bp.support['normal'] > 0:
 			continue
-		if bp.support['tumour'] > 7:
+		tumour_depth = [custom_tumour_depth-1, custom_tumour_depth-1, custom_tumour_depth-1] if custom_tumour_depth else [7,12,12]
+		if bp.support['tumour'] > tumour_depth[0]:
 			originating_cluster_stats = bp.originating_cluster.get_stats()
 			end_cluster_stats = bp.end_cluster.get_stats()
 			try:
-				if bp.support['tumour'] > 12 and originating_cluster_stats['uncertainty'] <= 15:
+				if bp.support['tumour'] > tumour_depth[1] and originating_cluster_stats['uncertainty'] <= 15:
 					if originating_cluster_stats['event_heuristic'] <= 0.025:
 						somatic_breakpoints_strict.append(bp)
 						continue
-				elif bp.support['tumour'] > 12 and end_cluster_stats['uncertainty'] <= 30:
+				elif bp.support['tumour'] > tumour_depth[2] and end_cluster_stats['uncertainty'] <= 30:
 					somatic_breakpoints_strict.append(bp)
 					continue
 				elif end_cluster_stats['uncertainty'] <= 10:
@@ -184,7 +186,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		time_function("Output consensus breakpoints", checkpoints, time_str)
 
 	# 4) CATEGORIZE BREAKPOINTS
-	somatic_breakpoints_lenient, somatic_breakpoints_strict = apply_somatic_filters(validated_breakpoints)
+	somatic_breakpoints_lenient, somatic_breakpoints_strict = apply_somatic_filters(args.custom_tumour_depth, validated_breakpoints)
 	# output lenient vcf
 	lenient_vcf_string = helper.generate_vcf_header(args.ref, args.ref_index, args.tumour, validated_breakpoints[0])
 	for bp in somatic_breakpoints_lenient:
@@ -225,7 +227,8 @@ def main():
 	parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
 	parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
 	parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer to add when clustering adjacent potential breakpoints (default=10)')
-	parser.add_argument('--depth', nargs='?', type=int, default=3, help='Threshold for number of supporting reads (default=3)')
+	parser.add_argument('--depth', nargs='?', type=int, default=3, help='Internal threshold for number of supporting reads (default=3)')
+	parser.add_argument('--custom_tumour_depth', nargs='?', type=int, default=0, help='Custom threshold for number of tumour supporting reads. Overrides both lenient and strict filters for this value (default=heuristic-defined)')
 	parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 	parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")

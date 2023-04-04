@@ -12,7 +12,7 @@ import csv
 
 from datetime import datetime
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
