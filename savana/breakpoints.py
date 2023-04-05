@@ -213,7 +213,7 @@ def add_local_depth(breakpoints, bam_filenames):
 	return breakpoints
 
 def call_breakpoints(clustered_breakpoints, buffer):
-	""" identify consensus breakpoints from list of consensus breakpoints """
+	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints must be from same chromosome!
 	final_breakpoints = []
 	# call validated insertions
@@ -270,6 +270,7 @@ def call_breakpoints(clustered_breakpoints, buffer):
 					else:
 						# append to cluster on top of stack
 						cluster_stack[-1].add(bp)
+				#TODO: should we only allow if there's > 1?
 				for end_cluster in cluster_stack:
 					# create ConsensusBreakpoint per end_cluster
 					end_cluster_breakpoints = end_cluster.breakpoints

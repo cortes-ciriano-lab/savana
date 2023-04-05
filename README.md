@@ -18,10 +18,11 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
 
 ### Install SAVANA with Conda
 
-The easiest way to install SAVANA is via conda:
+The easiest and recommended way to install SAVANA is via conda:
 ```
 conda install -c bioconda savana
 ```
+
 ### Install SAVANA from Source
 
 _Alternately_, you can install SAVANA from source.
@@ -29,14 +30,15 @@ _Alternately_, you can install SAVANA from source.
 SAVANA requires Python 3.9 with the following dependencies:
 - pysam
 - pybedtools
-- gitpython
+- cyvcf2
 
 All of which can be installed via conda __OR__ pip:
-#### Install Dependencies with Conda 
+#### Install Dependencies with Conda
 To intall and manage dependencies with conda, create a new environment and install dependencies with the `environment.yml` file:
 ```
 conda env create --name <env> --file environment.yml
 ```
+
 #### Install Dependencies with pip
 Alternatively, you can install and manage dependencies with pip using the `requirements.txt` file:
 ```
