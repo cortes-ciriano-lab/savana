@@ -99,13 +99,17 @@ def savana_evaluate(args):
 	evaluate.evaluate_vcf(args)
 	print("Done.")
 
+def savana_main(args):
+	""" default workflow for savana: savana_run, savana_classify """
+	savana_run(args)
+
 def main():
 	""" main function for SAVANA - collects command line arguments and executes algorithm """
 
 	# parse arguments - separated into subcommands
 	global_parser = argparse.ArgumentParser(prog="savana", description="SAVANA - somatic SV caller")
 	global_parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
-	subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands')
+	subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands', dest='command')
 
 	# savana run
 	run_parser = subparsers.add_parser("run", help="run SAVANA on tumour and normal long-read BAMs to detect SVs")
@@ -134,7 +138,33 @@ def main():
 	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired (stdout otherwise)')
 	evaluate_parser.set_defaults(func=savana_evaluate)
 
-	args = global_parser.parse_args()
+	try:
+		global_parser.exit_on_error = False
+		subparser = global_parser.parse_args().command
+	except argparse.ArgumentError as e:
+		# unable to parse args, set args to None
+		subparser = None
+	if not subparser:
+		# arguments for default, main savana process
+		global_parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+		global_parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+		global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
+		global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
+		global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
+		global_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
+		global_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
+		global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
+		global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
+		global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
+		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+		global_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
+		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+		global_parser.set_defaults(func=savana_main)
+		args = global_parser.parse_args()
+	else:
+		global_parser.exit_on_error = True
+		args = global_parser.parse_args()
+
 	print(logo)
 	print(f'Version {helper.__version__} - beta')
 	src_location = __file__
