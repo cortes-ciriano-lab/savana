@@ -114,20 +114,20 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	if args.debug:
 		helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
-	if args.debug:
-		# 2.1) OUTPUT CLUSTERS
-		for bp_type in ["+-", "++", "-+", "--", "<INS>"]:
-			pool_output_clusters(args, clusters[bp_type], outdir)
-		helper.time_function("Output originating clusters", checkpoints, time_str)
-
 	# 3) CALL BREAKPOINTS
-	breakpoints = call_breakpoints(clusters, args.buffer)
+	breakpoints, pruned_clusters = call_breakpoints(clusters, args.buffer)
 	if args.debug:
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 	# 4) ADD LOCAL DEPTH TO BREAKPOINTS
 	breakpoints = pool_add_local_depth(args.threads, breakpoints, bam_files)
 	if args.debug:
 		helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
+
+	if args.debug:
+		# 2.1) OUTPUT CLUSTERS
+		for bp_type in ["+-", "++", "-+", "--", "<INS>"]:
+			pool_output_clusters(args, pruned_clusters[bp_type], outdir)
+		helper.time_function("Output pruned clusters", checkpoints, time_str)
 
 	# 4.1) OUTPUT BREAKPOINTS
 	# define filenames

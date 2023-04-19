@@ -216,6 +216,7 @@ def call_breakpoints(clustered_breakpoints, buffer):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints must be from same chromosome!
 	final_breakpoints = []
+	pruned_clusters = {}
 	# call validated insertions
 	bp_type = "<INS>"
 	for insertion_cluster in clustered_breakpoints[bp_type]:
@@ -232,11 +233,12 @@ def call_breakpoints(clustered_breakpoints, buffer):
 		final_breakpoints.append(ConsensusBreakpoint(
 			[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
 			"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
+		pruned_clusters.setdefault(bp_type, []).append(insertion_cluster)
 
 	# call all other types
 	for bp_type in ["+-", "++", "-+", "--"]:
 		for cluster in clustered_breakpoints[bp_type]:
-			# combine duplicate events
+			# separate breakpoints by end chrom
 			per_end_chrom = {}
 			for bp in cluster.breakpoints:
 				if bp.end_chr not in per_end_chrom:
@@ -277,11 +279,21 @@ def call_breakpoints(clustered_breakpoints, buffer):
 					label_counts = count_num_labels(end_cluster_breakpoints)
 					median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
 					median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
+					# need to create a new "originating cluster" with only the used breakpoints
+					# this ensures that the statistics are calculated correctly
+					new_start_cluster = None
+					for bp in end_cluster_breakpoints:
+						if not new_start_cluster:
+							new_start_cluster = Cluster(reversed(bp))
+						else:
+							new_start_cluster.add(reversed(bp))
 					final_breakpoints.append(ConsensusBreakpoint(
 						[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-						bp_type, cluster, end_cluster, label_counts, bp_type))
+						bp_type, new_start_cluster, end_cluster, label_counts, bp_type))
+					pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
+					pruned_clusters.setdefault(bp_type, []).append(end_cluster)
 
-	return final_breakpoints
+	return final_breakpoints, pruned_clusters
 
 if __name__ == "__main__":
 	print("Breakpoint Functions")
