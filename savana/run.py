@@ -115,7 +115,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
 	# 3) CALL BREAKPOINTS
-	breakpoints, pruned_clusters = call_breakpoints(clusters, args.buffer)
+	breakpoints, pruned_clusters = call_breakpoints(clusters, args.buffer, args.length)
 	if args.debug:
 		helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 	# 4) ADD LOCAL DEPTH TO BREAKPOINTS

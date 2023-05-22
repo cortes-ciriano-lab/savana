@@ -212,7 +212,7 @@ def add_local_depth(breakpoints, bam_filenames):
 				bp.local_depths.setdefault(label,[]).append(str(len(reads)))
 	return breakpoints
 
-def call_breakpoints(clustered_breakpoints, buffer):
+def call_breakpoints(clustered_breakpoints, buffer, min_length):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints must be from same chromosome!
 	final_breakpoints = []
@@ -287,11 +287,13 @@ def call_breakpoints(clustered_breakpoints, buffer):
 							new_start_cluster = Cluster(reversed(bp))
 						else:
 							new_start_cluster.add(reversed(bp))
-					final_breakpoints.append(ConsensusBreakpoint(
+					new_breakpoint = ConsensusBreakpoint(
 						[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-						bp_type, new_start_cluster, end_cluster, label_counts, bp_type))
-					pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
-					pruned_clusters.setdefault(bp_type, []).append(end_cluster)
+						bp_type, new_start_cluster, end_cluster, label_counts, bp_type)
+					if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
+						final_breakpoints.append(new_breakpoint)
+						pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
+						pruned_clusters.setdefault(bp_type, []).append(end_cluster)
 
 	return final_breakpoints, pruned_clusters
 
