@@ -19,6 +19,8 @@ import pysam
 
 import savana.run as run
 import savana.evaluate as evaluate
+import savana.train as train
+import savana.classify as classify
 import savana.helper as helper
 from savana.breakpoints import *
 from savana.clusters import *
@@ -93,6 +95,24 @@ def savana_evaluate(args):
 	evaluate.evaluate_vcf(args)
 	print("Done.")
 
+def savana_train(args):
+	""" main function for savana train """
+	outdir = helper.check_outdir(args.outdir)
+	data_matrix = None
+	if args.vcfs:
+		# read in and create matrix from VCF files
+		data_matrix = train.read_vcfs(args)
+	elif args.load_matrix:
+		# load data matrix from pickle file
+		data_matrix = train.load_matrix(args)
+	features, target = train.prepare_data(data_matrix, multiclass=args.multiclass)
+	classifier = train.fit_classifier(features, target, outdir, split=0.2, downsample=args.downsample, hyperparameter=args.hyper, multiclass=args.multiclass)
+	train.save_model(args, classifier, outdir)
+
+def savana_classify(args):
+	""" main function for savana classify """
+	data_matrix = classify.load_vcf(args)
+
 def savana_main(args):
 	""" default workflow for savana: savana_run, savana_classify """
 	savana_run(args)
@@ -130,7 +150,34 @@ def main():
 	evaluate_parser.add_argument('--buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
 	evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
 	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired (stdout otherwise)')
+	group = evaluate_parser.add_mutually_exclusive_group()
+	group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
+	group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
 	evaluate_parser.set_defaults(func=savana_evaluate)
+
+	# savana train
+	train_parser = subparsers.add_parser("train", help="train model on folder of input VCFs")
+	group = train_parser.add_mutually_exclusive_group()
+	group.add_argument('--vcfs', nargs='?', type=str, required=False, help='Folder of labelled VCF files to read in')
+	group.add_argument('--load_matrix', nargs='?', type=str, required=False, help='Pre-loaded pickle file of VCFs')
+	#TODO: implement the recurisve functionality lol whoops
+	train_parser.add_argument('--downsample', nargs='?', type=float, default=0.5, help='Fraction to downsample majority class by')
+	train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs')
+	train_parser.add_argument('--multiclass', action='store_true', help='Split the GERMLINE and SOMATIC labels so there are three classes')
+	train_parser.add_argument('--hyper', action='store_true', help='Perform a randomised search on hyper parameters and use best')
+	train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+	train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
+	train_parser.set_defaults(func=savana_train)
+
+	# savana classify
+	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
+	group = classify_parser.add_mutually_exclusive_group()
+	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
+	group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
+	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
+
+	classify_parser.set_defaults(func=savana_classify)
 
 	try:
 		global_parser.exit_on_error = False
