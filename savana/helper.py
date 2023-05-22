@@ -9,11 +9,12 @@ Hillary Elrick
 import re
 import os
 import csv
+import sys
 
 from time import time
 from datetime import datetime
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -302,6 +303,16 @@ def get_local_coverage(chrom, start, end, bam_files):
 
 	return coverages
 
+def check_outdir(args_outdir):
+	# create output dir if it doesn't exist
+	outdir = os.path.join(os.getcwd(), args_outdir)
+	if not os.path.exists(outdir):
+		print(f'Creating directory {outdir} to store results')
+		os.mkdir(outdir)
+	elif os.listdir(outdir):
+		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+
+	return outdir
 
 if __name__ == "__main__":
 	print("Helper functions for SAVANA")

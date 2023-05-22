@@ -37,13 +37,7 @@ def savana_run(args):
 		# set sample name to default if req.
 		args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
 	print(f'Running as sample {args.sample}')
-	# create output dir if it doesn't exist
-	outdir = os.path.join(os.getcwd(), args.outdir)
-	if not os.path.exists(outdir):
-		print(f'Creating directory {outdir} to store results')
-		os.mkdir(outdir)
-	elif os.listdir(outdir):
-		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	outdir = helper.check_outdir(args.outir)
 	# set number of threads to cpu count if none set
 	if not args.threads:
 		args.threads = cpu_count()
