@@ -39,7 +39,7 @@ def savana_run(args):
 		# set sample name to default if req.
 		args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
 	print(f'Running as sample {args.sample}')
-	outdir = helper.check_outdir(args.outir)
+	outdir = helper.check_outdir(args.outdir)
 	# set number of threads to cpu count if none set
 	if not args.threads:
 		args.threads = cpu_count()
