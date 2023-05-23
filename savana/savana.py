@@ -111,7 +111,10 @@ def savana_train(args):
 
 def savana_classify(args):
 	""" main function for savana classify """
-	data_matrix = classify.load_vcf(args)
+	print(f'Classifying "{args.vcf}"')
+	print(f'Using model "{args.model}"')
+	classify.classify_vcf(args)
+	print(f'Output classified VCF to {args.output}')
 
 def savana_main(args):
 	""" default workflow for savana: savana_run, savana_classify """

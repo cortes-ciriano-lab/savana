@@ -13,15 +13,6 @@ import numpy as np
 import cyvcf2
 import pickle
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import *
-from sklearn.model_selection import RandomizedSearchCV, train_test_split
-from scipy.stats import randint
-
-# Tree Visualisation
-import matplotlib.pyplot as plt
-from sklearn.tree import plot_tree
-
 from multiprocessing import Pool
 from functools import partial
 from collections import ChainMap
@@ -64,7 +55,7 @@ def predict(data_matrix, features_to_drop, model):
 
 	return prediction_dict
 
-def load_vcf(args):
+def classify_vcf(args):
 	""" read VCF into a dataframe """
 	data = []
 	input_vcf = cyvcf2.VCF(args.vcf)
@@ -76,7 +67,6 @@ def load_vcf(args):
 		data.append(row)
 	data_matrix = pd.DataFrame(data, columns = header)
 	data_matrix = train.format_data(data_matrix)
-	#ids, features = format_data(data_matrix)
 	loaded_model = pickle.load(open(args.model, "rb"))
 	features_to_drop = [
 		'ID', 'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
@@ -85,7 +75,7 @@ def load_vcf(args):
 	prediction_dict = pool_predict(data_matrix, features_to_drop, loaded_model, 20)
 	# output vcf using modified input_vcf as template
 	input_vcf = cyvcf2.VCF(args.vcf)
-	desc_string = str(f'Variant class (PREDICTED_TRUE or PREDICTED_FALSE) from model {args.model}')
+	desc_string = str(f'Variant class prediction from model {args.model}')
 	input_vcf.add_info_to_header({
 		'ID': 'CLASS',
 		'Type': 'String',
@@ -113,8 +103,12 @@ def load_vcf(args):
 				# update the INFO field if all sanity checks pass
 				variant.INFO['CLASS'] = 'PREDICTED_SOMATIC'
 		elif variant_prediction == 2:
-			# update the INFO field
-			variant.INFO['CLASS'] = 'PREDICTED_GERMLINE'
+			# perform sanity checks on the model label
+			if (variant.INFO['NORMAL_SUPPORT']+variant.INFO['TUMOUR_SUPPORT']) <= 3:
+				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+			else:
+				# update the INFO field if sanity check passes
+				variant.INFO['CLASS'] = 'PREDICTED_GERMLINE'
 		else:
 			# update the FILTER column
 			variant.FILTER = 'LIKELY_NOISE'

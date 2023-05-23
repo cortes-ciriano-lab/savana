@@ -197,6 +197,7 @@ def save_model(args, model, outdir):
 	""" save model and its info to pickle file """
 	model_path = os.path.join(outdir, 'random_forest_model.pkl')
 	print(f'Saving classifier to {model_path}')
+	model.set_params(n_jobs=1) # reset jobs before saving
 	pickle.dump(model, open(model_path, "wb"))
 	# also save arguments used to create model
 	cmd_string = 'savana train'
