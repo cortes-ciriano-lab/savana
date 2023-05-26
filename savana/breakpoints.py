@@ -202,68 +202,70 @@ def call_breakpoints(clustered_breakpoints, buffer):
 	final_breakpoints = []
 	# call validated insertions
 	bp_type = "<INS>"
-	for insertion_cluster in clustered_breakpoints[bp_type]:
-		# average out the start/end, keep longest insertion sequence
-		starts, ends = [], []
-		longest_seq = ''
-		for bp in insertion_cluster.breakpoints:
-			starts.append(bp.start_loc)
-			ends.append(bp.end_loc)
-			if len(bp.inserted_sequence) > len(longest_seq):
-				longest_seq = bp.inserted_sequence
-		source_breakpoints = insertion_cluster.breakpoints
-		label_counts = count_num_labels(source_breakpoints)
-		final_breakpoints.append(ConsensusBreakpoint(
-			[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
-			"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
+    if bp_type in clustered_breakpoints:
+        for insertion_cluster in clustered_breakpoints[bp_type]:
+            # average out the start/end, keep longest insertion sequence
+            starts, ends = [], []
+            longest_seq = ''
+            for bp in insertion_cluster.breakpoints:
+                starts.append(bp.start_loc)
+                ends.append(bp.end_loc)
+                if len(bp.inserted_sequence) > len(longest_seq):
+                    longest_seq = bp.inserted_sequence
+            source_breakpoints = insertion_cluster.breakpoints
+            label_counts = count_num_labels(source_breakpoints)
+            final_breakpoints.append(ConsensusBreakpoint(
+                [{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
+                "INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
 
 	# call all other types
 	for bp_type in ["+-", "++", "-+", "--"]:
-		for cluster in clustered_breakpoints[bp_type]:
-			# combine duplicate events
-			per_end_chrom = {}
-			for bp in cluster.breakpoints:
-				if bp.end_chr not in per_end_chrom:
-					per_end_chrom[bp.end_chr] = {
-						'starts': [bp.start_loc],
-						'ends': [bp.end_loc],
-						'breakpoints': [bp],
-						'originating_cluster': cluster
-					}
-				else:
-					per_end_chrom[bp.end_chr]['starts'].append(bp.start_loc)
-					per_end_chrom[bp.end_chr]['ends'].append(bp.end_loc)
-					per_end_chrom[bp.end_chr]['breakpoints'].append(bp)
+        if bp_type in clustered_breakpoints:
+            for cluster in clustered_breakpoints[bp_type]:
+                # combine duplicate events
+                per_end_chrom = {}
+                for bp in cluster.breakpoints:
+                    if bp.end_chr not in per_end_chrom:
+                        per_end_chrom[bp.end_chr] = {
+                            'starts': [bp.start_loc],
+                            'ends': [bp.end_loc],
+                            'breakpoints': [bp],
+                            'originating_cluster': cluster
+                        }
+                    else:
+                        per_end_chrom[bp.end_chr]['starts'].append(bp.start_loc)
+                        per_end_chrom[bp.end_chr]['ends'].append(bp.end_loc)
+                        per_end_chrom[bp.end_chr]['breakpoints'].append(bp)
 
-			# cluster by end location
-			for _, end_chrom_info in per_end_chrom.items():
-				# flip original breakpoints
-				source_breakpoints = [reversed(b) for b in end_chrom_info['breakpoints']]
-				if len(source_breakpoints) > 1:
-					# sort by "start" - which is actually end
-					source_breakpoints.sort()
-				# cluster sorted breakpoints
-				cluster_stack = []
-				for bp in source_breakpoints:
-					new_cluster = False
-					if len(cluster_stack) == 0 or not (cluster_stack[-1].start - bp.start_loc) < buffer:
-						# put a new cluster onto top of stack
-						new_cluster = Cluster(bp)
-						cluster_stack.append(new_cluster)
-						new_cluster = True
-					else:
-						# append to cluster on top of stack
-						cluster_stack[-1].add(bp)
-				for end_cluster in cluster_stack:
-					# create ConsensusBreakpoint per end_cluster
-					end_cluster_breakpoints = end_cluster.breakpoints
-					label_counts = count_num_labels(end_cluster_breakpoints)
-					median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
-					median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
+                # cluster by end location
+                for _, end_chrom_info in per_end_chrom.items():
+                    # flip original breakpoints
+                    source_breakpoints = [reversed(b) for b in end_chrom_info['breakpoints']]
+                    if len(source_breakpoints) > 1:
+                        # sort by "start" - which is actually end
+                        source_breakpoints.sort()
+                    # cluster sorted breakpoints
+                    cluster_stack = []
+                    for bp in source_breakpoints:
+                        new_cluster = False
+                        if len(cluster_stack) == 0 or not (cluster_stack[-1].start - bp.start_loc) < buffer:
+                            # put a new cluster onto top of stack
+                            new_cluster = Cluster(bp)
+                            cluster_stack.append(new_cluster)
+                            new_cluster = True
+                        else:
+                            # append to cluster on top of stack
+                            cluster_stack[-1].add(bp)
+                    for end_cluster in cluster_stack:
+                        # create ConsensusBreakpoint per end_cluster
+                        end_cluster_breakpoints = end_cluster.breakpoints
+                        label_counts = count_num_labels(end_cluster_breakpoints)
+                        median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
+                        median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
 
-					final_breakpoints.append(ConsensusBreakpoint(
-						[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-						bp_type, cluster, end_cluster, label_counts, bp_type))
+                        final_breakpoints.append(ConsensusBreakpoint(
+                            [{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
+                            bp_type, cluster, end_cluster, label_counts, bp_type))
 
 	return final_breakpoints
 
