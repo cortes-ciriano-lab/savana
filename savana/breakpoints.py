@@ -212,7 +212,7 @@ def add_local_depth(breakpoints, bam_filenames):
 				bp.local_depths.setdefault(label,[]).append(str(len(reads)))
 	return breakpoints
 
-def call_breakpoints(clustered_breakpoints, buffer, min_length):
+def call_breakpoints(clustered_breakpoints, buffer, min_length, min_depth):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints must be from same chromosome!
 	final_breakpoints = []
@@ -230,11 +230,11 @@ def call_breakpoints(clustered_breakpoints, buffer, min_length):
 				longest_seq = bp.inserted_sequence
 		source_breakpoints = insertion_cluster.breakpoints
 		label_counts = count_num_labels(source_breakpoints)
-		final_breakpoints.append(ConsensusBreakpoint(
-			[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
-			"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
-		pruned_clusters.setdefault(bp_type, []).append(insertion_cluster)
-
+		if max([len(v) for v in label_counts.values()]) >= min_depth and len(longest_seq) > min_length:
+			final_breakpoints.append(ConsensusBreakpoint(
+				[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
+				"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
+			pruned_clusters.setdefault(bp_type, []).append(insertion_cluster)
 	# call all other types
 	for bp_type in ["+-", "++", "-+", "--"]:
 		for cluster in clustered_breakpoints[bp_type]:
@@ -287,13 +287,14 @@ def call_breakpoints(clustered_breakpoints, buffer, min_length):
 							new_start_cluster = Cluster(reversed(bp))
 						else:
 							new_start_cluster.add(reversed(bp))
-					new_breakpoint = ConsensusBreakpoint(
-						[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-						bp_type, new_start_cluster, end_cluster, label_counts, bp_type)
-					if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
-						final_breakpoints.append(new_breakpoint)
-						pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
-						pruned_clusters.setdefault(bp_type, []).append(end_cluster)
+					if max([len(v) for v in label_counts.values()]) >= min_depth:
+						new_breakpoint = ConsensusBreakpoint(
+							[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
+							bp_type, new_start_cluster, end_cluster, label_counts, bp_type)
+						if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
+							final_breakpoints.append(new_breakpoint)
+							pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
+							pruned_clusters.setdefault(bp_type, []).append(end_cluster)
 
 	return final_breakpoints, pruned_clusters
 
