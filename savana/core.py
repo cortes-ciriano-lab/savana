@@ -57,11 +57,32 @@ class ConsensusBreakpoint():
 			"inserted_sequence": self.inserted_sequence,
 			"source": self.source,
 			"originating_cluster": self.originating_cluster.uid,
-			"end_cluster": self.end_cluster,
+			"end_cluster": self.end_cluster.uid,
 			"labels": "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()]),
 			"breakpoint_notation": self.breakpoint_notation
 		}
 		return self_dict
+
+	def as_bed(self):
+		""" return bed line(s) plus buffer of breakpoint """
+		# TODO: get length of chroms here so don't extend past
+		bed_lines = [[
+			self.start_chr,
+			str(max(self.start_loc, 0)),
+			str(max(self.start_loc+1, 0)),
+			str(self.uid),
+			'0' # 0th edge
+		]]
+		if self.breakpoint_notation != "<INS>":
+			bed_lines.append([
+				self.end_chr,
+				str(max(self.end_loc, 0)),
+				str(max(self.end_loc+1, 0)),
+				str(self.uid),
+				'1' # 1st edge
+			])
+
+		return "\n".join("\t".join(l) for l in bed_lines)+"\n"
 
 	def as_bedpe(self, count):
 		""" return bedpe line(s) representation of breakpoint """
@@ -247,7 +268,7 @@ class ConsensusBreakpoint():
 
 class PotentialBreakpoint():
 	""" class for a potential breakpoint identified from a CIGAR string or split-read """
-	def __init__(self, locations, source, read, label, breakpoint_notation, insert=None):
+	def __init__(self, locations, source, read_name, read_quality, label, breakpoint_notation, insert=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
@@ -257,8 +278,8 @@ class PotentialBreakpoint():
 		self.source = source # SUPP, INS, or DEL
 		if source == 'INS' and not insert:
 			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
-		self.read_name = read.query_name
-		self.mapq = read.mapping_quality
+		self.read_name = read_name
+		self.mapq = read_quality
 		self.label = label
 		self.breakpoint_notation = breakpoint_notation
 

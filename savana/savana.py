@@ -9,11 +9,10 @@ Hillary Elrick
 import sys
 import os
 import argparse
+import json
 
 from time import time
-from math import ceil
-from pathlib import Path
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 
 import pysam
 
@@ -22,8 +21,6 @@ import savana.evaluate as evaluate
 import savana.train as train
 import savana.classify as classify
 import savana.helper as helper
-from savana.breakpoints import *
-from savana.clusters import *
 
 logo = """
 ███████  █████  ██    ██  █████  ███    ██  █████
@@ -65,14 +62,19 @@ def savana_run(args):
 	consensus_clusters, breakpoints, checkpoints, time_str = run.spawn_processes(args, bam_files, checkpoints, time_str, outdir)
 	# write debugging files
 	if args.debug:
-		run.write_cluster_bed(consensus_clusters, outdir)
-		run.calculate_cluster_stats(consensus_clusters, outdir)
+		write_cluster_bed(consensus_clusters, outdir)
+		calculate_cluster_stats(consensus_clusters, outdir)
 	# finish timing
-	helper.time_function("Total time", checkpoints, time_str, final=True)
-	f = open(os.path.join(outdir, 'time.log'), "w+")
-	f.write("\n".join(time_str))
-	f.write("\n")
-	f.close()
+	helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
+
+def savana_classify(args):
+	""" main function for savana classify """
+	# initialize timing
+	checkpoints = [time()]
+	time_str = []
+	classify.classify_vcf(args, checkpoints, time_str)
+	# finish timing
+	helper.time_function("Total time to classify variants", checkpoints, time_str, final=True)
 
 def savana_evaluate(args):
 	""" main function for savana evaluate """
@@ -90,10 +92,13 @@ def savana_evaluate(args):
 		else:
 			vcf_string += f' and germline vcf: "{args.germline}"'
 
+	# initialize timing
+	checkpoints = [time()]
+	time_str = []
 	# perform validation
-	print(f'Evaluating "{args.input}" against {vcf_string}')
-	evaluate.evaluate_vcf(args)
-	print("Done.")
+	evaluate.evaluate_vcf(args, checkpoints, time_str)
+	# finish timing
+	helper.time_function("Total time to evaluate variants", checkpoints, time_str, final=True)
 
 def savana_train(args):
 	""" main function for savana train """
@@ -109,16 +114,30 @@ def savana_train(args):
 	classifier = train.fit_classifier(features, target, outdir, split=0.2, downsample=args.downsample, hyperparameter=args.hyper, multiclass=args.multiclass)
 	train.save_model(args, classifier, outdir)
 
-def savana_classify(args):
-	""" main function for savana classify """
-	print(f'Classifying "{args.vcf}"')
-	print(f'Using model "{args.model}"')
-	classify.classify_vcf(args)
-	print(f'Output classified VCF to {args.output}')
-
 def savana_main(args):
-	""" default workflow for savana: savana_run, savana_classify """
+	""" default workflow for savana: savana_run, savana_classify, savana_evaluate """
+	# call raw breakpoints
 	savana_run(args)
+	# get the input VCF for classification
+	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
+	if not args.model and not args.params:
+		# use ONT somatic only model by default
+		from pathlib import Path
+		args.model = os.path.join(Path(__file__).parent.parent.absolute(),'package_models/ONT-somatic-only.pkl')
+		print(f'Using ONT somatic only model "{args.model}" to classify variants')
+	# set the output VCF location
+	args.output = os.path.join(args.outdir,f'{args.sample}.classified.sv_breakpoints.vcf')
+	if not args.somatic_output:
+		args.somatic_output = os.path.join(args.outdir,f'{args.sample}.somatic.vcf')
+	savana_classify(args)
+	if args.somatic:
+		# evaluate against somatic/germline VCFs
+		# set the input vcf as previous output
+		args.input = args.output
+		args.output = os.path.join(args.outdir,f'{args.sample}.evaluation.sv_breakpoints.vcf')
+		args.stats = os.path.join(args.outdir,f'{args.sample}.evaluation.stats')
+		savana_evaluate(args)
+
 
 def main():
 	""" main function for SAVANA - collects command line arguments and executes algorithm """
@@ -146,12 +165,22 @@ def main():
 	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 	run_parser.set_defaults(func=savana_run)
 
+	# savana classify
+	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
+	group = classify_parser.add_mutually_exclusive_group()
+	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
+	group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
+	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
+	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
+	classify_parser.set_defaults(func=savana_classify)
+
 	# savana evaluate
 	evaluate_parser = subparsers.add_parser("evaluate", help="label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against")
 	evaluate_parser.add_argument('--input', nargs='?', type=str, required=True, help='VCF file to evaluate')
 	evaluate_parser.add_argument('--somatic', nargs='?', type=str, required=True, help='Somatic VCF file to evaluate against')
 	evaluate_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
-	evaluate_parser.add_argument('--buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
+	evaluate_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
 	evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
 	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired (stdout otherwise)')
 	group = evaluate_parser.add_mutually_exclusive_group()
@@ -173,16 +202,6 @@ def main():
 	train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
 	train_parser.set_defaults(func=savana_train)
 
-	# savana classify
-	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
-	group = classify_parser.add_mutually_exclusive_group()
-	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
-	group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
-	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
-	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
-
-	classify_parser.set_defaults(func=savana_classify)
-
 	try:
 		global_parser.exit_on_error = False
 		subparser = global_parser.parse_args().command
@@ -190,7 +209,7 @@ def main():
 		# unable to parse args, set args to None
 		subparser = None
 	if not subparser:
-		# arguments for default, main savana process
+		# arguments for default, main savana process: run, classify, evaluate
 		global_parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
 		global_parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
 		global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
@@ -205,6 +224,18 @@ def main():
 		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 		global_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
 		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+		# classify args
+		classify_group = global_parser.add_mutually_exclusive_group()
+		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model to classify with (default=ONT-somatic-only)')
+		classify_group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
+		# evaluate args
+		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
+		global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
+		global_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, required=False, help='Buffer for considering an overlap (default=100)')
+		evaluate_group = global_parser.add_mutually_exclusive_group()
+		evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
+		evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
 		global_parser.set_defaults(func=savana_main)
 		args = global_parser.parse_args()
 	else:

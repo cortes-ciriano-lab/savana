@@ -105,13 +105,13 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			continue
 		if start['chr'] == end['chr']:
 			if start['loc'] < end['loc']:
-				supplementary_breakpoints.append(PotentialBreakpoint([start, end], "SUPP", read, label, "".join((start['bp_notation'], end['bp_notation']))))
+				supplementary_breakpoints.append(PotentialBreakpoint([start, end], "SUPP", read.query_name, read.mapping_quality, label, "".join((start['bp_notation'], end['bp_notation']))))
 			else:
-				supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read, label, "".join((end['bp_notation'], start['bp_notation']))))
+				supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read.query_name, read.mapping_quality, label, "".join((end['bp_notation'], start['bp_notation']))))
 		elif contig_order.index(start['chr']) <= contig_order.index(end['chr']):
-			supplementary_breakpoints.append(PotentialBreakpoint([start, end], "SUPP", read, label, "".join((start['bp_notation'], end['bp_notation']))))
+			supplementary_breakpoints.append(PotentialBreakpoint([start, end], "SUPP", read.query_name, read.mapping_quality, label, "".join((start['bp_notation'], end['bp_notation']))))
 		elif start['loc'] < end['loc']:
-			supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read, label, "".join((end['bp_notation'], start['bp_notation']))))
+			supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read.query_name, read.mapping_quality, label, "".join((end['bp_notation'], start['bp_notation']))))
 	return supplementary_breakpoints
 
 #TODO oneline the dict begin/append
@@ -165,11 +165,11 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 				]
 				if prev_deletion:
 					# record and clear the previously tracked deletion
-					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read, label, "+-"))
+					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
 					prev_deletion = []
 				# record the insertion
 				inserted_sequence = read.query_sequence[curr_pos['query']:(curr_pos['query']+length)]
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "INS", read, label, "<INS>", inserted_sequence))
+				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "INS", read.query_name, read.mapping_quality, label, "<INS>", inserted_sequence))
 			elif sam_flag == helper.samflag_desc_to_number["BAM_CDEL"] and length > args_length:
 				# deletion has one breakpoint (read->read)
 				if prev_deletion:
@@ -182,7 +182,7 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 					]
 			elif prev_deletion and length > args_length:
 				# record and clear the previously tracked deletion
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read, label, "+-"))
+				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
 				prev_deletion = []
 			# increment values
 			curr_pos['cigar'] += length
@@ -192,111 +192,199 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 				curr_pos['reference'] += length
 		if prev_deletion:
 			# if reached end of string and no chance to expand deletion, add it
-			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read, label, "+-"))
+			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
+
+	bam_file.close()
 
 	return potential_breakpoints
 
-def add_local_depth(breakpoints, bam_filenames):
+def add_local_depth(intervals, bam_filenames):
+	""" given intervals and uids, get the local depth for each interval """
+
+	if True:
+		uid_dp_dict = {}
+		chrom = intervals[0][0]
+		start = int(intervals[0][1]) # first start
+		end = int(intervals[-1][2]) # last end
+		read_stats = {}
+		for bam_type, bam_filename in bam_filenames.items():
+			bam_file = pysam.AlignmentFile(bam_filename, "rb")
+			read_stats[bam_type] = []
+			#print(f'Opening {bam_type} file from {chrom}:{start}-{end} for {len(intervals)} Intervals')
+			for read in bam_file.fetch(chrom, start, end):
+				if read.mapping_quality == 0 or read.is_duplicate:
+					continue
+				read_stats[bam_type].append([int(read.reference_start), int(read.reference_length)])
+				del read
+			bam_file.close()
+			del bam_file
+			#print(f'Done with {bam_type} file from {chrom}:{start}-{end} for {len(intervals)} Intervals')
+		#print(f'Calculating DP for {len(intervals)} Intervals')
+		for i in intervals:
+			uid = i[3]
+			interval_end = int(i[2])
+			edge = int(i[4])
+			for bam_type, reads in read_stats.items():
+				subtraction = [((interval_end-r[0])+r[1]) for r in reads]
+				dp = sum(1 for x in subtraction if x >= 0)
+				if uid not in uid_dp_dict:
+					uid_dp_dict[uid] = {}
+				if bam_type not in uid_dp_dict[uid]:
+					uid_dp_dict[uid][bam_type] = [None, None]
+				uid_dp_dict[uid][bam_type][edge] = str(dp)
+		#print(f'Done calculating DP for {len(intervals)} Intervals')
+
+	else:
+		# ALTERNATELY
+		uid_dp_dict = {}
+		for bam_type, bam_filename in bam_filenames.items():
+			bam_file = pysam.AlignmentFile(bam_filename, "rb")
+			for i in intervals:
+				i_chrom, i_start, i_end, uid, edge = i
+				reads = [read for read in bam_file.fetch(i_chrom, int(i_start), int(i_end))]
+				reads = [read for read in reads if not read.is_duplicate and read.mapping_quality >= 0]
+				if uid not in uid_dp_dict:
+					uid_dp_dict[uid] = {}
+				if bam_type not in uid_dp_dict[uid]:
+					uid_dp_dict[uid][bam_type] = [None, None]
+				uid_dp_dict[uid][bam_type][int(edge)] = str(len(reads))
+
+
+	return uid_dp_dict
+
+def add_local_depth_old(breakpoints, bam_filenames):
 	""" given breakpoints, add the local depth of tumour/normal """
 	for label, bam_filename in bam_filenames.items():
 		bam_file = pysam.AlignmentFile(bam_filename, "rb")
-		for bp in breakpoints:
-			""" e.g.) {'tumour': [start_depth, end_depth], 'normal': [start_depth, end_depth]} """
-			reads = [read for read in bam_file.fetch(bp.start_chr, bp.start_loc, bp.start_loc+1, multiple_iterators=True)]
-			reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
-			bp.local_depths.setdefault(label,[]).append(str(len(reads)))
-			if not bp.source == "INS":
-				# add the second edge (append to list)
-				reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1, multiple_iterators=True)]
+		option_one=False
+		option_two=False
+		if option_one:
+			for bp in breakpoints:
+					coverage = bam_file.count_coverage(bp.start_chr, bp.start_loc-1, bp.start_loc)
+					bp.local_depths.setdefault(label,[]).append(str(np.sum(coverage)))
+					if not bp.source == "INS":
+						# add the second edge (append to list)
+						coverage = bam_file.count_coverage(bp.end_chr, bp.end_loc-1, bp.end_loc)
+						bp.local_depths.setdefault(label,[]).append(str(np.sum(coverage)))
+		elif option_two:
+			for bp in breakpoints:
+				got_dp = False
+				for pileupcolumn in bam_file.pileup(bp.start_chr, bp.start_loc-1, bp.start_loc, min_mapping_quality=0, ignore_overlaps=False):
+					if pileupcolumn.pos == bp.start_loc - 1:
+						bp.local_depths.setdefault(label,[]).append(str(pileupcolumn.n))
+						got_dp = True
+						continue
+				if not got_dp:
+					bp.local_depths.setdefault(label,[]).append(str(0))
+				if not bp.source == "INS":
+					# add the second edge (append to list)
+					got_dp = False
+					for pileupcolumn in bam_file.pileup(bp.end_chr, bp.end_loc-1, bp.end_loc, min_mapping_quality=0, ignore_overlaps=False):
+						if pileupcolumn.pos == bp.end_loc - 1:
+							bp.local_depths.setdefault(label,[]).append(str(pileupcolumn.n))
+							got_dp = True
+							continue
+					if not got_dp:
+						bp.local_depths.setdefault(label,[]).append(str(0))
+		else:
+			for bp in breakpoints:
+				""" e.g.) {'tumour': [start_depth, end_depth], 'normal': [start_depth, end_depth]} """
+				#reads = [read for read in bam_file.fetch(bp.start_chr, bp.start_loc, bp.start_loc+1, multiple_iterators=True)]
+				reads = [read for read in bam_file.fetch(bp.start_chr, bp.start_loc, bp.start_loc+1)]
 				reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
 				bp.local_depths.setdefault(label,[]).append(str(len(reads)))
+				if not bp.source == "INS":
+					# add the second edge (append to list)
+					#reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1, multiple_iterators=True)]
+					reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1)]
+					reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
+					bp.local_depths.setdefault(label,[]).append(str(len(reads)))
 	return breakpoints
 
-def call_breakpoints(clustered_breakpoints, buffer, min_length, min_depth):
+def call_breakpoints(clustered_breakpoints, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """
-	# N.B. all breakpoints must be from same chromosome!
+	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
 	pruned_clusters = {}
-	# call validated insertions
-	bp_type = "<INS>"
-	for insertion_cluster in clustered_breakpoints[bp_type]:
-		# average out the start/end, keep longest insertion sequence
-		starts, ends = [], []
-		longest_seq = ''
-		for bp in insertion_cluster.breakpoints:
-			starts.append(bp.start_loc)
-			ends.append(bp.end_loc)
-			if len(bp.inserted_sequence) > len(longest_seq):
-				longest_seq = bp.inserted_sequence
-		source_breakpoints = insertion_cluster.breakpoints
-		label_counts = count_num_labels(source_breakpoints)
-		if max([len(v) for v in label_counts.values()]) >= min_depth and len(longest_seq) > min_length:
-			final_breakpoints.append(ConsensusBreakpoint(
-				[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
-				"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
-			pruned_clusters.setdefault(bp_type, []).append(insertion_cluster)
-	# call all other types
-	for bp_type in ["+-", "++", "-+", "--"]:
+	for bp_type in clustered_breakpoints.keys():
 		for cluster in clustered_breakpoints[bp_type]:
-			# separate breakpoints by end chrom
-			per_end_chrom = {}
-			for bp in cluster.breakpoints:
-				if bp.end_chr not in per_end_chrom:
-					per_end_chrom[bp.end_chr] = {
-						'starts': [bp.start_loc],
-						'ends': [bp.end_loc],
-						'breakpoints': [bp],
-						'originating_cluster': cluster
-					}
-				else:
-					per_end_chrom[bp.end_chr]['starts'].append(bp.start_loc)
-					per_end_chrom[bp.end_chr]['ends'].append(bp.end_loc)
-					per_end_chrom[bp.end_chr]['breakpoints'].append(bp)
-
-			# cluster by end location
-			for _, end_chrom_info in per_end_chrom.items():
-				# flip original breakpoints
-				source_breakpoints = [reversed(b) for b in end_chrom_info['breakpoints']]
-				if len(source_breakpoints) > 1:
-					# sort by "start" - which is actually end
-					source_breakpoints.sort()
-				# cluster sorted breakpoints
-				cluster_stack = []
-				for bp in source_breakpoints:
-					new_cluster = False
-					if len(cluster_stack) == 0 or not (cluster_stack[-1].start - bp.start_loc) < buffer:
-						# put a new cluster onto top of stack
-						new_cluster = Cluster(bp)
-						cluster_stack.append(new_cluster)
-						new_cluster = True
+			if bp_type == "<INS>":
+				# call validated insertions
+				for insertion_cluster in clustered_breakpoints[bp_type]:
+					# average out the start/end, keep longest insertion sequence
+					starts, ends = [], []
+					longest_seq = ''
+					for bp in insertion_cluster.breakpoints:
+						starts.append(bp.start_loc)
+						ends.append(bp.end_loc)
+						if len(bp.inserted_sequence) > len(longest_seq):
+							longest_seq = bp.inserted_sequence
+					source_breakpoints = insertion_cluster.breakpoints
+					label_counts = count_num_labels(source_breakpoints)
+					if max([len(v) for v in label_counts.values()]) >= min_depth and len(longest_seq) > min_length:
+						final_breakpoints.append(ConsensusBreakpoint(
+							[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
+							"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
+						pruned_clusters.setdefault(bp_type, []).append(insertion_cluster)
+			else:
+				# call all other types
+				per_end_chrom = {}
+				# separate breakpoints by end chrom
+				for bp in cluster.breakpoints:
+					if bp.end_chr not in per_end_chrom:
+						per_end_chrom[bp.end_chr] = {
+							'starts': [bp.start_loc],
+							'ends': [bp.end_loc],
+							'breakpoints': [bp],
+							'originating_cluster': cluster
+						}
 					else:
-						# append to cluster on top of stack
-						cluster_stack[-1].add(bp)
-				#TODO: should we only allow if there's > 1?
-				for end_cluster in cluster_stack:
-					# create ConsensusBreakpoint per end_cluster
-					end_cluster_breakpoints = end_cluster.breakpoints
-					label_counts = count_num_labels(end_cluster_breakpoints)
-					median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
-					median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
-					# need to create a new "originating cluster" with only the used breakpoints
-					# this ensures that the statistics are calculated correctly
-					new_start_cluster = None
-					for bp in end_cluster_breakpoints:
-						if not new_start_cluster:
-							new_start_cluster = Cluster(reversed(bp))
+						per_end_chrom[bp.end_chr]['starts'].append(bp.start_loc)
+						per_end_chrom[bp.end_chr]['ends'].append(bp.end_loc)
+						per_end_chrom[bp.end_chr]['breakpoints'].append(bp)
+				# cluster by end location
+				for _, end_chrom_info in per_end_chrom.items():
+					# flip original breakpoints
+					source_breakpoints = [reversed(b) for b in end_chrom_info['breakpoints']]
+					if len(source_breakpoints) > 1:
+						# sort by "start" - which is actually end
+						source_breakpoints.sort()
+					# cluster sorted breakpoints
+					cluster_stack = []
+					for bp in source_breakpoints:
+						new_cluster = False
+						if len(cluster_stack) == 0 or not (cluster_stack[-1].start - bp.start_loc) < buffer:
+							# put a new cluster onto top of stack
+							new_cluster = Cluster(bp)
+							cluster_stack.append(new_cluster)
+							new_cluster = True
 						else:
-							new_start_cluster.add(reversed(bp))
-					if max([len(v) for v in label_counts.values()]) >= min_depth:
-						new_breakpoint = ConsensusBreakpoint(
-							[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-							bp_type, new_start_cluster, end_cluster, label_counts, bp_type)
-						if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
-							final_breakpoints.append(new_breakpoint)
-							pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
-							pruned_clusters.setdefault(bp_type, []).append(end_cluster)
+							# append to cluster on top of stack
+							cluster_stack[-1].add(bp)
+					for end_cluster in cluster_stack:
+						# create ConsensusBreakpoint per end_cluster
+						end_cluster_breakpoints = end_cluster.breakpoints
+						label_counts = count_num_labels(end_cluster_breakpoints)
+						median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
+						median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
+						# need to create a new "originating cluster" with only the used breakpoints
+						# this ensures that the statistics are calculated correctly
+						new_start_cluster = None
+						for bp in end_cluster_breakpoints:
+							if not new_start_cluster:
+								new_start_cluster = Cluster(reversed(bp))
+							else:
+								new_start_cluster.add(reversed(bp))
+						if max([len(v) for v in label_counts.values()]) >= min_depth:
+							new_breakpoint = ConsensusBreakpoint(
+								[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
+								bp_type, new_start_cluster, end_cluster, label_counts, bp_type)
+							if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
+								final_breakpoints.append(new_breakpoint)
+								pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
+								pruned_clusters.setdefault(bp_type, []).append(end_cluster)
 
-	return final_breakpoints, pruned_clusters
+	return final_breakpoints, pruned_clusters, chrom
 
 if __name__ == "__main__":
 	print("Breakpoint Functions")

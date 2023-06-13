@@ -16,7 +16,7 @@ import pybedtools
 
 from savana.core import Cluster
 
-def cluster_breakpoints(breakpoints, buffer, ins_buffer):
+def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """
 	cluster_stacks = {
 		"+-": [],
@@ -51,7 +51,8 @@ def cluster_breakpoints(breakpoints, buffer, ins_buffer):
 		# can't cluster with only one read - require two
 		filtered_cluster_stacks = [c for c in stack if len(c.supporting_reads) >= 2]
 		cluster_stacks[bp_notation_type] = filtered_cluster_stacks
-	return cluster_stacks
+
+	return chrom, cluster_stacks
 
 def output_clusters(refined_clusters, outdir):
 	""" output the json files of evidence """
@@ -88,7 +89,10 @@ def write_cluster_bed(clusters, outdir):
 	for clusters_sv_type in clusters.values():
 		for cluster in clusters_sv_type:
 			cluster_id = str(cluster.uid)
-			cluster_bed+="\t".join([cluster.chr, str(cluster.start), str(cluster.end), cluster_id])
+			if cluster.start <= cluster.end:
+				cluster_bed+="\t".join([cluster.chr, str(cluster.start), str(cluster.end), cluster_id])
+			else:
+				cluster_bed+="\t".join([cluster.chr, str(cluster.end), str(cluster.start), cluster_id])
 			cluster_bed+="\n"
 	sorted_bed = pybedtools.BedTool(cluster_bed, from_string=True).sort()
 	sorted_bed.saveas(cluster_file)

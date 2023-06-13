@@ -103,11 +103,10 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	with open(args.stats, "w") as stats_file:
 		for line in validation_str:
 			stats_file.write(line+"\n")
-	print(f'Evaluation statistics written to "{args.stats}"')
 
 	return
 
-def evaluate_vcf(args):
+def evaluate_vcf(args, checkpoints, time_str):
 	""" given the input, somatic, and germline VCFs, label the input VCF"""
 	# create the comparison set from somatic & germline VCFs
 	compare_set = create_variant_dicts(args.somatic, 'SOMATIC')
@@ -187,9 +186,11 @@ def evaluate_vcf(args):
 		out_vcf.write_record(variant)
 	out_vcf.close()
 	input_vcf.close()
+	helper.time_function("Output labelled VCF", checkpoints, time_str)
 
 	if args.stats:
 		compute_statistics(args, compare_set, input_variants, vcfs_string)
+		helper.time_function("Wrote statistics file", checkpoints, time_str)
 
 	return
 

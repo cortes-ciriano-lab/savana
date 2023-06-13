@@ -286,9 +286,9 @@ def time_function(desc, checkpoints, time_str, final=False):
 	""" prints the number of seconds elapsed compared to previous checkpoint """
 	checkpoints.append(time())
 	if not final:
-		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[-2], 2)} seconds'
+		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[-2], 3)} seconds'
 	else:
-		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[0], 2)} seconds'
+		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[0], 3)} seconds\n'
 	time_str.append(formatted_time)
 	print(formatted_time)
 	return
