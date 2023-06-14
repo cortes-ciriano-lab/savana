@@ -8,6 +8,7 @@ Hillary Elrick
 
 from statistics import median
 import pysam
+import numpy as np
 
 from math import floor, ceil
 

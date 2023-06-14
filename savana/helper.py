@@ -80,6 +80,16 @@ consumes_reference = {
 	8: True
 }
 
+def conditionally_decorate(dec, condition=False):
+	""" whether to decorate a function (False by default)"""
+	def decorator(func):
+		print(f'{func}: {condition}')
+		if not condition:
+			# Return the function unchanged, not decorated.
+			return func
+		return dec(func)
+	return decorator
+
 def reverse_complement(sequence):
 	""" dna reverse complement of bases """
 	bases = {'A':'T', 'T':'A', 'C': 'G', 'G': 'C', 'N': 'N'}

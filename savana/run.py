@@ -16,8 +16,14 @@ import pysam.bcftools as bcftools
 import pybedtools
 
 import savana.helper as helper
-from savana.breakpoints import get_potential_breakpoints, call_breakpoints, add_local_depth
+from savana.breakpoints import get_potential_breakpoints, call_breakpoints, add_local_depth, add_local_depth_old
 from savana.clusters import cluster_breakpoints
+
+from memory_profiler import profile
+from pympler import muppy, summary, refbrowser
+import requests
+import sys
+import objgraph
 
 def pool_get_potential_breakpoints(bam_files, args):
 	""" split the genome into 500kBp chunks and identify PotentialBreakpoints """
@@ -91,24 +97,26 @@ def pool_output_clusters(args, clusters, outdir):
 	pool_output.close()
 	pool_output.join()
 
-def pool_add_local_depth_old(threads, breakpoints, bam_files):
+def pool_add_local_depth_old(threads, breakpoint_dict_chrom, bam_files):
 	pool_local_depth = Pool(processes=threads)
 	pool_local_depth_args = []
 	# convert bam_files into filenames (rather than objects - breaks parallelization)
 	for label in bam_files.keys():
 		bam_files[label] = bam_files[label].filename
-	# split list into equal chunks from https://stackoverflow.com/a/2135920
-	quotient, remainder = divmod(len(breakpoints), threads)
-	breakpoints_split = (breakpoints[i*quotient+min(i, remainder):(i+1)*quotient+min(i+1, remainder)] for i in range(threads))
-	for split in breakpoints_split:
-		pool_local_depth_args.append((split, bam_files))
-	local_depth_results = pool_local_depth.starmap(add_local_depth, pool_local_depth_args)
+	for chrom, breakpoints in breakpoint_dict_chrom.items():
+		pool_local_depth_args.append((breakpoints, bam_files))
+		local_depth_results = pool_local_depth.starmap(add_local_depth_old, pool_local_depth_args)
 	pool_local_depth.close()
 	pool_local_depth.join()
-	breakpoints = []
+	breakpoint_by_chrom = {}
 	for result in local_depth_results:
-		breakpoints.extend(result)
-	return breakpoints
+		chrom = result[0].start_chr
+		if chrom not in breakpoint_by_chrom:
+			breakpoint_by_chrom[chrom] = result
+		else:
+			breakpoint_by_chrom[chrom].extend(result)
+
+	return breakpoint_by_chrom
 
 def single_add_local_depth(intervals, bam_filenames):
 	""" SINGLE THREAD OPTION
@@ -170,7 +178,6 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 	from math import floor
 
 	# OPTION FOR THREADS = 1
-	threads = 48
 	if threads == 1:
 		intervals_by_chrom = sorted([list(intervals) for _chrom, intervals in groupby(sorted_bed, lambda x: x[0])], key=len)
 		local_depth_results = []
@@ -269,6 +276,45 @@ def pool_call_breakpoints(threads, buffer, length, depth, clustered_breakpoints)
 
 	return breakpoint_dict_chrom, pruned_clusters
 
+def profiling_experiment(intervals, bam_filenames):
+	""" to identify and characterise potential memory leak in pysam """
+	import gc
+	import sys
+	chrom = intervals[0][0]
+	start = int(intervals[0][1]) # first start
+	end = int(intervals[-1][2]) # last end
+	# INVENTORY OF OBJECTS BEFORE
+	objects_before = muppy.get_objects()
+	print(f'Num. objects before: {len(objects_before)}')
+	summary_before = summary.summarize(objects_before)
+	objgraph.show_growth(limit=3)
+	for bam_type, bam_filename in bam_filenames.items():
+		with pysam.AlignmentFile(bam_filename, "rb") as bam_file:
+			bam_file = pysam.AlignmentFile(bam_filename, "rb")
+			# ITERATE THROUGH FETCHED READS
+			count_reads = 0
+			for read in bam_file.fetch(chrom, start, end):
+				count_reads+=1
+				continue
+			#del read
+			print(f'Num reads: {count_reads}')
+		#del bam_file
+	gc.collect()
+	objgraph.show_growth(limit=3)
+	# INVENTORY OF OBJECTS AFTER
+	objects_after = muppy.get_objects()
+	print(f'Num. objects after: {len(objects_after)}')
+	summary_after = summary.summarize(objects_after)
+	summary.print_(summary_after)
+	print('Diff:')
+	diff = summary.get_diff(summary_before, summary_after)
+	summary.print_(diff)
+	pysam_objs = muppy.filter(objects_after, Type=(pysam.libcalignedsegment.AlignedSegment))
+	print(f'Num Aligned Segment Objects: {len(pysam_objs)}')
+	for o in pysam_objs:
+		cb = refbrowser.ConsoleBrowser(o, maxdepth=2, str_func=lambda x: str(type(x)))
+		cb.print_tree()
+
 def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using multiprocessing with {args.threads} threads\n')
@@ -285,9 +331,20 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	clustered_breakpoints = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
 	helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
+	print(len(clustered_breakpoints))
+	total_breakpoints = 0
+	for c, b in clustered_breakpoints.items():
+		total_breakpoints+=len(b)
+	print(f'Length before: {total_breakpoints}')
+
 	# 3) CALL BREAKPOINTS
 	breakpoint_dict_chrom, pruned_clusters = pool_call_breakpoints(args.threads, args.buffer, args.length, args.depth, clustered_breakpoints)
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
+
+	total_breakpoints = 0
+	for c, b in breakpoint_dict_chrom.items():
+		total_breakpoints+=len(b)
+	print(f'Length after: {total_breakpoints}')
 
 	# skip for now for testing purposes
 	if args.debug and False:
@@ -299,24 +356,27 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	# 5) ADD LOCAL DEPTH
 	# generate interval files
 	#TODO pass chrom file to make this
-	bed_string = ''
-	total_num_breakpoints = 0
-	total_num_insertions = 0
-	for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
-		#print(f'Chrom {chrom} has {len(chrom_breakpoints)} breakpoints')
-		total_num_breakpoints+=len(chrom_breakpoints)
-		for bp in chrom_breakpoints:
-			if bp.breakpoint_notation == "<INS>":
-				total_num_insertions += 1
-			bed_string += bp.as_bed()
-	sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
-	interval_file = os.path.join(outdir, 'interval.bed')
-	sorted_bed.saveas(interval_file)
-	print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
-	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
+	if False:
+		bed_string = ''
+		total_num_breakpoints = 0
+		total_num_insertions = 0
+		for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
+			#print(f'Chrom {chrom} has {len(chrom_breakpoints)} breakpoints')
+			total_num_breakpoints+=len(chrom_breakpoints)
+			for bp in chrom_breakpoints:
+				if bp.breakpoint_notation == "<INS>":
+					total_num_insertions += 1
+				bed_string += bp.as_bed()
+		sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
+		interval_file = os.path.join(outdir, 'interval.bed')
+		sorted_bed.saveas(interval_file)
+		print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
+		pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
+	else:
+		breakpoint_dict_chrom = pool_add_local_depth_old(args.threads, breakpoint_dict_chrom, bam_files)
 	helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 
-	# 5) OUTPUT BREAKPOINTS
+	# 6) OUTPUT BREAKPOINTS
 	# define filenames
 	vcf_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	bedpe_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe')
