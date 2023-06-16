@@ -69,18 +69,16 @@ def pool_cluster_breakpoints(threads, buffer, ins_buffer, chrom_potential_breakp
 	""" collect & store results in multi-level dict
 	clusters = {
 		'chr1': {
-			'+-': [clustered_breakpoints],
-			'++': [clustered_breakpoints],
-			...
-		},
+			{
+				'+-': [cluster, cluster, ...],
+				'--': [cluster, cluster, ...]
+			}
+		}
 		...
 	} """
 	for chrom, result in clustering_results:
-		for bp_type in ["+-", "++", "-+", "--", "<INS>"]:
-			# don't create chrom key if no clustered results
-			if result[bp_type]:
-				clusters.setdefault(chrom, {})
-				clusters[chrom].setdefault(bp_type, []).extend(result[bp_type])
+		if chrom not in clusters:
+			clusters[chrom] = result
 
 	return clusters
 
@@ -251,13 +249,13 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 
 	return breakpoints
 
-def pool_call_breakpoints(threads, buffer, length, depth, clustered_breakpoints):
+def pool_call_breakpoints(threads, buffer, length, depth, clusters):
 	""" parallelise the identification of consensus breakpoints """
 	pool_calling = Pool(processes=threads)
 	pool_calling_args = []
 
-	for chrom, breakpoints in clustered_breakpoints.items():
-		pool_calling_args.append((breakpoints, buffer, length, depth, chrom))
+	for chrom, chrom_clusters in clusters.items():
+		pool_calling_args.append((chrom_clusters, buffer, length, depth, chrom))
 	calling_results = pool_calling.starmap(call_breakpoints, pool_calling_args)
 
 	breakpoint_dict_chrom = {}
@@ -328,17 +326,11 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 			chrom_potential_breakpoints.setdefault(chrom,[]).extend(potential_breakpoints)
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
-	clustered_breakpoints = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
+	clusters = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
 	helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
-	print(len(clustered_breakpoints))
-	total_breakpoints = 0
-	for c, b in clustered_breakpoints.items():
-		total_breakpoints+=len(b)
-	print(f'Length before: {total_breakpoints}')
-
-	# 3) CALL BREAKPOINTS
-	breakpoint_dict_chrom, pruned_clusters = pool_call_breakpoints(args.threads, args.buffer, args.length, args.depth, clustered_breakpoints)
+	# 3) CALL BREAKPOINTS FROM CLUSTERS
+	breakpoint_dict_chrom, pruned_clusters = pool_call_breakpoints(args.threads, args.buffer, args.length, args.depth, clusters)
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
 	total_breakpoints = 0
@@ -355,25 +347,21 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 
 	# 5) ADD LOCAL DEPTH
 	# generate interval files
-	#TODO pass chrom file to make this
-	if False:
-		bed_string = ''
-		total_num_breakpoints = 0
-		total_num_insertions = 0
-		for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
-			#print(f'Chrom {chrom} has {len(chrom_breakpoints)} breakpoints')
-			total_num_breakpoints+=len(chrom_breakpoints)
-			for bp in chrom_breakpoints:
-				if bp.breakpoint_notation == "<INS>":
-					total_num_insertions += 1
-				bed_string += bp.as_bed()
-		sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
-		interval_file = os.path.join(outdir, 'interval.bed')
-		sorted_bed.saveas(interval_file)
-		print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
-		pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
-	else:
-		breakpoint_dict_chrom = pool_add_local_depth_old(args.threads, breakpoint_dict_chrom, bam_files)
+	bed_string = ''
+	total_num_breakpoints = 0
+	total_num_insertions = 0
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
+		total_num_breakpoints+=len(chrom_breakpoints)
+		for bp in chrom_breakpoints:
+			if bp.breakpoint_notation == "<INS>":
+				total_num_insertions += 1
+			bed_string += bp.as_bed(contig_lengths)
+	sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
+	interval_file = os.path.join(outdir, 'interval.bed')
+	sorted_bed.saveas(interval_file)
+	print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
+	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
 	helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 
 	# 6) OUTPUT BREAKPOINTS

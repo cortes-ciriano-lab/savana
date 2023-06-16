@@ -80,6 +80,7 @@ consumes_reference = {
 	8: True
 }
 
+# for developer debugging
 def conditionally_decorate(dec, condition=False):
 	""" whether to decorate a function (False by default)"""
 	def decorator(func):
@@ -224,22 +225,33 @@ def get_chimeric_regions(read, mapq_filter):
 	return chimeric_regions
 
 def get_contigs(contig_file, ref_index):
-	""" given a file of contigs to consider, return them in a list """
+	""" use the contigs file to return contigs and lengths - otherwise use index """
 	if contig_file:
 		with open(contig_file, encoding="utf-8") as f:
 			contigs = f.readlines()
 			contigs = [contig.rstrip() for contig in contigs]
 			return contigs
-	elif ref_index:
-		# use the fai to get the contig names
-		with open(ref_index, encoding="utf-8") as f:
-			tab_reader = csv.reader(f, delimiter='\t')
-			contigs = []
-			for line in tab_reader:
-				contig = line[0]
-				contigs.append(contig)
-			return contigs
-	return None
+	# otherwise, use the fai to get the contig names
+	contigs = []
+	with open(ref_index, encoding="utf-8") as f:
+		tab_reader = csv.reader(f, delimiter='\t')
+		for line in tab_reader:
+			contig = line[0]
+			contigs.append(contig)
+
+	return contigs
+
+def get_contig_lengths(ref_index):
+	""" get the contig lengths from the reference """
+	contig_lengths = {}
+	with open(ref_index, encoding="utf-8") as f:
+		tab_reader = csv.reader(f, delimiter='\t')
+		for line in tab_reader:
+			contig = line[0]
+			length = line[1]
+			contig_lengths[contig] = int(length)
+
+	return contig_lengths
 
 def generate_vcf_header(args, example_breakpoint):
 	""" given a fasta file, index, and example breakpoint generate the VCF header """

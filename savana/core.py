@@ -63,21 +63,21 @@ class ConsensusBreakpoint():
 		}
 		return self_dict
 
-	def as_bed(self):
+	def as_bed(self, contig_lengths):
 		""" return bed line(s) plus buffer of breakpoint """
-		# TODO: get length of chroms here so don't extend past
+		# min is 0 max is length of contig
 		bed_lines = [[
 			self.start_chr,
-			str(max(self.start_loc, 0)),
-			str(max(self.start_loc+1, 0)),
+			str(min(max(self.start_loc, 0),contig_lengths[self.start_chr])),
+			str(min(max(self.start_loc+1, 0),contig_lengths[self.start_chr])),
 			str(self.uid),
 			'0' # 0th edge
 		]]
 		if self.breakpoint_notation != "<INS>":
 			bed_lines.append([
 				self.end_chr,
-				str(max(self.end_loc, 0)),
-				str(max(self.end_loc+1, 0)),
+				str(min(max(self.end_loc, 0), contig_lengths[self.end_chr])),
+				str(min(max(self.end_loc+1, 0), contig_lengths[self.end_chr])),
 				str(self.uid),
 				'1' # 1st edge
 			])
