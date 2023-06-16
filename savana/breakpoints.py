@@ -201,7 +201,6 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 
 def add_local_depth(intervals, bam_filenames):
 	""" given intervals and uids, get the local depth for each interval """
-
 	if True:
 		uid_dp_dict = {}
 		chrom = intervals[0][0]
@@ -211,7 +210,6 @@ def add_local_depth(intervals, bam_filenames):
 		for bam_type, bam_filename in bam_filenames.items():
 			bam_file = pysam.AlignmentFile(bam_filename, "rb")
 			read_stats[bam_type] = []
-			#print(f'Opening {bam_type} file from {chrom}:{start}-{end} for {len(intervals)} Intervals')
 			for read in bam_file.fetch(chrom, start, end):
 				if read.mapping_quality == 0 or read.is_duplicate:
 					continue
@@ -219,24 +217,23 @@ def add_local_depth(intervals, bam_filenames):
 				del read
 			bam_file.close()
 			del bam_file
-			#print(f'Done with {bam_type} file from {chrom}:{start}-{end} for {len(intervals)} Intervals')
-		#print(f'Calculating DP for {len(intervals)} Intervals')
 		for i in intervals:
 			uid = i[3]
 			interval_end = int(i[2])
 			edge = int(i[4])
 			for bam_type, reads in read_stats.items():
-				subtraction = [((interval_end-r[0])+r[1]) for r in reads]
-				dp = sum(1 for x in subtraction if x >= 0)
+				subtraction = [((interval_end-r[0])-r[1]) for r in reads]
+				dp = sum(1 for x in subtraction if x <= 0)
+				del subtraction
 				if uid not in uid_dp_dict:
 					uid_dp_dict[uid] = {}
 				if bam_type not in uid_dp_dict[uid]:
 					uid_dp_dict[uid][bam_type] = [None, None]
 				uid_dp_dict[uid][bam_type][edge] = str(dp)
-		#print(f'Done calculating DP for {len(intervals)} Intervals')
 
+	"""
 	else:
-		# ALTERNATELY
+		# ALTERNATELY: IF USING THIS, WILL NEED TO REDUCE MAX TASKS PER CHILD CALCULATION
 		uid_dp_dict = {}
 		for bam_type, bam_filename in bam_filenames.items():
 			bam_file = pysam.AlignmentFile(bam_filename, "rb")
@@ -249,6 +246,7 @@ def add_local_depth(intervals, bam_filenames):
 				if bam_type not in uid_dp_dict[uid]:
 					uid_dp_dict[uid][bam_type] = [None, None]
 				uid_dp_dict[uid][bam_type][int(edge)] = str(len(reads))
+	"""
 
 
 	return uid_dp_dict
@@ -302,31 +300,32 @@ def add_local_depth_old(breakpoints, bam_filenames):
 					bp.local_depths.setdefault(label,[]).append(str(len(reads)))
 	return breakpoints
 
-def call_breakpoints(clustered_breakpoints, buffer, min_length, min_depth, chrom):
+def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
 	pruned_clusters = {}
-	for bp_type in clustered_breakpoints.keys():
-		for cluster in clustered_breakpoints[bp_type]:
+	num_insertions = 0
+	for bp_type in clusters.keys():
+		for cluster in clusters[bp_type]:
 			if bp_type == "<INS>":
 				# call validated insertions
-				for insertion_cluster in clustered_breakpoints[bp_type]:
-					# average out the start/end, keep longest insertion sequence
-					starts, ends = [], []
-					longest_seq = ''
-					for bp in insertion_cluster.breakpoints:
-						starts.append(bp.start_loc)
-						ends.append(bp.end_loc)
-						if len(bp.inserted_sequence) > len(longest_seq):
-							longest_seq = bp.inserted_sequence
-					source_breakpoints = insertion_cluster.breakpoints
-					label_counts = count_num_labels(source_breakpoints)
-					if max([len(v) for v in label_counts.values()]) >= min_depth and len(longest_seq) > min_length:
-						final_breakpoints.append(ConsensusBreakpoint(
-							[{'chr': insertion_cluster.chr, 'loc': median(starts)}, {'chr': insertion_cluster.chr, 'loc': median(ends)}],
-							"INS", insertion_cluster, None, label_counts, bp_type, longest_seq))
-						pruned_clusters.setdefault(bp_type, []).append(insertion_cluster)
+				# average out the start/end, keep longest insertion sequence
+				starts, ends = [], []
+				longest_seq = ''
+				for bp in cluster.breakpoints:
+					starts.append(bp.start_loc)
+					ends.append(bp.end_loc)
+					if len(bp.inserted_sequence) > len(longest_seq):
+						longest_seq = bp.inserted_sequence
+				source_breakpoints = cluster.breakpoints
+				label_counts = count_num_labels(source_breakpoints)
+				if max([len(v) for v in label_counts.values()]) >= min_depth and len(longest_seq) > min_length:
+					num_insertions += 1
+					final_breakpoints.append(ConsensusBreakpoint(
+						[{'chr': cluster.chr, 'loc': median(starts)}, {'chr': cluster.chr, 'loc': median(ends)}],
+						"INS", cluster, None, label_counts, bp_type, longest_seq))
+					pruned_clusters.setdefault(bp_type, []).append(cluster)
 			else:
 				# call all other types
 				per_end_chrom = {}
