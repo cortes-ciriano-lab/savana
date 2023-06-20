@@ -358,8 +358,6 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 				total_num_insertions += 1
 			bed_string += bp.as_bed(contig_lengths)
 	sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
-	interval_file = os.path.join(outdir, 'interval.bed')
-	sorted_bed.saveas(interval_file)
 	print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
 	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
 	helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
