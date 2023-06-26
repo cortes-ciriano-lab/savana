@@ -101,6 +101,20 @@ threads|Number of threads to use (default is maximum available)
 debug|Optional flag to output extra debugging info and files
 validation|Optional VCF file to validate against
 
+## Output VCF
+
+After SAVANA has completed, you should find the VCF file `{sample}_sv_breakpoints.vcf` which contains all (unfiltered) variants in the output folder. Additionally, there are `strict` and `lenient` VCF files which are informed by a decision-tree classifier (strict) and manually plotting data to determine cutoffs (lenient). The lenient and strict files will be discountinued and replaced by a more rouboust system in future versions of SAVANA.
+
+The `SV_TYPE` field in the `INFO` column of SAVANA only denotes `BND` and `INS` types. We have elected not call `SV_TYPE` beyond these types as it is not definitively possible to do so without copy number information in VCF v4.2 (GRIDSS has a more in-depth explanation for their decision to do this here: https://github.com/PapenfussLab/gridss#why-are-all-calls-bnd).
+
+For now, SAVANA reports the breakend orientation using brackets in the ALT field as described in section 5.4 of [VCFv4.2](https://samtools.github.io/hts-specs/VCFv4.2.pdf). We also report this in a `BP_NOTATION` field which can be converted to different nomenclatures as follows:
+
+|Nomenclature  | Deletion-like | Duplication-like  | Head-to-head Inversion  | Tail-to-tail Inversion  |
+| ------------------- | ----------------- | --------------------- |  ------------------------------- |  -------------------------- |
+| BP_NOTATION  | +- | -+ | ++ | -- |
+| Brackets (VCF)  | N[chr:pos[ / ]chr:pos]N | ]chr:pos]N / N[chr:pos[ | N]chr:pos] / N]chr:pos] | [chr:pos[N / [chr:pos[N |
+| 5' to 3'  | 3to5 | 5to3 | 3to3 | 5to5|
+
 ## Troubleshooting
 
 SAVANA is currently in Beta development. Please raise a GitHub issue if you encounter issues installing or using it.
