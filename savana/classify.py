@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import cyvcf2
 import pickle
+import json
 
 from multiprocessing import Pool
 from functools import partial

@@ -23,6 +23,15 @@ from sklearn.utils.class_weight import *
 import matplotlib.pyplot as plt
 from sklearn.tree import plot_tree
 
+label_encoding = {
+	'NOT_IN_COMPARISON': 0,
+	'SOMATIC': 1,
+	'FOUND_IN_BOTH': 2,
+	'GERMLINE': 2
+}
+# inverted label_encoding
+encoded_labels = {v: k for k, v in label_encoding.items()}
+
 def format_data(data_matrix):
 	""" parse columns, do conversions, one-hot-encoding """
 	# split the DP tuples
@@ -153,7 +162,7 @@ def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False
 		'Recall': recall_score(y_test, y_pred, average=average_method),
 		'F-score': f1_score(y_test, y_pred, average=average_method)
 	}
-	print('Weighted Stats')
+	print('\n- Weighted Stats -')
 	for stat, value in stats.items():
 		print(f'{stat}: {round(value, 3)}')
 	# SECOND STATS METHOD
@@ -163,14 +172,16 @@ def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False
 		'Recall': recall_score(y_test, y_pred, average=average_method),
 		'F-score': f1_score(y_test, y_pred, average=average_method)
 	}
-	print('Macro Stats')
+	print('\n- Macro Stats -')
 	for stat, value in stats.items():
 		print(f'{stat}: {round(value, 3)}')
 
 	# print out the feature importances
+	print('\nSorted Feature Importances:')
 	feature_importances = pd.Series(random_forest.feature_importances_, index=X_train.columns).sort_values(ascending=False)
 	print(feature_importances.to_string())
 
+	print('\nConfusion Matrix::')
 	labels = np.array(['FALSE', 'SOMATIC', 'GERMLINE']) if multiclass else np.array(['FALSE', 'TRUE'])
 	cm=confusion_matrix(y_test, y_pred)
 	disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
