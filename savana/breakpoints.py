@@ -353,7 +353,7 @@ def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 					cluster_stack = []
 					for bp in source_breakpoints:
 						new_cluster = False
-						if len(cluster_stack) == 0 or not (cluster_stack[-1].start - bp.start_loc) < buffer:
+						if len(cluster_stack) == 0 or not abs(cluster_stack[-1].start - bp.start_loc) < buffer:
 							# put a new cluster onto top of stack
 							new_cluster = Cluster(bp)
 							cluster_stack.append(new_cluster)

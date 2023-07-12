@@ -17,7 +17,7 @@ import pybedtools
 
 import savana.helper as helper
 from savana.breakpoints import get_potential_breakpoints, call_breakpoints, add_local_depth, add_local_depth_old
-from savana.clusters import cluster_breakpoints
+from savana.clusters import cluster_breakpoints, output_clusters
 
 from memory_profiler import profile
 from pympler import muppy, summary, refbrowser
@@ -338,14 +338,13 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 		total_breakpoints+=len(b)
 	print(f'Length after: {total_breakpoints}')
 
-	# skip for now for testing purposes
-	if args.debug and False:
+	if args.debug:
 		# 3.1) OUTPUT CLUSTERS
 		for bp_type in ["+-", "++", "-+", "--", "<INS>"]:
 			pool_output_clusters(args, pruned_clusters[bp_type], outdir)
 		helper.time_function("Output pruned clusters", checkpoints, time_str)
 
-	# 5) ADD LOCAL DEPTH
+	# 4) ADD LOCAL DEPTH
 	# generate interval files
 	bed_string = ''
 	total_num_breakpoints = 0
@@ -362,7 +361,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
 	helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 
-	# 6) OUTPUT BREAKPOINTS
+	# 5) OUTPUT BREAKPOINTS
 	# define filenames
 	vcf_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	bedpe_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe')

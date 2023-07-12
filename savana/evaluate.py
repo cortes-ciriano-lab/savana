@@ -135,12 +135,12 @@ def evaluate_vcf(args, checkpoints, time_str):
 		for compare_variant in compare_set:
 			if compare_variant['start_chr'] == variant_chrom:
 				distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
-				if distance <= args.buffer:
+				if distance <= args.overlap_buffer:
 					compare_variant['within_buffer'].append((input_variants[-1], distance))
 					input_variants[-1]['within_buffer'].append((compare_variant, distance))
 				if input_variants[-1]['end_loc']:
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['end_loc'])
-					if distance <= args.buffer:
+					if distance <= args.overlap_buffer:
 						compare_variant['within_buffer'].append((input_variants[-1], distance))
 						input_variants[-1]['within_buffer'].append((compare_variant, distance))
 

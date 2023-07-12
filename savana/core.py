@@ -363,6 +363,7 @@ class Cluster():
 		if self.start <= self.end:
 			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc < self.start) else self.start
 		else:
+			# it's reverse
 			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc > self.start) else self.start
 		if new_breakpoint.source == "SUPP":
 			if self.start <= self.end:
