@@ -56,17 +56,182 @@ def predict(data_matrix, features_to_drop, model):
 
 	return prediction_dict
 
-def classify_vcf(args, checkpoints, time_str):
+def read_vcf(vcf_path):
 	""" read VCF into a dataframe """
 	data = []
-	input_vcf = cyvcf2.VCF(args.vcf)
+	input_vcf = cyvcf2.VCF(vcf_path)
 	header = ['ID'] + get_info_fields(input_vcf)
 	for variant in input_vcf:
 		row = [variant.ID]
 		for field in header[1:]:
 			row.append(variant.INFO.get(field))
 		data.append(row)
-	data_matrix = pd.DataFrame(data, columns = header)
+	return pd.DataFrame(data, columns = header)
+
+def legacy_pass_strict(variant, event_heuristic):
+	""" apply legacy filter for strict thresholds """
+	if variant['NORMAL_SUPPORT'] > 0:
+		return False
+	if variant['TUMOUR_SUPPORT'] > 7:
+		origin_uncertainty = (variant['ORIGIN_STARTS_STD_DEV']+1) * (variant['ORIGIN_EVENT_SIZE_STD_DEV']+1)
+		end_uncertainty = (variant['END_STARTS_STD_DEV']+1) * (variant['END_EVENT_SIZE_STD_DEV']+1)
+		try:
+			if variant['TUMOUR_SUPPORT'] > 12 and origin_uncertainty <= 15:
+				if event_heuristic <= 0.025:
+					return True
+			elif variant['TUMOUR_SUPPORT'] > 12 and end_uncertainty <= 30:
+				return True
+			elif end_uncertainty <= 10:
+				return True
+		except Exception as e:
+			# in case of None
+			return False
+
+def legacy_pass_lenient(variant, event_heuristic):
+	""" apply legacy filter for lenient thresholds """
+	if variant['TUMOUR_SUPPORT'] == 0:
+		return False
+	elif variant['NORMAL_SUPPORT']/variant['TUMOUR_SUPPORT'] < 0.1:
+		try:
+			if variant['ORIGIN_STARTS_STD_DEV'] < 150 and event_heuristic < 3:
+				if variant['BP_NOTATION'] == "<INS>" and variant['TUMOUR_SUPPORT'] > 25:
+					return True
+				elif variant['BP_NOTATION'] != "<INS>" and variant['TUMOUR_SUPPORT'] > 5:
+					return True
+		except Exception as e:
+			# in case of None for any stat
+			return False
+
+def classify_legacy(args, checkpoints, time_str):
+	""" classify using legacy lenient/strict filters """
+	data_matrix = read_vcf(args.vcf)
+	data_matrix = train.format_data(data_matrix)
+	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
+
+	strict_ids = {}
+	lenient_ids = {}
+	for _, variant in data_matrix.iterrows():
+		if variant['ORIGIN_EVENT_SIZE_MEDIAN'] > 0:
+			event_heuristic = variant['ORIGIN_EVENT_SIZE_STD_DEV']/variant['ORIGIN_EVENT_SIZE_MEDIAN']
+		else:
+			event_heuristic = None
+		# apply filters
+		if legacy_pass_strict(variant, event_heuristic):
+			strict_ids[variant['ID']] = True
+		if legacy_pass_lenient(variant, event_heuristic):
+			lenient_ids[variant['ID']] = True
+
+	input_vcf = cyvcf2.VCF(args.vcf)
+	desc_string = str(f'Variant class prediction from legacy strict/lenient filters {args.model}')
+	input_vcf.add_info_to_header({
+		'ID': 'CLASS',
+		'Type': 'String',
+		'Number': '1',
+		'Description': desc_string
+	})
+	# create filenames based on output
+	if ".vcf" in args.output:
+		strict_vcf_filename = args.output.replace(".vcf", ".strict.vcf")
+		lenient_vcf_filename = args.output.replace(".vcf", ".lenient.vcf")
+	else:
+		strict_vcf_filename = args.output+".strict.vcf"
+		lenient_vcf_filename = args.output+".lenient.vcf"
+	strict_vcf = cyvcf2.Writer(strict_vcf_filename, input_vcf)
+	lenient_vcf = cyvcf2.Writer(lenient_vcf_filename, input_vcf)
+	for variant in input_vcf:
+		variant_id = variant.ID
+		passed_strict = strict_ids.get(variant_id, None)
+		passed_lenient = lenient_ids.get(variant_id, None)
+		if passed_strict:
+			# update the INFO field if all sanity checks pass
+			variant.INFO['CLASS'] = 'PASSED_SOMATIC_STRICT'
+			# add to the somatic only VCF
+			strict_vcf.write_record(variant)
+		if passed_lenient:
+			# update the INFO field if all sanity checks pass
+			variant.INFO['CLASS'] = 'PASSED_SOMATIC_LENIENT'
+			# add to the somatic only VCF
+			lenient_vcf.write_record(variant)
+	strict_vcf.close()
+	lenient_vcf.close()
+	input_vcf.close()
+
+	helper.time_function("Output strict/lenient VCFs", checkpoints, time_str)
+
+	return
+
+def filter_with_comparator(variant_value, filter_value, comparator):
+	""" given the variant's value, the filter, and the comparator (min/max), return whether it passes """
+	# cast the filter value to the same type as the variant's value
+	filter_value = type(variant_value)(filter_value)
+	if comparator.upper() == "MAX":
+		if variant_value > filter_value:
+			return False
+	elif comparator.upper() == "MIN":
+		if variant_value < filter_value:
+			return False
+	else:
+		raise ValueError(f'Comparator value "{comparator}" unrecognized. Must be one of "MIN" or "MAX"')
+
+	return True
+
+def classify_by_params(args, checkpoints, time_str):
+	#read VCF into a dataframe, classify using a parameter JSON
+	data_matrix = read_vcf(args.vcf)
+	data_matrix = train.format_data(data_matrix)
+	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
+
+	# Read in the if/else statements and apply them
+	filters = None
+	with open(args.params) as json_file:
+		filters = json.load(json_file)
+
+	# create dicts to store the VCF output and passing variants
+	category_dicts = {}
+	input_vcf = cyvcf2.VCF(args.vcf)
+	desc_string = str(f'Variant class as defined in params JSON {args.params}')
+	input_vcf.add_info_to_header({
+		'ID': 'CLASS',
+		'Type': 'String',
+		'Number': '1',
+		'Description': desc_string
+	})
+	for category in filters.keys():
+		filename = args.output.replace(".vcf", f'.{category}.vcf')
+		category_dicts[category] = {
+			'vcf': cyvcf2.Writer(filename, input_vcf),
+			'passed_ids': {}
+		}
+
+	# use the matrix-representation of the variants to determine which ones pass the filter(s)
+	for i, variant in data_matrix.iterrows():
+		for category, filter_dict in filters.items():
+			passed_filters = True
+			for comp_field, filter_value in filter_dict.items():
+				# separate MIN/MAX from field
+				comparator, field = comp_field.split("_", 1)
+				# if fails one filter, set to false
+				passed_filters = False if not filter_with_comparator(variant[field], filter_value, comparator) else passed_filters
+			if passed_filters:
+				category_dicts[category]['passed_ids'][variant['ID']] = True
+
+	# now, write out the vcf(s)
+	for variant in input_vcf:
+		variant_id = variant.ID
+		for category, category_dict in category_dicts.items():
+			if variant_id in category_dict['passed_ids']:
+				variant.INFO['CLASS'] = 'PASSED_'+(category).upper()
+				category_dict['vcf'].write_record(variant)
+
+	for _, category_dict in category_dicts.items():
+		category_dict['vcf'].close()
+
+	return
+
+def classify_by_model(args, checkpoints, time_str):
+	""" read VCF into a dataframe, classify using a model """
+
+	data_matrix = read_vcf(args.vcf)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
