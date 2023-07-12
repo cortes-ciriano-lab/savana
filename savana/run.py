@@ -8,7 +8,7 @@ Hillary Elrick
 
 import os
 
-from math import ceil
+from math import ceil, floor
 from multiprocessing import Pool
 
 import pysam
@@ -31,6 +31,15 @@ def pool_get_potential_breakpoints(bam_files, args):
 	pool_potential = Pool(processes=args.threads)
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+
+	# calculate how to split contigs based on total mapped reads
+	total_num_mapped_reads = 0
+	for label, bam_file in bam_files.items():
+		for contig in bam_file.get_index_statistics():
+			if contig.contig in contigs_to_consider:
+				total_num_mapped_reads+=contig.mapped
+	ideal_reads_per_thread = ceil(total_num_mapped_reads/args.threads)
+
 	for label, bam_file in bam_files.items():
 		for contig in bam_file.get_index_statistics():
 			if contig.contig not in contigs_to_consider:
@@ -39,18 +48,20 @@ def pool_get_potential_breakpoints(bam_files, args):
 				continue
 			if contig.mapped == 0:
 				continue
+			mapped_reads = contig.mapped
 			chrom_length = int(bam_file.get_reference_length(contig.contig))
-			if chrom_length > chunk_size:
-				# split the chrom into parts
-				num_intervals = ceil(chrom_length/chunk_size) + 1
+			num_chunks = max(floor(mapped_reads/ideal_reads_per_thread), 1)
+			if num_chunks > 1:
 				start_pos = 0
-				for i in range(1, num_intervals):
+				chunk_size = ceil(chrom_length/num_chunks)
+				for i in range(1, num_chunks+1):
 					end_pos = start_pos + chunk_size
 					end_pos = chrom_length if end_pos > chrom_length else end_pos # don't extend past end
 					pool_potential_args.append((bam_file.filename, args, label, contigs_to_consider, contig.contig, start_pos, end_pos))
 					start_pos = end_pos + 1
 			else:
 				pool_potential_args.append((bam_file.filename, args, label, contigs_to_consider, contig.contig))
+
 	potential_breakpoints_results = pool_potential.starmap(get_potential_breakpoints, pool_potential_args)
 	pool_potential.close()
 	pool_potential.join()
@@ -173,7 +184,6 @@ def single_add_local_depth(intervals, bam_filenames):
 def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 	""" """
 	from itertools import groupby
-	from math import floor
 
 	# OPTION FOR THREADS = 1
 	if threads == 1:
@@ -198,7 +208,7 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 				chunk_split = (chrom_chunk[i*quotient+min(i, remainder):(i+1)*quotient+min(i+1, remainder)] for i in range(num_subchunks))
 				redistributed_intervals.extend(chunk_split)
 			else:
-				# don't both splitting
+				# don't bother splitting
 				redistributed_intervals.append(chrom_chunk)
 		print(f'Using {ideal_binsize} as binsize, there are {len(redistributed_intervals)} redistributed intervals')
 		max_bin = max([len(c) for c in redistributed_intervals])
