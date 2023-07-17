@@ -40,22 +40,24 @@ def format_data(data_matrix):
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_1'] = data_matrix['TUMOUR_DP_1'].fillna(data_matrix['TUMOUR_DP_0'])
 	data_matrix['NORMAL_DP_1'] = data_matrix['NORMAL_DP_1'].fillna(data_matrix['NORMAL_DP_0'])
-	# create ratio column
+	# create support ratio column
 	data_matrix['TUMOUR_SUPPORT_RATIO'] = data_matrix['TUMOUR_SUPPORT']/((data_matrix['TUMOUR_DP_0']+data_matrix['TUMOUR_DP_1'])/2)
 	data_matrix['NORMAL_SUPPORT_RATIO'] = data_matrix['NORMAL_SUPPORT']/((data_matrix['NORMAL_DP_0']+data_matrix['NORMAL_DP_1'])/2)
 	data_matrix['TUMOUR_SUPPORT_RATIO'] = data_matrix['TUMOUR_SUPPORT_RATIO'].fillna(0)
 	data_matrix['NORMAL_SUPPORT_RATIO'] = data_matrix['TUMOUR_SUPPORT_RATIO'].fillna(0)
 	data_matrix.replace([np.inf, -np.inf], -1, inplace=True)
+	# create std_dev/mean_size ratio columns
+	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STARTS_STD_DEV']/(data_matrix['ORIGIN_EVENT_SIZE_MEAN']+1.0)
+	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STARTS_STD_DEV']/(data_matrix['END_EVENT_SIZE_MEAN']+1.0)
+	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STD_MEAN_RATIO'].fillna(0)
+	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STD_MEAN_RATIO'].fillna(0)
+
 	# convert the SVTYPE to 0/1
 	data_matrix['SVTYPE'] = data_matrix['SVTYPE'].map({'BND':0,'INS':1})
 	# ONE-HOT ENCODING
 	sv_type_one_hot = pd.get_dummies(data_matrix['BP_NOTATION'])
 	data_matrix.drop('BP_NOTATION', axis=1)
 	data_matrix = data_matrix.join(sv_type_one_hot)
-	# TODO: remove this, it's temporary to fix a bug
-	MIN_LENGTH=32
-	data_matrix.drop(data_matrix[(data_matrix['SVLEN'] < MIN_LENGTH) & (data_matrix['SVLEN'] != 0)].index, inplace=True)
-	# end of temp fix
 
 	return data_matrix
 
@@ -73,65 +75,69 @@ def prepare_data(data_matrix, multiclass=True):
 	# similar threshold for 'GERMLINE'
 	condition = (data_matrix['LABEL'] == 'GERMLINE') & (data_matrix['NORMAL_SUPPORT']+data_matrix['TUMOUR_SUPPORT'] < 3)
 	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
-	print(data_matrix['LABEL'].value_counts(normalize=True))
 	if multiclass:
 		# encode the labels to 0/1/2 for FALSE/SOMATIC/GERMLINE
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
-			{
-				'NOT_IN_COMPARISON': 0,
-				'SOMATIC': 1,
-				'GERMLINE': 2,
-				'FOUND_IN_BOTH': 2
-			}
+			label_encoding
 		)
 	else:
 		# encode the labels to 0/1 for FALSE/FOUND
+		label_encoding_reduced = label_encoding
+		label_encoding_reduced['GERMLINE'] = 0
+		label_encoding_reduced['FOUND_IN_BOTH'] = 0
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
-			{
-				'NOT_IN_COMPARISON': 0,
-				'SOMATIC': 1,
-				'GERMLINE': 0,
-				'FOUND_IN_BOTH': 0
-			}
+			label_encoding_reduced
 		)
 	# drop irrelevant/redundant columns
 	features = data_matrix.drop([
 		'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE'
+		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
+		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
+		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN'
 		], axis=1)
 	target = data_matrix['LABEL']
 
 	return features, target
+
+def format_value_counts(value_counts):
+	""" print this out prettier """
+	values = value_counts.keys().tolist()
+	counts = value_counts.tolist()
+	for i in range(0,len(values)):
+		print(f'{round(counts[i], 4)} - {encoded_labels[values[i]]}')
+
 
 def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False, multiclass=True):
 	""" given the features (X) and target (y), split into test/train and fit the model """
 	# split into train/test
 	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=split)
 
-	# compute class weights
-	classes = np.unique(y_train)
-	weights = compute_class_weight(class_weight='balanced', classes= np.unique(y_train), y=y_train)
-	class_weights = {k: round(v,3) for k, v in zip(classes, weights)}
-	print(class_weights)
-
 	# randomly downsample the 'NOT_IN_COMPARISON'/0 by 'downsample' %
 	train_matrix = pd.concat([X_train, y_train], axis=1)
-	print(train_matrix['LABEL'].value_counts(normalize=True))
-	print(train_matrix['LABEL'].value_counts(normalize=False))
+	print(f'\nCOUNTS PRE-DOWNSAMPLING:')
+	format_value_counts(train_matrix['LABEL'].value_counts(normalize=False))
+	print(f'PROPORTIONS PRE-DOWNSAMPLING:')
+	format_value_counts(train_matrix['LABEL'].value_counts(normalize=True))
+	# perform downsampling
+	print(f'\n>DOWNSAMPLING MAJORITY CLASS BY {downsample}')
 	mask = train_matrix['LABEL'] == 0
 	train_matrix = pd.concat([train_matrix[mask].sample(frac=(1.0-downsample)), train_matrix[~mask]])
-	print(train_matrix['LABEL'].value_counts(normalize=False))
-	print(train_matrix['LABEL'].value_counts(normalize=True))
+	print(f'\nCOUNTS POST-DOWNSAMPLING:')
+	format_value_counts(train_matrix['LABEL'].value_counts(normalize=False))
+	print(f'PROPORTIONS POST-DOWNSAMPLING:')
+	format_value_counts(train_matrix['LABEL'].value_counts(normalize=True))
 
 	# put back into X_train and y_train
 	X_train = train_matrix.drop('LABEL', axis=1)
 	y_train = train_matrix['LABEL']
 
-	# compute class weights
-	classes = np.unique(y_train)
-	weights = compute_class_weight(class_weight='balanced', classes= np.unique(y_train), y=y_train)
-	class_weights = {k: round(1/v,3) for k, v in zip(classes, weights)}
-	print(class_weights)
+	"""
+	# for debugging
+	print('Columns containing null, na, or inf values')
+	print(X_train.columns[X_train.isnull().any()].tolist())
+	print(X_train.columns[X_train.isna().any()].tolist())
+	print(X_train.columns[X_train.isin([np.inf, -np.inf]).any()].tolist())
+	"""
 
 	# fit the random forest
 	random_forest = None
@@ -151,7 +157,7 @@ def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False
 		random_forest = rand_search.best_estimator_
 	else:
 		# use default pre-deteremined hyperparameters
-		random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=16, class_weight=class_weights)
+		random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=16)
 		random_forest.fit(X_train, y_train)
 	y_pred = random_forest.predict(X_test)
 

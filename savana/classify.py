@@ -240,7 +240,9 @@ def classify_by_model(args, checkpoints, time_str):
 
 	features_to_drop = [
 		'ID', 'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE'
+		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
+		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
+		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN'
 		]
 	prediction_dict = pool_predict(data_matrix, features_to_drop, loaded_model, 20)
 	helper.time_function("Performed prediction", checkpoints, time_str)
@@ -265,7 +267,8 @@ def classify_by_model(args, checkpoints, time_str):
 		variant_id = variant.ID
 		variant_prediction = prediction_dict.get(variant_id, None)
 		if variant_prediction == 1:
-			# perform sanity checks on the model label
+			# PREDICTED SOMATIC BY MODEL
+			# perform sanity checks
 			if variant.INFO['TUMOUR_SUPPORT'] < 3:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 			elif variant.INFO['TUMOUR_SUPPORT'] < variant.INFO['NORMAL_SUPPORT']:
@@ -279,7 +282,8 @@ def classify_by_model(args, checkpoints, time_str):
 					# add to the somatic only VCF
 					somatic_vcf.write_record(variant)
 		elif variant_prediction == 2:
-			# perform sanity checks on the model label
+			# PREDICTED GERMLINE By MODEL
+			# perform sanity checks
 			if (variant.INFO['NORMAL_SUPPORT']+variant.INFO['TUMOUR_SUPPORT']) <= 3:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 			else:

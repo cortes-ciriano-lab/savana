@@ -100,6 +100,10 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	except Exception as e:
 		print(f'WARNING: Unable to calculate validation statistics due to "{str(e)}"')
 
+	validation_str.append(f'\nMISSED VARIANTS')
+	for v in fn:
+		validation_str.append(f'{v["external_id"]}\t{v["type"]}\t{int(v["length"])}')
+
 	with open(args.stats, "w") as stats_file:
 		for line in validation_str:
 			stats_file.write(line+"\n")

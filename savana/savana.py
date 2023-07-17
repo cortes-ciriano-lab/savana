@@ -72,7 +72,12 @@ def savana_classify(args):
 	# initialize timing
 	checkpoints = [time()]
 	time_str = []
-	classify.classify_vcf(args, checkpoints, time_str)
+	if args.legacy:
+		classify.classify_legacy(args, checkpoints, time_str)
+	elif args.params:
+		classify.classify_by_params(args, checkpoints, time_str)
+	elif args.model:
+		classify.classify_by_model(args, checkpoints, time_str)
 	# finish timing
 	helper.time_function("Total time to classify variants", checkpoints, time_str, final=True)
 
@@ -170,6 +175,7 @@ def main():
 	group = classify_parser.add_mutually_exclusive_group()
 	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
 	group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+	group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
 	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
 	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
 	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
@@ -228,6 +234,7 @@ def main():
 		classify_group = global_parser.add_mutually_exclusive_group()
 		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model to classify with (default=ONT-somatic-only)')
 		classify_group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+		classify_group.add_argument('--legacy', nargs='?', type=str, required=False, help='Legacy lenient/strict filtering')
 		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
 		# evaluate args
 		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
