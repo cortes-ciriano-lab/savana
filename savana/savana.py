@@ -60,10 +60,6 @@ def savana_run(args):
 	time_str = []
 	# run SAVANA processes
 	consensus_clusters, breakpoints, checkpoints, time_str = run.spawn_processes(args, bam_files, checkpoints, time_str, outdir)
-	# write debugging files
-	if args.debug:
-		write_cluster_bed(consensus_clusters, outdir)
-		calculate_cluster_stats(consensus_clusters, outdir)
 	# finish timing
 	helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
 
@@ -162,8 +158,8 @@ def main():
 	run_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
 	run_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
 	run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
-	run_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Minumum number of supporting reads from tumour OR normal to consider variant (default=3)')
 	run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
+	run_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Minumum number of supporting reads from tumour OR normal to consider variant (default=3)')
 	run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
