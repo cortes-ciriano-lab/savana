@@ -115,7 +115,6 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read.query_name, read.mapping_quality, label, "".join((end['bp_notation'], start['bp_notation']))))
 	return supplementary_breakpoints
 
-#TODO oneline the dict begin/append
 def count_num_labels(source_breakpoints):
 	""" given a list of unique breakpoints, return the counts for each label """
 	label_counts = {}

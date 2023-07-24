@@ -259,7 +259,7 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 
 	return breakpoints
 
-def pool_call_breakpoints(threads, buffer, length, depth, clusters):
+def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 	""" parallelise the identification of consensus breakpoints """
 	pool_calling = Pool(processes=threads)
 	pool_calling_args = []
@@ -270,17 +270,16 @@ def pool_call_breakpoints(threads, buffer, length, depth, clusters):
 
 	breakpoint_dict_chrom = {}
 	seen_cluster_uids = {}
-	pruned_clusters = {}
+	pruned_clusters = {} if debug else None
 	for result_breakpoints, result_pruned_clusters, result_chrom in calling_results:
 		# collect breakpoint calling results
 		breakpoint_dict_chrom[result_chrom] = result_breakpoints
-		# for debug
-		#TODO: add a debug flag here, pass from args
-		for bp_type in result_pruned_clusters.keys():
-			for cluster in result_pruned_clusters[bp_type]:
-				if cluster.uid not in seen_cluster_uids:
-					pruned_clusters.setdefault(bp_type, []).append(cluster)
-					seen_cluster_uids[cluster.uid] = True
+		if debug:
+			for bp_type in result_pruned_clusters.keys():
+				for cluster in result_pruned_clusters[bp_type]:
+					if cluster.uid not in seen_cluster_uids:
+						pruned_clusters.setdefault(bp_type, []).append(cluster)
+						seen_cluster_uids[cluster.uid] = True
 
 	return breakpoint_dict_chrom, pruned_clusters
 
@@ -340,7 +339,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
 	# 3) CALL BREAKPOINTS FROM CLUSTERS
-	breakpoint_dict_chrom, pruned_clusters = pool_call_breakpoints(args.threads, args.buffer, args.length, args.depth, clusters)
+	breakpoint_dict_chrom, pruned_clusters = pool_call_breakpoints(args.threads, args.buffer, args.length, args.depth, clusters, args.debug)
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
 	total_breakpoints = 0
