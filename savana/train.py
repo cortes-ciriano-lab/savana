@@ -244,19 +244,19 @@ def read_vcfs(args):
 	""" given the folder of labelled input VCFs, return an output dataframe """
 	header = []
 	data = []
-	for file in os.listdir(args.vcfs):
-		#TODO: potentially parallelize?
-		f = os.path.join(args.vcfs, file)
-		if os.path.isfile(f) and file.endswith('.vcf'):
-			print(f'Loading {f} into matrix')
-			input_vcf = cyvcf2.VCF(f)
-			if not header:
-				header = get_info_fields(input_vcf)
-			for variant in input_vcf:
-				row = []
-				for field in header:
-					row.append(variant.INFO.get(field))
-				data.append(row)
+	for root, _, file_names in os.walk(args.vcfs):
+		for file in file_names:
+			f = os.path.join(root, file)
+			if os.path.isfile(f) and file.endswith('.vcf'):
+				print(f'Loading {f} into matrix')
+				input_vcf = cyvcf2.VCF(f)
+				if not header:
+					header = get_info_fields(input_vcf)
+				for variant in input_vcf:
+					row = []
+					for field in header:
+						row.append(variant.INFO.get(field))
+					data.append(row)
 	df = pd.DataFrame(data, columns = header)
 	if args.save_matrix:
 		print(f'Saving data matrix to pickle file {args.save_matrix}')

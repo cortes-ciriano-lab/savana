@@ -195,7 +195,6 @@ def main():
 	group = train_parser.add_mutually_exclusive_group()
 	group.add_argument('--vcfs', nargs='?', type=str, required=False, help='Folder of labelled VCF files to read in')
 	group.add_argument('--load_matrix', nargs='?', type=str, required=False, help='Pre-loaded pickle file of VCFs')
-	#TODO: implement the recurisve functionality lol whoops
 	train_parser.add_argument('--downsample', nargs='?', type=float, default=0.5, help='Fraction to downsample majority class by')
 	train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs')
 	train_parser.add_argument('--multiclass', action='store_true', help='Split the GERMLINE and SOMATIC labels so there are three classes')
