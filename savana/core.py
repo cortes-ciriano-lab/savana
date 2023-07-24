@@ -100,10 +100,11 @@ class ConsensusBreakpoint():
 			# add 1bp to the bedpe location for igv rendering
 			bedpe_line[4] = str(int(bedpe_line[4])+1)
 			bedpe_line[5] = str(int(bedpe_line[5])+1)
-		label_string = "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()])
+		label_string = "/".join([f'{label.upper()}_{str(len(reads))}' for label, reads in self.labels.items()])
 		bp_length = str(abs(int(self.end_loc)-int(self.start_loc)))
-		cluster = str(self.originating_cluster.uid)
-		bedpe_line.append(f'{self.source}|ID_{count}|{bp_length}bp|{cluster}|{label_string}|{self.breakpoint_notation}')
+		start_cluster = str(self.originating_cluster.uid)
+		end_cluster = str(self.end_cluster.uid)
+		bedpe_line.append(f'ID_{count}|{bp_length}bp|{start_cluster}/{end_cluster}|{label_string}|{self.breakpoint_notation}')
 
 		return "\t".join(bedpe_line)+"\n"
 
