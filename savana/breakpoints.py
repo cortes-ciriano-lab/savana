@@ -201,35 +201,50 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 
 def add_local_depth(intervals, bam_filenames):
 	""" given intervals and uids, get the local depth for each interval """
-	if True:
-		uid_dp_dict = {}
-		chrom = intervals[0][0]
-		start = int(intervals[0][1]) # first start
-		end = int(intervals[-1][2]) # last end
-		read_stats = {}
-		for bam_type, bam_filename in bam_filenames.items():
-			bam_file = pysam.AlignmentFile(bam_filename, "rb")
-			read_stats[bam_type] = []
-			for read in bam_file.fetch(chrom, start, end):
-				if read.mapping_quality == 0 or read.is_duplicate:
-					continue
-				read_stats[bam_type].append([int(read.reference_start), int(read.reference_length)])
-				del read
-			bam_file.close()
-			del bam_file
-		for i in intervals:
-			uid = i[3]
-			interval_end = int(i[2])
-			edge = int(i[4])
-			for bam_type, reads in read_stats.items():
-				subtraction = [((interval_end-r[0])-r[1]) for r in reads]
-				dp = sum(1 for x in subtraction if x <= 0)
-				del subtraction
-				if uid not in uid_dp_dict:
-					uid_dp_dict[uid] = {}
-				if bam_type not in uid_dp_dict[uid]:
-					uid_dp_dict[uid][bam_type] = [None, None]
-				uid_dp_dict[uid][bam_type][edge] = str(dp)
+	uid_dp_dict = {}
+	chrom = intervals[0][0]
+	start = max(int(intervals[0][1])-1, 0) # first start
+	end = int(intervals[-1][2]) # last end
+	read_stats = {}
+	for bam_type, bam_filename in bam_filenames.items():
+		bam_file = pysam.AlignmentFile(bam_filename, "rb")
+		read_stats[bam_type] = []
+		for read in bam_file.fetch(chrom, start, end):
+			if read.mapping_quality == 0 or read.is_duplicate:
+				continue
+			read_stats[bam_type].append([int(read.reference_start), int(read.reference_end), read.query_name])
+			del read
+		bam_file.close()
+		del bam_file
+	for i in intervals:
+		uid = i[3]
+		interval_start = int(i[1])
+		interval_end = int(i[2])
+		edge = int(i[4])
+		for bam_type, reads in read_stats.items():
+			#subtraction = [((interval_end-r[0])-r[1]) for r in reads]
+			#dp = sum(1 for x in subtraction if x <= 0)
+			#del subtraction
+			#comparison = [(interval_start <= r[1]) and (r[0] <= interval_end) for r in reads]
+
+			comparison = [[(interval_start - r[1]), (r[0] - interval_end)] for r in reads]
+			dp = sum(1 for x,y in comparison if x <= 0 and y <= 0)
+			del comparison
+
+			# for some reason, these methods aren't faster
+			'''
+			comparison = [[(interval_start <= r[1]), (r[0] <= interval_end)] for r in reads]
+			dp = sum(1 for x,y in comparison if x and y)
+			del comparison
+			'''
+			# nor
+			#dp = sum(1 for r in reads if (interval_start - r[1]) <= 0 and (r[0] - interval_end) <= 0)
+
+			if uid not in uid_dp_dict:
+				uid_dp_dict[uid] = {}
+			if bam_type not in uid_dp_dict[uid]:
+				uid_dp_dict[uid][bam_type] = [None, None]
+			uid_dp_dict[uid][bam_type][edge] = str(dp)
 
 	"""
 	else:
@@ -247,7 +262,6 @@ def add_local_depth(intervals, bam_filenames):
 					uid_dp_dict[uid][bam_type] = [None, None]
 				uid_dp_dict[uid][bam_type][int(edge)] = str(len(reads))
 	"""
-
 
 	return uid_dp_dict
 
