@@ -102,7 +102,10 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 
 	validation_str.append(f'\nMISSED VARIANTS')
 	for v in fn:
-		validation_str.append(f'{v["external_id"]}\t{v["type"]}\t{int(v["length"])}')
+		if v["length"]:
+			validation_str.append(f'{v["external_id"]}\t{v["type"]}\t{int(v["length"])}')
+		else:
+			validation_str.append(f'{v["external_id"]}\t{v["type"]}')
 
 	with open(args.stats, "w") as stats_file:
 		for line in validation_str:

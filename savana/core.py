@@ -111,7 +111,7 @@ class ConsensusBreakpoint():
 	def as_read_support(self, count):
 		""" return read support line representation of a breakpoint """
 		if ',' in ("".join(self.labels.get('tumour',[])+self.labels.get('normal',[]))):
-			# quote everything since read name columns are CSV
+			# quote everything since at least one read name contains a comma
 			read_support_line = [
 				f'ID_{count}',
 				'"'+'","'.join(self.labels.get('tumour',[]))+'"',
@@ -120,8 +120,8 @@ class ConsensusBreakpoint():
 		else:
 			read_support_line = [
 				f'ID_{count}',
-				",".join(self.labels.get('tumour',[])),
-				",".join(self.labels.get('normal',[]))
+				'"'+",".join(self.labels.get('tumour',[]))+'"',
+				'"'+",".join(self.labels.get('normal',[]))+'"'
 			]
 		return "\t".join(read_support_line)+"\n"
 

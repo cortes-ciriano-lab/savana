@@ -62,6 +62,8 @@ def pool_get_potential_breakpoints(bam_files, args):
 			else:
 				pool_potential_args.append((bam_file.filename, args, label, contigs_to_consider, contig.contig))
 
+	print(f'Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads')
+
 	potential_breakpoints_results = pool_potential.starmap(get_potential_breakpoints, pool_potential_args)
 	pool_potential.close()
 	pool_potential.join()
@@ -379,7 +381,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
 	vcf_string = helper.generate_vcf_header(args, breakpoint_dict_chrom[list(breakpoint_dict_chrom.keys())[0]][0])
-	read_support_string = ''
+	read_support_string = 'VARIANT_ID\tTUMOUR_SUPPORTING_READS\tNORMAL_SUPPORTING_READS\n'
 	count = 0
 	for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
 		for bp in chrom_breakpoints:

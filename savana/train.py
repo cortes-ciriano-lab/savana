@@ -61,7 +61,7 @@ def format_data(data_matrix):
 
 	return data_matrix
 
-def prepare_data(data_matrix, multiclass=True):
+def prepare_data(data_matrix, germline_class):
 	""" add predictor and split into train/test """
 	# reformat/parse columns
 	data_matrix = format_data(data_matrix)
@@ -75,7 +75,7 @@ def prepare_data(data_matrix, multiclass=True):
 	# similar threshold for 'GERMLINE'
 	condition = (data_matrix['LABEL'] == 'GERMLINE') & (data_matrix['NORMAL_SUPPORT']+data_matrix['TUMOUR_SUPPORT'] < 3)
 	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
-	if multiclass:
+	if germline_class:
 		# encode the labels to 0/1/2 for FALSE/SOMATIC/GERMLINE
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
 			label_encoding
@@ -84,7 +84,7 @@ def prepare_data(data_matrix, multiclass=True):
 		# encode the labels to 0/1 for FALSE/FOUND
 		label_encoding_reduced = label_encoding
 		label_encoding_reduced['GERMLINE'] = 0
-		label_encoding_reduced['FOUND_IN_BOTH'] = 0
+		label_encoding_reduced['FOUND_IN_BOTH'] = 0 # TODO: legacy - remove in future
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
 			label_encoding_reduced
 		)
@@ -93,7 +93,7 @@ def prepare_data(data_matrix, multiclass=True):
 		'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
 		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
 		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
-		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN'
+		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS'
 		], axis=1)
 	target = data_matrix['LABEL']
 
@@ -107,7 +107,7 @@ def format_value_counts(value_counts):
 		print(f'{round(counts[i], 4)} - {encoded_labels[values[i]]}')
 
 
-def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False, multiclass=True):
+def fit_classifier(X, y, outdir, split, downsample, hyperparameter, germline_class):
 	""" given the features (X) and target (y), split into test/train and fit the model """
 	# split into train/test
 	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=split)
@@ -131,19 +131,11 @@ def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False
 	X_train = train_matrix.drop('LABEL', axis=1)
 	y_train = train_matrix['LABEL']
 
-	"""
-	# for debugging
-	print('Columns containing null, na, or inf values')
-	print(X_train.columns[X_train.isnull().any()].tolist())
-	print(X_train.columns[X_train.isna().any()].tolist())
-	print(X_train.columns[X_train.isin([np.inf, -np.inf]).any()].tolist())
-	"""
-
 	# fit the random forest
 	random_forest = None
 	if hyperparameter:
 		# hyper-parameter testing
-		param_dist = {'n_estimators': randint(50, 500), 'max_depth': randint(1,20)}
+		param_dist = {'n_estimators': randint(10, 500), 'max_depth': randint(1,20)}
 		rf = RandomForestClassifier(n_jobs=16)
 		rand_search = RandomizedSearchCV(rf,
 					param_distributions=param_dist,
@@ -188,7 +180,7 @@ def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False
 	print(feature_importances.to_string())
 
 	print('\nConfusion Matrix::')
-	labels = np.array(['FALSE', 'SOMATIC', 'GERMLINE']) if multiclass else np.array(['FALSE', 'TRUE'])
+	labels = np.array(['FALSE', 'SOMATIC', 'GERMLINE']) if germline_class else np.array(['FALSE', 'TRUE'])
 	cm=confusion_matrix(y_test, y_pred)
 	disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
 	disp.plot()
@@ -206,7 +198,10 @@ def fit_classifier(X, y, outdir, split=0.2, downsample=0.5, hyperparameter=False
 	test_matrix['PREDICTED_LABEL'] = y_pred
 	# only interested in the FP/FN
 	test_matrix = test_matrix[test_matrix['TRUE_LABEL'] != test_matrix['PREDICTED_LABEL']]
-	test_matrix.to_csv(os.path.join(outdir, 'export_failures.csv'))
+	test_matrix.to_csv(os.path.join(outdir, 'test_set_incorrect.tsv'), sep="\t")
+	# only interested in the TP
+	test_matrix = test_matrix[test_matrix['TRUE_LABEL'] == test_matrix['PREDICTED_LABEL']]
+	test_matrix.to_csv(os.path.join(outdir, 'test_set_correct.tsv'), sep="\t")
 
 	return random_forest
 

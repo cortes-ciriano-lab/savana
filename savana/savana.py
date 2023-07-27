@@ -111,28 +111,33 @@ def savana_train(args):
 	elif args.load_matrix:
 		# load data matrix from pickle file
 		data_matrix = train.load_matrix(args)
-	features, target = train.prepare_data(data_matrix, multiclass=args.multiclass)
-	classifier = train.fit_classifier(features, target, outdir, split=0.2, downsample=args.downsample, hyperparameter=args.hyper, multiclass=args.multiclass)
+	features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
+	classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.fit_classifier)
 	train.save_model(args, classifier, outdir)
 
 def savana_main(args):
 	""" default workflow for savana: savana_run, savana_classify, savana_evaluate """
 	# call raw breakpoints
 	savana_run(args)
-	# get the input VCF for classification
+	# set the input VCF for classification
 	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
-	if not args.model and not args.params:
+	if not args.model and not args.params and not args.legacy:
+		#TODO: logic for which model to use (ONT/PB/germline)
 		# use ONT somatic only model by default
 		from pathlib import Path
 		args.model = os.path.join(Path(__file__).parent.parent.absolute(),'package_models/ONT-somatic-only.pkl')
 		print(f'Using ONT somatic only model "{args.model}" to classify variants')
 	# set the output VCF location
-	args.output = os.path.join(args.outdir,f'{args.sample}.classified.sv_breakpoints.vcf')
-	if not args.somatic_output:
-		args.somatic_output = os.path.join(args.outdir,f'{args.sample}.somatic.vcf')
+	args.output = os.path.join(args.outdir, f'{args.sample}.classified.sv_breakpoints.vcf')
+	if not args.somatic_output and not args.params and not args.legacy:
+		# if using a model (even by default) - output a somatic-only classified VCF
+		args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
 	savana_classify(args)
 	if args.somatic:
 		# evaluate against somatic/germline VCFs
+		if args.legacy or args.params:
+			# need reset output as the raw sv breakpoints since it's the only one that contains all variants
+			args.output = os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
 		# set the input vcf as previous output
 		args.input = args.output
 		args.output = os.path.join(args.outdir,f'{args.sample}.evaluation.sv_breakpoints.vcf')
@@ -168,13 +173,19 @@ def main():
 
 	# savana classify
 	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
+	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
 	group = classify_parser.add_mutually_exclusive_group()
 	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
 	group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 	group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
-	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
 	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
 	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
+	# technology arg
+	tech_group = classify_parser.add_mutually_exclusive_group()
+	tech_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants')
+	tech_group.add_argument('--pacbio', action='store_true', help='Use the PacBio trained model to classify variants')
+	# whether to use a germline-trained model
+	classify_parser.add_argument('--predict_germline', action='store_true', help='Use a model that will also predict germline events (in addition to somatic)')
 	classify_parser.set_defaults(func=savana_classify)
 
 	# savana evaluate
@@ -184,7 +195,7 @@ def main():
 	evaluate_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
 	evaluate_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
 	evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
-	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired (stdout otherwise)')
+	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired')
 	group = evaluate_parser.add_mutually_exclusive_group()
 	group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
 	group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
@@ -194,13 +205,14 @@ def main():
 	train_parser = subparsers.add_parser("train", help="train model on folder of input VCFs")
 	group = train_parser.add_mutually_exclusive_group()
 	group.add_argument('--vcfs', nargs='?', type=str, required=False, help='Folder of labelled VCF files to read in')
+	train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs (default only one-level deep)')
 	group.add_argument('--load_matrix', nargs='?', type=str, required=False, help='Pre-loaded pickle file of VCFs')
-	train_parser.add_argument('--downsample', nargs='?', type=float, default=0.5, help='Fraction to downsample majority class by')
-	train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs')
-	train_parser.add_argument('--multiclass', action='store_true', help='Split the GERMLINE and SOMATIC labels so there are three classes')
+	train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
+	train_parser.add_argument('--downsample', nargs='?', type=float, default=0.1, help='Fraction to downsample majority class by (default=0.1)')
+	train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
+	train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
 	train_parser.add_argument('--hyper', action='store_true', help='Perform a randomised search on hyper parameters and use best')
 	train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-	train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
 	train_parser.set_defaults(func=savana_train)
 
 	try:
@@ -223,14 +235,20 @@ def main():
 		global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
 		global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-		global_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
+		global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
 		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 		# classify args
 		classify_group = global_parser.add_mutually_exclusive_group()
 		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model to classify with (default=ONT-somatic-only)')
 		classify_group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
-		classify_group.add_argument('--legacy', nargs='?', type=str, required=False, help='Legacy lenient/strict filtering')
-		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
+		classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
+		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output a VCF with only PASS somatic variants')
+		# technology arg
+		tech_group = global_parser.add_mutually_exclusive_group()
+		tech_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants')
+		tech_group.add_argument('--pacbio', action='store_true', help='Use the PacBio trained model to classify variants')
+		# whether to use a germline-trained model
+		global_parser.add_argument('--predict_germline', action='store_true', help='Use a model that will also predict germline events (in addition to somatic)')
 		# evaluate args
 		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
 		global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
