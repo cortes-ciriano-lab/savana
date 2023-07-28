@@ -1,4 +1,6 @@
 data
+models/*.pkl
+models/*.ignore
 build
 savana.egg-info
 record.txt

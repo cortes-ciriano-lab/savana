@@ -9,7 +9,6 @@ Hillary Elrick
 import sys
 import os
 import argparse
-import json
 
 from time import time
 from multiprocessing import cpu_count
@@ -70,10 +69,41 @@ def savana_classify(args):
 	time_str = []
 	if args.legacy:
 		classify.classify_legacy(args, checkpoints, time_str)
-	elif args.params:
+	elif args.custom_params:
 		classify.classify_by_params(args, checkpoints, time_str)
 	elif args.model:
 		classify.classify_by_model(args, checkpoints, time_str)
+	else:
+		# using a model - perform logic to determine which one
+		if args.ont and not args.predict_germline:
+			model_base = 'ont-somatic'
+		elif args.ont_noisy and not args.predict_germline:
+			model_base = 'ont-noisy-somatic'
+		elif args.ont and args.predict_germline:
+			model_base = 'ont-germline'
+		elif args.ont_noisy and args.predict_germline:
+			model_base = 'ont-noisy-germline'
+		# check whether the model has been un-tarred
+		#TODO: this is a bit gross? think of more elegant solution
+		models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)),'models')
+		model_path = os.path.join(models_dir, model_base)
+		model_pkl = model_path+'.pkl'
+		model_tar = model_path+'.tar.gz'
+		if os.path.isfile(model_pkl):
+			print(f'Using untarred {model_pkl}')
+			args.model = model_pkl
+		elif os.path.isfile(model_tar):
+			import tarfile
+			print(f'Need to untar {model_tar}')
+			tar = tarfile.open(model_tar, "r:gz")
+			tar.extractall(models_dir)
+			tar.close()
+			args.model = model_pkl
+		else:
+			print(f'Unable to locate model at {model_path}.* - please check installation')
+			return
+		classify.classify_by_model(args, checkpoints, time_str)
+
 	# finish timing
 	helper.time_function("Total time to classify variants", checkpoints, time_str, final=True)
 
@@ -175,17 +205,15 @@ def main():
 	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
 	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
 	group = classify_parser.add_mutually_exclusive_group()
+	group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
+	group.add_argument('--ont_noisy', action='store_true', help='Use a model trained on ONT data with relatively more noise')
+	# whether to use a germline-trained model
+	classify_parser.add_argument('--predict_germline', action='store_true', help='Use a model that also predicts germline events')
 	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
-	group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+	group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 	group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
 	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
 	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
-	# technology arg
-	tech_group = classify_parser.add_mutually_exclusive_group()
-	tech_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants')
-	tech_group.add_argument('--pacbio', action='store_true', help='Use the PacBio trained model to classify variants')
-	# whether to use a germline-trained model
-	classify_parser.add_argument('--predict_germline', action='store_true', help='Use a model that will also predict germline events (in addition to somatic)')
 	classify_parser.set_defaults(func=savana_classify)
 
 	# savana evaluate
@@ -239,16 +267,14 @@ def main():
 		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 		# classify args
 		classify_group = global_parser.add_mutually_exclusive_group()
+		classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
+		classify_group.add_argument('--ont_noisy', action='store_true', help='Use a model trained on ONT data with relatively more noise')
+		# whether to use a germline-trained model
+		global_parser.add_argument('--predict_germline', action='store_true', help='Use a model that also predicts germline events')
 		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model to classify with (default=ONT-somatic-only)')
-		classify_group.add_argument('--params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+		classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 		classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
 		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output a VCF with only PASS somatic variants')
-		# technology arg
-		tech_group = global_parser.add_mutually_exclusive_group()
-		tech_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants')
-		tech_group.add_argument('--pacbio', action='store_true', help='Use the PacBio trained model to classify variants')
-		# whether to use a germline-trained model
-		global_parser.add_argument('--predict_germline', action='store_true', help='Use a model that will also predict germline events (in addition to somatic)')
 		# evaluate args
 		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
 		global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
