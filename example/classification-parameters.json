@@ -1,0 +1,12 @@
+{
+	"somatic": {
+		"MAX_NORMAL_SUPPORT": 0,
+		"MIN_TUMOUR_SUPPORT": 10,
+		"MAX_ORIGIN_STARTS_STD_DEV": 10,
+		"MAX_ORIGIN_EVENT_SIZE_STD_DEV": 5
+	},
+	"germline": {
+		"MIN_NORMAL_SUPPORT": 5,
+		"MIN_TUMOUR_SUPPORT": 3
+	}
+}

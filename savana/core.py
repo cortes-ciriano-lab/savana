@@ -32,6 +32,7 @@ class ConsensusBreakpoint():
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
 		self.labels = labels
 		self.count = None # used later for standardising across output files
+		self.local_depths = {} # add later
 		self.breakpoint_notation = breakpoint_notation
 		# use the labels to calculate support by counting reads
 		self.support = {'normal': 0, 'tumour': 0}
@@ -56,11 +57,32 @@ class ConsensusBreakpoint():
 			"inserted_sequence": self.inserted_sequence,
 			"source": self.source,
 			"originating_cluster": self.originating_cluster.uid,
-			"end_cluster": self.end_cluster,
+			"end_cluster": self.end_cluster.uid,
 			"labels": "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()]),
 			"breakpoint_notation": self.breakpoint_notation
 		}
 		return self_dict
+
+	def as_bed(self, contig_lengths):
+		""" return bed line(s) plus buffer of breakpoint """
+		# min is 0 max is length of contig
+		bed_lines = [[
+			self.start_chr,
+			str(min(max(self.start_loc, 0),contig_lengths[self.start_chr])),
+			str(min(max(self.start_loc+1, 0),contig_lengths[self.start_chr])),
+			str(self.uid),
+			'0' # 0th edge
+		]]
+		if self.breakpoint_notation != "<INS>":
+			bed_lines.append([
+				self.end_chr,
+				str(min(max(self.end_loc, 0), contig_lengths[self.end_chr])),
+				str(min(max(self.end_loc+1, 0), contig_lengths[self.end_chr])),
+				str(self.uid),
+				'1' # 1st edge
+			])
+
+		return "\n".join("\t".join(l) for l in bed_lines)+"\n"
 
 	def as_bedpe(self, count):
 		""" return bedpe line(s) representation of breakpoint """
@@ -78,17 +100,18 @@ class ConsensusBreakpoint():
 			# add 1bp to the bedpe location for igv rendering
 			bedpe_line[4] = str(int(bedpe_line[4])+1)
 			bedpe_line[5] = str(int(bedpe_line[5])+1)
-		label_string = "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()])
+		label_string = "/".join([f'{label.upper()}_{str(len(reads))}' for label, reads in self.labels.items()])
 		bp_length = str(abs(int(self.end_loc)-int(self.start_loc)))
-		cluster = str(self.originating_cluster.uid)
-		bedpe_line.append(f'{self.source}|ID_{count}|{bp_length}bp|{cluster}|{label_string}|{self.breakpoint_notation}')
+		start_cluster = str(self.originating_cluster.uid)
+		end_cluster = str(self.end_cluster.uid)
+		bedpe_line.append(f'ID_{count}|{bp_length}bp|{start_cluster}/{end_cluster}|{label_string}|{self.breakpoint_notation}')
 
 		return "\t".join(bedpe_line)+"\n"
 
 	def as_read_support(self, count):
 		""" return read support line representation of a breakpoint """
 		if ',' in ("".join(self.labels.get('tumour',[])+self.labels.get('normal',[]))):
-			# quote everything since read name columns are CSV
+			# quote everything since at least one read name contains a comma
 			read_support_line = [
 				f'ID_{count}',
 				'"'+'","'.join(self.labels.get('tumour',[]))+'"',
@@ -97,8 +120,8 @@ class ConsensusBreakpoint():
 		else:
 			read_support_line = [
 				f'ID_{count}',
-				",".join(self.labels.get('tumour',[])),
-				",".join(self.labels.get('normal',[]))
+				'"'+",".join(self.labels.get('tumour',[]))+'"',
+				'"'+",".join(self.labels.get('normal',[]))+'"'
 			]
 		return "\t".join(read_support_line)+"\n"
 
@@ -171,7 +194,7 @@ class ConsensusBreakpoint():
 		stats_end = self.end_cluster.get_stats()
 		for key, value in stats_end.items():
 			stats_str+=f'END_{key.upper()}={value};'
-		return stats_str[:-1] # remove last ';'
+		return stats_str
 
 	def as_vcf(self, ref_fasta):
 		""" return vcf line(s) representation of the breakpoint """
@@ -196,10 +219,17 @@ class ConsensusBreakpoint():
 		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
+			info[0]+=f'TUMOUR_DP={self.local_depths["tumour"][0]};'
+			info[0]+=f'NORMAL_DP={self.local_depths["normal"][0]};'
 		else:
 			info.append(info[0]) # duplicate info
+			# add edge-specific info
 			info[0] = f'SVTYPE=BND;MATEID=ID_{self.count}_2;' + info[0]
+			info[0]+=f'TUMOUR_DP={",".join(self.local_depths["tumour"])};'
+			info[0]+=f'NORMAL_DP={",".join(self.local_depths["normal"])};'
 			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
+			info[1]+=f'TUMOUR_DP={",".join(reversed(self.local_depths["tumour"]))};'
+			info[1]+=f'NORMAL_DP={",".join(reversed(self.local_depths["normal"]))};'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,
@@ -226,7 +256,6 @@ class ConsensusBreakpoint():
 				'GT',
 				gt_tag
 			])
-
 		vcf_string = ''
 		for line in vcf_lines:
 			vcf_string+="\t".join(line)+"\n"
@@ -240,7 +269,7 @@ class ConsensusBreakpoint():
 
 class PotentialBreakpoint():
 	""" class for a potential breakpoint identified from a CIGAR string or split-read """
-	def __init__(self, locations, source, read, label, breakpoint_notation, insert=None):
+	def __init__(self, locations, source, read_name, read_quality, label, breakpoint_notation, insert=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
@@ -250,8 +279,8 @@ class PotentialBreakpoint():
 		self.source = source # SUPP, INS, or DEL
 		if source == 'INS' and not insert:
 			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
-		self.read_name = read.query_name
-		self.mapq = read.mapping_quality
+		self.read_name = read_name
+		self.mapq = read_quality
 		self.label = label
 		self.breakpoint_notation = breakpoint_notation
 
@@ -335,6 +364,7 @@ class Cluster():
 		if self.start <= self.end:
 			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc < self.start) else self.start
 		else:
+			# it's reverse
 			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc > self.start) else self.start
 		if new_breakpoint.source == "SUPP":
 			if self.start <= self.end:
@@ -366,9 +396,11 @@ class Cluster():
 		""" return dict of the stdev of start, event size, and mean size in cluster """
 		if not self.stats:
 			starts = []
+			mapqs = []
 			event_sizes = []
 			for bp in self.breakpoints:
 				starts.append(bp.start_loc)
+				mapqs.append(bp.mapq)
 				if self.source == "SUPP":
 					event_sizes.append(1)
 				elif self.source == "INS":
@@ -377,17 +409,11 @@ class Cluster():
 					event_sizes.append(abs(bp.start_loc - bp.end_loc))
 			stat_dict = {
 				'starts_std_dev': pstdev(starts),
-				'starts_median': median(starts),
+				'mapq_mean': mean(mapqs),
 				'event_size_std_dev': pstdev(event_sizes),
 				'event_size_median': median(event_sizes),
 				'event_size_mean': mean(event_sizes)
 			}
-			stat_dict['uncertainty'] = (stat_dict['starts_std_dev']+1)*(stat_dict['event_size_std_dev']+1)
-			if stat_dict['event_size_median'] > 0:
-				stat_dict['event_heuristic'] = (stat_dict['event_size_std_dev']/stat_dict['event_size_median'])
-			else:
-				stat_dict['event_heuristic'] = None
-
 			# round to 2 decimal places for stats dict attribute
 			self.stats = {}
 			for key, value in stat_dict.items():

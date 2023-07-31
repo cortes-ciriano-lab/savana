@@ -1,0 +1,2 @@
+graft savana
+global-exclude *.py[cod]

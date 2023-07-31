@@ -9,10 +9,12 @@ Hillary Elrick
 import re
 import os
 import csv
+import sys
 
+from time import time
 from datetime import datetime
 
-__version__ = "0.2.3"
+__version__ = "1.0.0"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -77,6 +79,17 @@ consumes_reference = {
 	7: True,
 	8: True
 }
+
+# for developer debugging
+def conditionally_decorate(dec, condition=False):
+	""" whether to decorate a function (False by default)"""
+	def decorator(func):
+		print(f'{func}: {condition}')
+		if not condition:
+			# Return the function unchanged, not decorated.
+			return func
+		return dec(func)
+	return decorator
 
 def reverse_complement(sequence):
 	""" dna reverse complement of bases """
@@ -212,31 +225,60 @@ def get_chimeric_regions(read, mapq_filter):
 	return chimeric_regions
 
 def get_contigs(contig_file, ref_index):
-	""" given a file of contigs to consider, return them in a list """
+	""" use the contigs file to return contigs and lengths - otherwise use index """
 	if contig_file:
 		with open(contig_file, encoding="utf-8") as f:
 			contigs = f.readlines()
 			contigs = [contig.rstrip() for contig in contigs]
 			return contigs
-	elif ref_index:
-		# use the fai to get the contig names
-		with open(ref_index, encoding="utf-8") as f:
-			tab_reader = csv.reader(f, delimiter='\t')
-			contigs = []
-			for line in tab_reader:
-				contig = line[0]
-				contigs.append(contig)
-			return contigs
-	return None
+	# otherwise, use the fai to get the contig names
+	contigs = []
+	with open(ref_index, encoding="utf-8") as f:
+		tab_reader = csv.reader(f, delimiter='\t')
+		for line in tab_reader:
+			contig = line[0]
+			contigs.append(contig)
 
-def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpoint):
-	""" given a fasta file and index, generate the VCF header """
+	return contigs
+
+def get_contig_lengths(ref_index):
+	""" get the contig lengths from the reference """
+	contig_lengths = {}
+	with open(ref_index, encoding="utf-8") as f:
+		tab_reader = csv.reader(f, delimiter='\t')
+		for line in tab_reader:
+			contig = line[0]
+			length = line[1]
+			contig_lengths[contig] = int(length)
+
+	return contig_lengths
+
+def generate_vcf_header(args, example_breakpoint):
+	""" given a fasta file, index, and example breakpoint generate the VCF header """
 	vcf_header_str = []
 	vcf_header_str.extend([
 		"##fileformat=VCFv4.2",
 		f'##fileDate={datetime.now().strftime("%Y%m%d")}',
-		"##source=SAVANA.Beta",
-		f'##reference={ref_fasta}',
+		f'##source=SAVANAv{__version__}'
+	])
+	# add contigs
+	assembly_name = os.path.basename(args.ref)
+	with open(args.ref_index) as f:
+		reader = csv.reader(f, delimiter='\t')
+		for line in list(reader):
+			contig = line[0]
+			length = line[1]
+			vcf_header_str.append(f'##contig=<ID={contig},length={length},assembly={assembly_name}>')
+	# generate command line args string
+	cmd_string = '##savana_args="'
+	for arg, value in vars(args).items():
+		if value and arg != "func":
+			cmd_string+=f' --{arg} {value}'
+	cmd_string+='"'
+	# add info fields
+	vcf_header_str.extend([
+		cmd_string,
+		f'##reference={args.ref}',
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
 		'##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
 		'##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakends">',
@@ -245,43 +287,54 @@ def generate_vcf_header(ref_fasta, ref_fasta_index, tumour_file, example_breakpo
 		'##INFO=<ID=SVLEN,Number=1,Type=Float,Description="Length of the SV">',
 		'##INFO=<ID=ORIGINATING_CLUSTER,Number=.,Type=String,Description="SAVANA internal originating cluster id supporting variant">',
 		'##INFO=<ID=END_CLUSTER,Number=.,Type=String,Description="SAVANA internal end cluster id supporting variant">',
+		'##INFO=<ID=TUMOUR_DP,Number=.,Type=Float,Description="Local depth in tumour at the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP,Number=.,Type=Float,Description="Local depth in normal at the breakpoint(s) of an SV">',
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
 	])
+	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
 	breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()
 	for stat in breakpoint_stats_origin:
 		vcf_header_str.append(f'##INFO=<ID=ORIGIN_{stat.upper()},Number=1,Type=Float,Description="Originating cluster value for {stat}">')
 	for stat in breakpoint_stats_end:
 		vcf_header_str.append(f'##INFO=<ID=END_{stat.upper()},Number=1,Type=Float,Description="End cluster value for {stat}">')
-	assembly_name = os.path.basename(ref_fasta)
-	with open(ref_fasta_index) as f:
-		reader = csv.reader(f, delimiter='\t')
-		for line in list(reader):
-			contig = line[0]
-			length = line[1]
-			vcf_header_str.append(f'##contig=<ID={contig},length={length},assembly={assembly_name}>')
-	sample_name = os.path.splitext(os.path.basename(tumour_file))[0]
+	# add the final header line
+	sample_name = os.path.splitext(os.path.basename(args.tumour))[0]
 	vcf_header_str.append("#"+"\t".join(['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT',sample_name]))
 
 	return "\n".join(vcf_header_str)+"\n"
 
-def generate_variant_stats_header(example_breakpoint):
-	""" given an example breakpoint, generate column names """
-	stats_header = [
-		'location',
-		'label',
-		'bp_type',
-		'sv_len',
-		'originating_cluster',
-		'end_cluster',
-		'tumour_support',
-		'normal_support'
-	]
-	cluster_stats = example_breakpoint.originating_cluster.get_stats().keys()
-	for cluster_type in ['originating','end']:
-		stats_header+=[f'{cluster_type}_{s}' for s in cluster_stats]
+def time_function(desc, checkpoints, time_str, final=False):
+	""" prints the number of seconds elapsed compared to previous checkpoint """
+	checkpoints.append(time())
+	if not final:
+		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[-2], 3)} seconds'
+	else:
+		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[0], 3)} seconds\n'
+	time_str.append(formatted_time)
+	print(formatted_time)
+	return
 
-	return "\t".join(stats_header)+"\n", cluster_stats
+def get_local_coverage(chrom, start, end, bam_files):
+	""" given a location, return the local coverage for each bam file in dict """
+	coverages = {}
+	for label, bam_file in bam_files.items():
+		reads = [read for read in bam_file.fetch(chrom, start, end, multiple_iterators=True)]
+		reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
+		coverages[label] = len(reads)
+
+	return coverages
+
+def check_outdir(args_outdir):
+	# create output dir if it doesn't exist
+	outdir = os.path.join(os.getcwd(), args_outdir)
+	if not os.path.exists(outdir):
+		print(f'Creating directory {outdir} to store results')
+		os.mkdir(outdir)
+	elif os.listdir(outdir):
+		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+
+	return outdir
 
 if __name__ == "__main__":
-	print("Helper functions for the Somatic SV Caller")
+	print("Helper functions for SAVANA")

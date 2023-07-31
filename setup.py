@@ -24,13 +24,14 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'savana=savana.savana:main',
-            'savana-validation=savana.validation:main'
         ]
     },
+    include_package_data=True,
     classifiers=(
         "Programming Language :: Python :: 3.9",
         "Operating System :: Unix",
-        "Development Status :: 4 - Beta"
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Bio-Informatics"
     ),
 )
