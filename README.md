@@ -116,9 +116,9 @@ sample|Name to prepend to output files (default=tumour BAM filename without exte
 Argument | Description
 -------- | -----------
 debug | Optional flag to output extra debugging info and files
-ont_model |(Default) use a predictive random-forest model trained on Oxford Nanopore data
-pacbio_model |Use a predictive random-forest model trained on PacBio data
-predict_germline|Use a model that predicts germline events as well as somatic
+| ont | Flag to indicate that the Oxford Nanopore (ONT) trained model should be used to classify variants (default) |
+| ont_noisy | Flag to indicate that a model trained on ONT data with relatively more noise should be used |
+| predict_germline | Flag to indicate that a model that also predicts germline events should be used (a note that this reduced the accuracy of the somatic calls)|
 
 ### Output Files
 
@@ -270,12 +270,12 @@ You can also use the `savana classify` sub-command to re-classify using custom p
 | Argument | Description |
 | -------- | ----------- |
 | input | VCF file to classify |
-| custom_model | Pickle file of machine-learning model |
+| ont | Flag to indicate that the Oxford Nanopore (ONT) trained model should be used to classify variants (default) |
+| ont_noisy | Flag to indicate that a model trained on ONT data with relatively more noise should be used |
+| predict_germline | Flag to indicate that a model that also predicts germline events should be used (a note that this reduced the accuracy of the somatic calls)|
+| model | Pickle file of machine-learning model |
 | custom_params | JSON file of custom filtering parameters |
 | legacy | Use legacy lenient/strict filtering |
-| ont_model | Set flag to use the pre-trained ONT model to classify variants |
-| pacbio_model | Set flag to use the pre-trained PacBio model to classify variants |
-| predict_germline | Predict both somatic and germline events with the model (ONT-only) |
 
 ## Troubleshooting
 
