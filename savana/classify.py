@@ -183,13 +183,13 @@ def classify_by_params(args, checkpoints, time_str):
 
 	# Read in the if/else statements and apply them
 	filters = None
-	with open(args.params) as json_file:
+	with open(args.custom_params) as json_file:
 		filters = json.load(json_file)
 
 	# create dicts to store the VCF output and passing variants
 	category_dicts = {}
 	input_vcf = cyvcf2.VCF(args.vcf)
-	desc_string = str(f'Variant class as defined in params JSON {args.params}')
+	desc_string = str(f'Variant class as defined in params JSON {args.custom_params}')
 	input_vcf.add_info_to_header({
 		'ID': 'CLASS',
 		'Type': 'String',

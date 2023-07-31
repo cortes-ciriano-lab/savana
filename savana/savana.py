@@ -151,7 +151,7 @@ def savana_main(args):
 	savana_run(args)
 	# set the input VCF for classification
 	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
-	if not args.model and not args.params and not args.legacy:
+	if not args.model and not args.custom_params and not args.legacy:
 		#TODO: logic for which model to use (ONT/PB/germline)
 		# use ONT somatic only model by default
 		from pathlib import Path
@@ -165,7 +165,7 @@ def savana_main(args):
 	savana_classify(args)
 	if args.somatic:
 		# evaluate against somatic/germline VCFs
-		if args.legacy or args.params:
+		if args.legacy or args.custom_params:
 			# need reset output as the raw sv breakpoints since it's the only one that contains all variants
 			args.output = os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
 		# set the input vcf as previous output
