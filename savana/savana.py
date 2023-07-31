@@ -184,9 +184,9 @@ def main():
 	subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands', dest='command')
 
 	# savana run
-	run_parser = subparsers.add_parser("run", help="run SAVANA on tumour and normal long-read BAMs to detect SVs")
-	run_parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-	run_parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+	run_parser = subparsers.add_parser("run", help="identify and cluster breakpoints - output raw variants without classification")
+	run_parser.add_argument('-t','--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+	run_parser.add_argument('-n', '--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
 	run_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
 	run_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
 	run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")

@@ -19,11 +19,13 @@ import savana.helper as helper
 from savana.breakpoints import get_potential_breakpoints, call_breakpoints, add_local_depth, add_local_depth_old
 from savana.clusters import cluster_breakpoints, output_clusters
 
+# developer dependencies
+"""
 from memory_profiler import profile
 from pympler import muppy, summary, refbrowser
-import requests
-import sys
 import objgraph
+"""
+
 
 def pool_get_potential_breakpoints(bam_files, args):
 	""" split the genome into 500kBp chunks and identify PotentialBreakpoints """

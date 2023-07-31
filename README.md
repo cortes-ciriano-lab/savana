@@ -37,6 +37,11 @@ This will install all dependencies and allow you to use SAVANA on the command-li
 
 _Alternately_, you can install SAVANA from source (note these steps are not required if you've installed SAVANA via conda)
 
+First, clone this repository:
+```
+git clone git@github.com:cortes-ciriano-lab/savana.git
+```
+
 To install from source, SAVANA requires Python 3.9 with the following dependencies:
 - pysam
 - pybedtools
@@ -44,7 +49,7 @@ To install from source, SAVANA requires Python 3.9 with the following dependenci
 
 All of which can be installed via conda __OR__ pip:
 #### Install Dependencies with Conda
-To intall and manage dependencies with conda, create a new environment and install dependencies (including Python 3.9.6) with the `environment.yml` file:
+To intall and manage dependencies with conda, create a new environment and install dependencies (including Python 3.9.6) with the `environment.yml` file in the top-level of the repository:
 ```
 conda env create --name <env> --file environment.yml
 ```
@@ -53,6 +58,12 @@ conda env create --name <env> --file environment.yml
 If preferred, you can install and manage dependencies with pip instead using the `requirements.txt` file
 ```
 pip install -r requirements.txt
+```
+
+#### Clone and Install SAVANA
+Once you've installed the required dependencies with conda or pip, you can install SAVANA by navigating to the cloned repo and running:
+```
+python3 -m pip install . -vv
 ```
 
 #### Clone and Install SAVANA
