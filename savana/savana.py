@@ -251,8 +251,8 @@ def main():
 		subparser = None
 	if not subparser:
 		# arguments for default, main savana process: run, classify, evaluate
-		global_parser.add_argument('--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-		global_parser.add_argument('--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+		global_parser.add_argument('-t', '--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+		global_parser.add_argument('-n','--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
 		global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
 		global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
 		global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
