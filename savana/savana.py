@@ -85,7 +85,7 @@ def savana_classify(args):
 			model_base = 'ont-noisy-germline'
 		# check whether the model has been un-tarred
 		#TODO: this is a bit gross? think of more elegant solution
-		models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)),'models')
+		models_dir = os.path.join(os.path.dirname(__file__),'models')
 		model_path = os.path.join(models_dir, model_base)
 		model_pkl = model_path+'.pkl'
 		model_tar = model_path+'.tar.gz'
