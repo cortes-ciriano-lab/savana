@@ -84,7 +84,6 @@ def savana_classify(args):
 		elif args.ont_noisy and args.predict_germline:
 			model_base = 'ont-noisy-germline'
 		# check whether the model has been un-tarred
-		#TODO: this is a bit gross? think of more elegant solution
 		models_dir = os.path.join(os.path.dirname(__file__),'models')
 		model_path = os.path.join(models_dir, model_base)
 		model_pkl = model_path+'.pkl'
@@ -94,7 +93,7 @@ def savana_classify(args):
 			args.model = model_pkl
 		elif os.path.isfile(model_tar):
 			import tarfile
-			print(f'Need to untar {model_tar}')
+			print(f'First time using model - will untar {model_tar}')
 			tar = tarfile.open(model_tar, "r:gz")
 			tar.extractall(models_dir)
 			tar.close()
@@ -151,11 +150,9 @@ def savana_main(args):
 	savana_run(args)
 	# set the input VCF for classification
 	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
-	if not args.model and not args.custom_params and not args.legacy:
-		# use ONT somatic only model by default
-		from pathlib import Path
-		args.model = os.path.join(Path(__file__).parent.parent.absolute(),'package_models/ONT-somatic-only.pkl')
-		print(f'Using ONT somatic only model "{args.model}" to classify variants')
+	if not args.model and not args.custom_params and not args.legacy and not args.ont_noisy and not args.predict_germline:
+		args.ont = True
+		print(f'Using ONT somatic only model to classify variants')
 	# set the output VCF location
 	args.output = os.path.join(args.outdir, f'{args.sample}.classified.sv_breakpoints.vcf')
 	if not args.somatic_output and not args.custom_params and not args.legacy:
@@ -270,7 +267,7 @@ def main():
 		classify_group.add_argument('--ont_noisy', action='store_true', help='Use a model trained on ONT data with relatively more noise')
 		# whether to use a germline-trained model
 		global_parser.add_argument('--predict_germline', action='store_true', help='Use a model that also predicts germline events')
-		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model to classify with (default=ONT-somatic-only)')
+		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
 		classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 		classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
 		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output a VCF with only PASS somatic variants')
