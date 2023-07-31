@@ -20,8 +20,10 @@ from scipy.stats import randint
 from sklearn.utils.class_weight import *
 
 # Tree Visualisation
+"""
 import matplotlib.pyplot as plt
 from sklearn.tree import plot_tree
+"""
 
 label_encoding = {
 	'NOT_IN_COMPARISON': 0,
