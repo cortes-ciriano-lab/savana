@@ -152,14 +152,13 @@ def savana_main(args):
 	# set the input VCF for classification
 	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
 	if not args.model and not args.custom_params and not args.legacy:
-		#TODO: logic for which model to use (ONT/PB/germline)
 		# use ONT somatic only model by default
 		from pathlib import Path
 		args.model = os.path.join(Path(__file__).parent.parent.absolute(),'package_models/ONT-somatic-only.pkl')
 		print(f'Using ONT somatic only model "{args.model}" to classify variants')
 	# set the output VCF location
 	args.output = os.path.join(args.outdir, f'{args.sample}.classified.sv_breakpoints.vcf')
-	if not args.somatic_output and not args.params and not args.legacy:
+	if not args.somatic_output and not args.custom_params and not args.legacy:
 		# if using a model (even by default) - output a somatic-only classified VCF
 		args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
 	savana_classify(args)
