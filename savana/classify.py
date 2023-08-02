@@ -266,7 +266,8 @@ def classify_by_model(args, checkpoints, time_str):
 	for variant in input_vcf:
 		variant_id = variant.ID
 		variant_prediction = prediction_dict.get(variant_id, None)
-		if variant_prediction == 1:
+		variant_mate_prediction = prediction_dict.get(variant.INFO.get('MATEID', None), None)
+		if variant_prediction == 1 or variant_mate_prediction == 1:
 			# PREDICTED SOMATIC BY MODEL
 			# perform sanity checks
 			if variant.INFO['TUMOUR_SUPPORT'] < 3:
@@ -281,7 +282,7 @@ def classify_by_model(args, checkpoints, time_str):
 				if args.somatic_output:
 					# add to the somatic only VCF
 					somatic_vcf.write_record(variant)
-		elif variant_prediction == 2:
+		elif variant_prediction == 2 or variant_mate_prediction == 2:
 			# PREDICTED GERMLINE By MODEL
 			# perform sanity checks
 			if (variant.INFO['NORMAL_SUPPORT']+variant.INFO['TUMOUR_SUPPORT']) <= 3:
