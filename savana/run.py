@@ -27,42 +27,60 @@ import objgraph
 """
 
 
-def pool_get_potential_breakpoints(bam_files, args):
-	""" split the genome into 500kBp chunks and identify PotentialBreakpoints """
-	chunk_size = 500000 # 5.0e5 or (half a million)
+def pool_get_potential_breakpoints(aln_files, args):
+	""" split the genome into chunks and identify PotentialBreakpoints """
 	pool_potential = Pool(processes=args.threads)
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
-
-	# calculate how to split contigs based on total mapped reads
-	total_num_mapped_reads = 0
-	for label, bam_file in bam_files.items():
-		for contig in bam_file.get_index_statistics():
-			if contig.contig in contigs_to_consider:
-				total_num_mapped_reads+=contig.mapped
-	ideal_reads_per_thread = ceil(total_num_mapped_reads/args.threads)
-
-	for label, bam_file in bam_files.items():
-		for contig in bam_file.get_index_statistics():
-			if contig.contig not in contigs_to_consider:
-				if args.debug:
-					print(f'Skipping reads aligned to {contig.contig} - not in contigs file')
-				continue
-			if contig.mapped == 0:
-				continue
-			mapped_reads = contig.mapped
-			chrom_length = int(bam_file.get_reference_length(contig.contig))
-			num_chunks = max(floor(mapped_reads/ideal_reads_per_thread), 1)
-			if num_chunks > 1:
-				start_pos = 0
-				chunk_size = ceil(chrom_length/num_chunks)
-				for i in range(1, num_chunks+1):
-					end_pos = start_pos + chunk_size
-					end_pos = chrom_length if end_pos > chrom_length else end_pos # don't extend past end
-					pool_potential_args.append((bam_file.filename, args, label, contigs_to_consider, contig.contig, start_pos, end_pos))
-					start_pos = end_pos + 1
-			else:
-				pool_potential_args.append((bam_file.filename, args, label, contigs_to_consider, contig.contig))
+	if not args.is_cram:
+		# calculate how to split contigs based on total mapped reads
+		total_num_mapped_reads = 0
+		for label, aln_file in aln_files.items():
+			for contig in aln_file.get_index_statistics():
+				if contig.contig in contigs_to_consider:
+					total_num_mapped_reads+=contig.mapped
+		ideal_reads_per_thread = ceil(total_num_mapped_reads/args.threads)
+		# balance approx. number of reads per worker thread
+		for label, aln_file in aln_files.items():
+			for contig in aln_file.get_index_statistics():
+				if contig.contig not in contigs_to_consider:
+					if args.debug:
+						print(f'Skipping reads aligned to {contig.contig} - not in contigs file')
+					continue
+				if contig.mapped == 0:
+					continue
+				mapped_reads = contig.mapped
+				chrom_length = int(aln_file.get_reference_length(contig.contig))
+				num_chunks = max(floor(mapped_reads/ideal_reads_per_thread), 1)
+				if num_chunks > 1:
+					start_pos = 0
+					chunk_size = ceil(chrom_length/num_chunks)
+					for i in range(1, num_chunks+1):
+						end_pos = start_pos + chunk_size
+						end_pos = chrom_length if end_pos > chrom_length else end_pos # don't extend past end
+						pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig.contig, start_pos, end_pos))
+						start_pos = end_pos + 1
+				else:
+					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig.contig))
+	else:
+		# parallelize by contig (unable to see num. mapped reads per contig with cram)
+		chunk_size = 60000000 # 60 million
+		contig_lengths = helper.get_contig_lengths(args.ref_index)
+		for label, aln_file in aln_files.items():
+			for contig, contig_length in contig_lengths.items():
+				if contig not in contigs_to_consider:
+					continue
+				if contig_length > chunk_size:
+					# split the chrom into parts
+					num_intervals = ceil(contig_length/chunk_size) + 1
+					start_pos = 0
+					for i in range(1, num_intervals):
+						end_pos = start_pos + chunk_size
+						end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
+						pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig, start_pos, end_pos))
+						start_pos = end_pos + 1
+				else:
+					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig))
 
 	print(f'Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads')
 
@@ -185,7 +203,7 @@ def single_add_local_depth(intervals, bam_filenames):
 
 	return uid_dp_dict
 
-def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
+def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, aln_files, is_cram=False, ref=False):
 	""" """
 	from itertools import groupby
 
@@ -193,10 +211,10 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 	if threads == 1:
 		intervals_by_chrom = sorted([list(intervals) for _chrom, intervals in groupby(sorted_bed, lambda x: x[0])], key=len)
 		local_depth_results = []
-		for label in bam_files.keys():
-			bam_files[label] = bam_files[label].filename
+		for label in aln_files.keys():
+			aln_files[label] = aln_files[label].filename
 		for chrom_split in intervals_by_chrom:
-			local_depth_results.append(single_add_local_depth(chrom_split, bam_files))
+			local_depth_results.append(single_add_local_depth(chrom_split, aln_files))
 	else:
 		intervals_by_chrom = sorted([list(intervals) for _chrom, intervals in groupby(sorted_bed, lambda x: x[0])], key=len, reverse=True)
 		total_length = sum([len(c) for c in intervals_by_chrom])
@@ -215,6 +233,9 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 				# don't bother splitting
 				redistributed_intervals.append(chrom_chunk)
 		print(f'Using {ideal_binsize} as binsize, there are {len(redistributed_intervals)} redistributed intervals')
+		if not redistributed_intervals:
+			import sys
+			sys.exit('Issue calculating redistributed_intervals. Check input parameters')
 		max_bin = max([len(c) for c in redistributed_intervals])
 		min_bin = min([len(c) for c in redistributed_intervals])
 		print(f'Max binsize {max_bin}, min binsize {min_bin}')
@@ -227,10 +248,10 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, bam_files):
 		pool_local_depth = Pool(processes=threads, maxtasksperchild=max_tasks)
 		pool_local_depth_args = []
 		# convert bam_files into filenames (rather than objects - breaks parallelization)
-		for label in bam_files.keys():
-			bam_files[label] = bam_files[label].filename
+		for label in aln_files.keys():
+			aln_files[label] = aln_files[label].filename
 		for chrom_split in redistributed_intervals:
-			pool_local_depth_args.append((chrom_split, bam_files))
+			pool_local_depth_args.append((chrom_split, aln_files, is_cram, ref))
 		local_depth_results = pool_local_depth.starmap(add_local_depth, pool_local_depth_args)
 
 	uid_dp_dict = {}
@@ -326,11 +347,11 @@ def profiling_experiment(intervals, bam_filenames):
 		cb = refbrowser.ConsoleBrowser(o, maxdepth=2, str_func=lambda x: str(type(x)))
 		cb.print_tree()
 
-def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
+def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using multiprocessing with {args.threads} threads\n')
 	# 1) GET POTENTIAL BREAKPOINTS
-	potential_breakpoints_results = pool_get_potential_breakpoints(bam_files, args)
+	potential_breakpoints_results = pool_get_potential_breakpoints(aln_files, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
 	# collect results per chrom
 	chrom_potential_breakpoints = {}
@@ -354,7 +375,8 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 	if args.debug:
 		# 3.1) OUTPUT CLUSTERS
 		for bp_type in ["+-", "++", "-+", "--", "<INS>"]:
-			pool_output_clusters(args, pruned_clusters[bp_type], outdir)
+			if bp_type in pruned_clusters:
+				pool_output_clusters(args, pruned_clusters[bp_type], outdir)
 		helper.time_function("Output pruned clusters", checkpoints, time_str)
 
 	# 4) ADD LOCAL DEPTH
@@ -371,7 +393,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 			bed_string += bp.as_bed(contig_lengths)
 	sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
 	print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
-	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, bam_files)
+	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, aln_files, args.is_cram, args.ref)
 	helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
 
 	# 5) OUTPUT BREAKPOINTS
@@ -403,7 +425,7 @@ def spawn_processes(args, bam_files, checkpoints, time_str, outdir):
 
 	helper.time_function("Output consensus breakpoints", checkpoints, time_str)
 
-	return pruned_clusters, breakpoint_dict_chrom, checkpoints, time_str
+	return checkpoints, time_str
 
 if __name__ == "__main__":
 	print("Functions to run SAVANA")

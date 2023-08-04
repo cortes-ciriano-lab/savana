@@ -130,14 +130,17 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=None, start=None, end=None):
+def get_potential_breakpoints(aln_filename, args, label, contig_order, chrom=None, start=None, end=None):
 	""" iterate through bam file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
-	bam_file = pysam.AlignmentFile(bam_filename, "rb")
+	if args.is_cram:
+		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=args.ref)
+	else:
+		aln_file = pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
 	args_length = max((args.length - floor(args.length/5)), 0) if label == 'normal' else args.length
 	mapq = min((args.mapq - ceil(args.mapq/2)), 1) if label == 'normal' else args.mapq
-	for read in bam_file.fetch(chrom, start, end):
+	for read in aln_file.fetch(chrom, start, end):
 		if read.is_secondary or read.is_supplementary:
 			continue # only consider primary
 		if read.mapping_quality < mapq:
@@ -194,27 +197,30 @@ def get_potential_breakpoints(bam_filename, args, label, contig_order, chrom=Non
 			# if reached end of string and no chance to expand deletion, add it
 			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
 
-	bam_file.close()
+	aln_file.close()
 
 	return potential_breakpoints
 
-def add_local_depth(intervals, bam_filenames):
+def add_local_depth(intervals, aln_filenames, is_cram, ref):
 	""" given intervals and uids, get the local depth for each interval """
 	uid_dp_dict = {}
 	chrom = intervals[0][0]
 	start = max(int(intervals[0][1])-1, 0) # first start
 	end = int(intervals[-1][2]) # last end
 	read_stats = {}
-	for bam_type, bam_filename in bam_filenames.items():
-		bam_file = pysam.AlignmentFile(bam_filename, "rb")
+	for bam_type, aln_filename in aln_filenames.items():
+		if is_cram:
+			aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
+		else:
+			aln_file = pysam.AlignmentFile(aln_filename, "rb")
 		read_stats[bam_type] = []
-		for read in bam_file.fetch(chrom, start, end):
+		for read in aln_file.fetch(chrom, start, end):
 			if read.mapping_quality == 0 or read.is_duplicate:
 				continue
 			read_stats[bam_type].append([int(read.reference_start), int(read.reference_end), read.query_name])
 			del read
-		bam_file.close()
-		del bam_file
+		aln_file.close()
+		del aln_file
 	for i in intervals:
 		uid = i[3]
 		interval_start = int(i[1])

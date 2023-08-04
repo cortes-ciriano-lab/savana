@@ -39,11 +39,24 @@ def savana_run(args):
 	# set number of threads to cpu count if none set
 	if not args.threads:
 		args.threads = cpu_count()
-	# read bam files (must have bai)
-	bam_files = {
-		'tumour': pysam.AlignmentFile(args.tumour, "rb"),
-		'normal': pysam.AlignmentFile(args.normal, "rb")
-	}
+	# check if files are bam or cram (must have indices)
+	if args.tumour.endswith('bam') and args.normal.endswith('bam'):
+		args.is_cram = False
+		aln_files = {
+			'tumour': pysam.AlignmentFile(args.tumour, "rb"),
+			'normal': pysam.AlignmentFile(args.normal, "rb")
+		}
+	elif args.tumour.endswith('cram') and args.normal.endswith('cram'):
+		args.is_cram = True
+		aln_files = {
+			'tumour': pysam.AlignmentFile(args.tumour, "rc"),
+			'normal': pysam.AlignmentFile(args.normal, "rc")
+		}
+		if not args.contigs:
+			print("WARNING: when using CRAM files, it's highly recommended to supply contigs of interest via the --contigs argument (see README.md and example/contigs.chr.hg38.txt)")
+	else:
+		sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
+
 	# confirm ref and ref fasta index exist
 	if not os.path.exists(args.ref):
 		sys.exit(f'Provided reference: "{args.ref}" does not exist. Please provide full path')
@@ -58,7 +71,7 @@ def savana_run(args):
 	checkpoints = [time()]
 	time_str = []
 	# run SAVANA processes
-	consensus_clusters, breakpoints, checkpoints, time_str = run.spawn_processes(args, bam_files, checkpoints, time_str, outdir)
+	checkpoints, time_str = run.spawn_processes(args, aln_files, checkpoints, time_str, outdir)
 	# finish timing
 	helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
 
@@ -185,7 +198,7 @@ def main():
 	run_parser.add_argument('-n', '--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
 	run_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
 	run_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
-	run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
+	run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider. See example at example/contigs.chr.hg38.txt (optional, default=All)")
 	run_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
 	run_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
 	run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')

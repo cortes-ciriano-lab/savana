@@ -99,29 +99,33 @@ subcommands:
 
 After installing, SAVANA can be with a minumum set of arguments:
 ```
-savana --tumour <tumour-bam> --normal <normal-bam> --outdir <outdir> --ref <ref-fasta>
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
 ### Mandatory Arguments
 Argument|Description
 --------|-----------
-tumour|Tumour BAM file (must have index in .bai format)
-normal|Normal BAM file (must have index in .bai format)
+tumour|Tumour BAM/CRAM file (must have index in .bai/.crai format)
+normal|Normal BAM/CRAM file (must have index in .bai/.crai format)
 outdir|Output directory (can exist but must be empty)
 ref|Full path to reference genome that was used to align the `tumour` and `normal` BAM
+
+#### Note about CRAM Files
+
+As of version 1.0.3 SAVANA supports CRAM files. However, there is a reduction in speed when using these files due to the inability to optimise based on the number of reads mapped per chromosome (cram indices do not contain this information). To minimisie this impact, it's **highly** recommended to supply a list of contigs of interest via the `--contigs` argument (an example file is at `example/contigs.chr.hg38.txt`).
 
 ### Optional Arguments
 Argument|Description
 --------|-----------
-ref_index|Full path to reference genome fasta index (ref path + ".fai" used by default)
-contigs|Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`
-length|Minimum length SV to consider (default=30)
-mapq|Minimum MAPQ of reads to consider (default=5)
-buffer|Buffer to add when clustering adjacent (non-insertion) potential breakpoints (default=10)
-insertion_buffer|Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
-depth|Minumum number of supporting reads from tumour OR normal to consider variant (default=3)
-threads|Number of threads to use (default is maximum available)
-sample|Name to prepend to output files (default=tumour BAM filename without extension)
+ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
+contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
+length| Minimum length SV to consider (default=30)
+mapq| Minimum MAPQ of reads to consider (default=5)
+buffer| Buffer to add when clustering adjacent (non-insertion) potential breakpoints (default=10)
+insertion_buffer| Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
+depth| Minumum number of supporting reads from tumour OR normal to consider variant (default=3)
+threads| Number of threads to use (default is maximum available)
+sample| Name to prepend to output files (default=tumour BAM filename without extension)
 
 ### Optional Flags
 Argument | Description
