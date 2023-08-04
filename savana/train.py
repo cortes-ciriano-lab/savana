@@ -19,11 +19,8 @@ from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from scipy.stats import randint
 from sklearn.utils.class_weight import *
 
-# Tree Visualisation
-"""
+# for plotting confusion matrix
 import matplotlib.pyplot as plt
-from sklearn.tree import plot_tree
-"""
 
 label_encoding = {
 	'NOT_IN_COMPARISON': 0,
@@ -96,7 +93,7 @@ def prepare_data(data_matrix, germline_class):
 		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
 		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
 		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS'
-		], axis=1)
+		], axis=1, errors='ignore')
 	target = data_matrix['LABEL']
 
 	return features, target
@@ -137,7 +134,7 @@ def fit_classifier(X, y, outdir, split, downsample, hyperparameter, germline_cla
 	random_forest = None
 	if hyperparameter:
 		# hyper-parameter testing
-		param_dist = {'n_estimators': randint(10, 500), 'max_depth': randint(1,20)}
+		param_dist = {'n_estimators': randint(400,500), 'max_depth': randint(10,20)}
 		rf = RandomForestClassifier(n_jobs=16)
 		rand_search = RandomizedSearchCV(rf,
 					param_distributions=param_dist,

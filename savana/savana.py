@@ -141,7 +141,7 @@ def savana_train(args):
 		# load data matrix from pickle file
 		data_matrix = train.load_matrix(args)
 	features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
-	classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.fit_classifier)
+	classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.germline_class)
 	train.save_model(args, classifier, outdir)
 
 def savana_main(args):
