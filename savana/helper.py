@@ -315,16 +315,6 @@ def time_function(desc, checkpoints, time_str, final=False):
 	print(formatted_time)
 	return
 
-def get_local_coverage(chrom, start, end, bam_files):
-	""" given a location, return the local coverage for each bam file in dict """
-	coverages = {}
-	for label, bam_file in bam_files.items():
-		reads = [read for read in bam_file.fetch(chrom, start, end, multiple_iterators=True)]
-		reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
-		coverages[label] = len(reads)
-
-	return coverages
-
 def check_outdir(args_outdir):
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args_outdir)

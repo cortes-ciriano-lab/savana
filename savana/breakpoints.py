@@ -131,7 +131,7 @@ def count_num_labels(source_breakpoints):
 	return label_counts
 
 def get_potential_breakpoints(aln_filename, args, label, contig_order, chrom=None, start=None, end=None):
-	""" iterate through bam file, tracking potential breakpoints and saving relevant reads to fastq """
+	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
 	if args.is_cram:
 		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=args.ref)
@@ -208,16 +208,16 @@ def add_local_depth(intervals, aln_filenames, is_cram, ref):
 	start = max(int(intervals[0][1])-1, 0) # first start
 	end = int(intervals[-1][2]) # last end
 	read_stats = {}
-	for bam_type, aln_filename in aln_filenames.items():
+	for file_type, aln_filename in aln_filenames.items():
 		if is_cram:
 			aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
 		else:
 			aln_file = pysam.AlignmentFile(aln_filename, "rb")
-		read_stats[bam_type] = []
+		read_stats[file_type] = []
 		for read in aln_file.fetch(chrom, start, end):
 			if read.mapping_quality == 0 or read.is_duplicate:
 				continue
-			read_stats[bam_type].append([int(read.reference_start), int(read.reference_end), read.query_name])
+			read_stats[file_type].append([int(read.reference_start), int(read.reference_end), read.query_name])
 			del read
 		aln_file.close()
 		del aln_file
@@ -226,16 +226,10 @@ def add_local_depth(intervals, aln_filenames, is_cram, ref):
 		interval_start = int(i[1])
 		interval_end = int(i[2])
 		edge = int(i[4])
-		for bam_type, reads in read_stats.items():
-			#subtraction = [((interval_end-r[0])-r[1]) for r in reads]
-			#dp = sum(1 for x in subtraction if x <= 0)
-			#del subtraction
-			#comparison = [(interval_start <= r[1]) and (r[0] <= interval_end) for r in reads]
-
+		for file_type, reads in read_stats.items():
 			comparison = [[(interval_start - r[1]), (r[0] - interval_end)] for r in reads]
 			dp = sum(1 for x,y in comparison if x <= 0 and y <= 0)
 			del comparison
-
 			# for some reason, these methods aren't faster
 			'''
 			comparison = [[(interval_start <= r[1]), (r[0] <= interval_end)] for r in reads]
@@ -244,80 +238,13 @@ def add_local_depth(intervals, aln_filenames, is_cram, ref):
 			'''
 			# nor
 			#dp = sum(1 for r in reads if (interval_start - r[1]) <= 0 and (r[0] - interval_end) <= 0)
-
 			if uid not in uid_dp_dict:
 				uid_dp_dict[uid] = {}
-			if bam_type not in uid_dp_dict[uid]:
-				uid_dp_dict[uid][bam_type] = [None, None]
-			uid_dp_dict[uid][bam_type][edge] = str(dp)
-
-	"""
-	else:
-		# ALTERNATELY: IF USING THIS, WILL NEED TO REDUCE MAX TASKS PER CHILD CALCULATION
-		uid_dp_dict = {}
-		for bam_type, bam_filename in bam_filenames.items():
-			bam_file = pysam.AlignmentFile(bam_filename, "rb")
-			for i in intervals:
-				i_chrom, i_start, i_end, uid, edge = i
-				reads = [read for read in bam_file.fetch(i_chrom, int(i_start), int(i_end))]
-				reads = [read for read in reads if not read.is_duplicate and read.mapping_quality >= 0]
-				if uid not in uid_dp_dict:
-					uid_dp_dict[uid] = {}
-				if bam_type not in uid_dp_dict[uid]:
-					uid_dp_dict[uid][bam_type] = [None, None]
-				uid_dp_dict[uid][bam_type][int(edge)] = str(len(reads))
-	"""
+			if file_type not in uid_dp_dict[uid]:
+				uid_dp_dict[uid][file_type] = [None, None]
+			uid_dp_dict[uid][file_type][edge] = str(dp)
 
 	return uid_dp_dict
-
-def add_local_depth_old(breakpoints, bam_filenames):
-	""" given breakpoints, add the local depth of tumour/normal """
-	for label, bam_filename in bam_filenames.items():
-		bam_file = pysam.AlignmentFile(bam_filename, "rb")
-		option_one=False
-		option_two=False
-		if option_one:
-			for bp in breakpoints:
-					coverage = bam_file.count_coverage(bp.start_chr, bp.start_loc-1, bp.start_loc)
-					bp.local_depths.setdefault(label,[]).append(str(np.sum(coverage)))
-					if not bp.source == "INS":
-						# add the second edge (append to list)
-						coverage = bam_file.count_coverage(bp.end_chr, bp.end_loc-1, bp.end_loc)
-						bp.local_depths.setdefault(label,[]).append(str(np.sum(coverage)))
-		elif option_two:
-			for bp in breakpoints:
-				got_dp = False
-				for pileupcolumn in bam_file.pileup(bp.start_chr, bp.start_loc-1, bp.start_loc, min_mapping_quality=0, ignore_overlaps=False):
-					if pileupcolumn.pos == bp.start_loc - 1:
-						bp.local_depths.setdefault(label,[]).append(str(pileupcolumn.n))
-						got_dp = True
-						continue
-				if not got_dp:
-					bp.local_depths.setdefault(label,[]).append(str(0))
-				if not bp.source == "INS":
-					# add the second edge (append to list)
-					got_dp = False
-					for pileupcolumn in bam_file.pileup(bp.end_chr, bp.end_loc-1, bp.end_loc, min_mapping_quality=0, ignore_overlaps=False):
-						if pileupcolumn.pos == bp.end_loc - 1:
-							bp.local_depths.setdefault(label,[]).append(str(pileupcolumn.n))
-							got_dp = True
-							continue
-					if not got_dp:
-						bp.local_depths.setdefault(label,[]).append(str(0))
-		else:
-			for bp in breakpoints:
-				""" e.g.) {'tumour': [start_depth, end_depth], 'normal': [start_depth, end_depth]} """
-				#reads = [read for read in bam_file.fetch(bp.start_chr, bp.start_loc, bp.start_loc+1, multiple_iterators=True)]
-				reads = [read for read in bam_file.fetch(bp.start_chr, bp.start_loc, bp.start_loc+1)]
-				reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
-				bp.local_depths.setdefault(label,[]).append(str(len(reads)))
-				if not bp.source == "INS":
-					# add the second edge (append to list)
-					#reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1, multiple_iterators=True)]
-					reads = [read for read in bam_file.fetch(bp.end_chr, bp.end_loc, bp.end_loc+1)]
-					reads = [read for read in reads if read.is_duplicate == False and read.mapping_quality >= 0]
-					bp.local_depths.setdefault(label,[]).append(str(len(reads)))
-	return breakpoints
 
 def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """

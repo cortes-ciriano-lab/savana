@@ -183,7 +183,6 @@ def savana_main(args):
 		args.stats = os.path.join(args.outdir,f'{args.sample}.evaluation.stats')
 		savana_evaluate(args)
 
-
 def main():
 	""" main function for SAVANA - collects command line arguments and executes algorithm """
 
