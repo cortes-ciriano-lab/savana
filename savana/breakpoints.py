@@ -201,48 +201,47 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, chrom=Non
 
 	return potential_breakpoints
 
-def add_local_depth(intervals, aln_filenames, is_cram, ref):
+def add_local_depth(intervals, aln_filename, label, is_cram, ref):
 	""" given intervals and uids, get the local depth for each interval """
 	uid_dp_dict = {}
 	chrom = intervals[0][0]
 	start = max(int(intervals[0][1])-1, 0) # first start
 	end = int(intervals[-1][2]) # last end
 	read_stats = {}
-	for file_type, aln_filename in aln_filenames.items():
-		if is_cram:
-			aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
-		else:
-			aln_file = pysam.AlignmentFile(aln_filename, "rb")
-		read_stats[file_type] = []
-		for read in aln_file.fetch(chrom, start, end):
-			if read.mapping_quality == 0 or read.is_duplicate:
-				continue
-			read_stats[file_type].append([int(read.reference_start), int(read.reference_end), read.query_name])
-			del read
-		aln_file.close()
-		del aln_file
+	#for file_type, filename in aln_filename.items():
+	if is_cram:
+		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
+	else:
+		aln_file = pysam.AlignmentFile(aln_filename, "rb")
+	read_stats = []
+	for read in aln_file.fetch(chrom, start, end):
+		if read.mapping_quality == 0 or read.is_duplicate:
+			continue
+		read_stats.append([int(read.reference_start), int(read.reference_end), read.query_name])
+		del read
+	aln_file.close()
+	del aln_file
 	for i in intervals:
 		uid = i[3]
 		interval_start = int(i[1])
 		interval_end = int(i[2])
 		edge = int(i[4])
-		for file_type, reads in read_stats.items():
-			comparison = [[(interval_start - r[1]), (r[0] - interval_end)] for r in reads]
-			dp = sum(1 for x,y in comparison if x <= 0 and y <= 0)
-			del comparison
-			# for some reason, these methods aren't faster
-			'''
-			comparison = [[(interval_start <= r[1]), (r[0] <= interval_end)] for r in reads]
-			dp = sum(1 for x,y in comparison if x and y)
-			del comparison
-			'''
-			# nor
-			#dp = sum(1 for r in reads if (interval_start - r[1]) <= 0 and (r[0] - interval_end) <= 0)
-			if uid not in uid_dp_dict:
-				uid_dp_dict[uid] = {}
-			if file_type not in uid_dp_dict[uid]:
-				uid_dp_dict[uid][file_type] = [None, None]
-			uid_dp_dict[uid][file_type][edge] = str(dp)
+		comparison = [[(interval_start - r[1]), (r[0] - interval_end)] for r in read_stats]
+		dp = sum(1 for x,y in comparison if x <= 0 and y <= 0)
+		del comparison
+		# for some reason, these methods aren't faster
+		'''
+		comparison = [[(interval_start <= r[1]), (r[0] <= interval_end)] for r in reads]
+		dp = sum(1 for x,y in comparison if x and y)
+		del comparison
+		'''
+		# nor
+		#dp = sum(1 for r in reads if (interval_start - r[1]) <= 0 and (r[0] - interval_end) <= 0)
+		if uid not in uid_dp_dict:
+			uid_dp_dict[uid] = {}
+		if label not in uid_dp_dict[uid]:
+			uid_dp_dict[uid][label] = [None, None]
+		uid_dp_dict[uid][label][edge] = str(dp)
 
 	return uid_dp_dict
 
