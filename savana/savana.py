@@ -297,7 +297,7 @@ def main():
 		args = global_parser.parse_args()
 
 	print(logo)
-	print(f'Version {helper.__version__} - beta')
+	print(f'Version {helper.__version__}')
 	src_location = __file__
 	print(f'Source: {src_location}\n')
 	args.func(args)
