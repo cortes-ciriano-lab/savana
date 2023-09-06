@@ -14,7 +14,7 @@ import sys
 from time import time
 from datetime import datetime
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
