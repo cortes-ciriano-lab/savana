@@ -66,7 +66,7 @@ def savana_run(args):
 		sys.exit(f'Default reference fasta index: "{args.ref}.fai" does not exist. Please provide full path')
 	else:
 		args.ref_index = f'{args.ref}.fai' if not args.ref_index else args.ref_index
-		print(f'Using {args.ref_index} as reference fasta index')
+		print(f'Found {args.ref_index} to use as reference fasta index')
 	# initialize timing
 	checkpoints = [time()]
 	time_str = []
@@ -297,7 +297,7 @@ def main():
 		args = global_parser.parse_args()
 
 	print(logo)
-	print(f'Version {helper.__version__} - beta')
+	print(f'Version {helper.__version__}')
 	src_location = __file__
 	print(f'Source: {src_location}\n')
 	args.func(args)

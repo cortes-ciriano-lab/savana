@@ -130,8 +130,9 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(aln_filename, args, label, contig_order, chrom=None, start=None, end=None):
+def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, start, end):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
+	# TODO: look into removing contig from potential_breakpoints as we're double-storing it in chunk coverage
 	potential_breakpoints = {}
 	if args.is_cram:
 		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=args.ref)
@@ -140,9 +141,25 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, chrom=Non
 	# adjust the thresholds depending on sample source
 	args_length = max((args.length - floor(args.length/5)), 0) if label == 'normal' else args.length
 	mapq = min((args.mapq - ceil(args.mapq/2)), 1) if label == 'normal' else args.mapq
-	for read in aln_file.fetch(chrom, start, end):
+	# store the read start/ends for calculating depth later
+	chunk_read_incrementer = {
+		'contig': contig,
+		'start': int(start),
+		'end': int(end),
+		'label': label,
+		'coverage_array': np.zeros((end-start,), dtype=int)
+	}
+	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary or read.is_supplementary:
 			continue # only consider primary
+		if read.mapping_quality > 0:
+			# record start/end in read incrementer
+			shifted_start = read.reference_start - start
+			shifted_end = read.reference_end - start
+			if shifted_start >= 0 and shifted_start < (end-start):
+				chunk_read_incrementer['coverage_array'][shifted_start]+=1
+			if shifted_end >= 0 and shifted_end < (end-start):
+				chunk_read_incrementer['coverage_array'][shifted_end]-=1
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
@@ -199,7 +216,7 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, chrom=Non
 
 	aln_file.close()
 
-	return potential_breakpoints
+	return potential_breakpoints, chunk_read_incrementer
 
 def add_local_depth(intervals, aln_filename, label, is_cram, ref):
 	""" given intervals and uids, get the local depth for each interval """
@@ -215,9 +232,9 @@ def add_local_depth(intervals, aln_filename, label, is_cram, ref):
 		aln_file = pysam.AlignmentFile(aln_filename, "rb")
 	read_stats = []
 	for read in aln_file.fetch(chrom, start, end):
-		if read.mapping_quality == 0 or read.is_duplicate:
+		if read.mapping_quality == 0 or read.is_duplicate or read.reference_start < start:
 			continue
-		read_stats.append([int(read.reference_start), int(read.reference_end), read.query_name])
+		read_stats.append([int(read.reference_start), int(read.reference_end)])
 		del read
 	aln_file.close()
 	del aln_file

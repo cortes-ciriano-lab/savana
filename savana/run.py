@@ -11,6 +11,7 @@ import os
 from math import ceil, floor
 from multiprocessing import Pool
 
+import numpy as np
 import pysam
 import pysam.bcftools as bcftools
 import pybedtools
@@ -26,12 +27,12 @@ from pympler import muppy, summary, refbrowser
 import objgraph
 """
 
-
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
 	pool_potential = Pool(processes=args.threads)
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
 	if not args.is_cram:
 		# calculate how to split contigs based on total mapped reads
 		total_num_mapped_reads = 0
@@ -44,8 +45,6 @@ def pool_get_potential_breakpoints(aln_files, args):
 		for label, aln_file in aln_files.items():
 			for contig in aln_file.get_index_statistics():
 				if contig.contig not in contigs_to_consider:
-					if args.debug:
-						print(f'Skipping reads aligned to {contig.contig} - not in contigs file')
 					continue
 				if contig.mapped == 0:
 					continue
@@ -61,11 +60,12 @@ def pool_get_potential_breakpoints(aln_files, args):
 						pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig.contig, start_pos, end_pos))
 						start_pos = end_pos + 1
 				else:
-					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig.contig))
+					# examine entire length of contig
+					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig.contig, 0, chrom_length))
 	else:
+		#TODO: make coverage work for cram
 		# parallelize by contig (unable to see num. mapped reads per contig with cram)
 		chunk_size = 60000000 # 60 million
-		contig_lengths = helper.get_contig_lengths(args.ref_index)
 		for label, aln_file in aln_files.items():
 			for contig, contig_length in contig_lengths.items():
 				if contig not in contigs_to_consider:
@@ -81,8 +81,8 @@ def pool_get_potential_breakpoints(aln_files, args):
 						start_pos = end_pos + 1
 				else:
 					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig))
-
-	print(f'Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads')
+	if args.debug:
+		print(f' > Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads')
 
 	potential_breakpoints_results = pool_potential.starmap(get_potential_breakpoints, pool_potential_args)
 	pool_potential.close()
@@ -128,64 +128,50 @@ def pool_output_clusters(args, clusters, outdir):
 	pool_output.close()
 	pool_output.join()
 
-def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, aln_files, is_cram=False, ref=False):
-	""" """
-	from itertools import groupby
+# multi-processing solution (memory crashes due to issues serialising contig coverage arrays
+def pool_compute_depth(threads, breakpoint_dict_chrom, contig_coverages_merged):
+	""" parallelize the computation of depth """
+	pool_compute_depth = Pool(processes=threads)
+	pool_compute_depth_args = []
 
-	intervals_by_chrom = sorted([list(intervals) for _chrom, intervals in groupby(sorted_bed, lambda x: x[0])], key=len, reverse=True)
-	total_length = sum([len(c) for c in intervals_by_chrom])
-	redistributed_intervals = []
-	#ideal_binsize = floor(total_length/(threads-2))
-	#ideal_binsize = floor(total_length/(threads*2))
-	ideal_binsize = max(floor(total_length/(threads*threads)),1)
-	for chrom_chunk in intervals_by_chrom:
-		if len(chrom_chunk) > 2*ideal_binsize:
-			num_subchunks = floor(len(chrom_chunk)/ideal_binsize)
-			# split list into equal chunks from https://stackoverflow.com/a/2135920
-			quotient, remainder = divmod(len(chrom_chunk), num_subchunks)
-			chunk_split = (chrom_chunk[i*quotient+min(i, remainder):(i+1)*quotient+min(i+1, remainder)] for i in range(num_subchunks))
-			redistributed_intervals.extend(chunk_split)
-		else:
-			# don't bother splitting
-			redistributed_intervals.append(chrom_chunk)
-	print(f'Using {ideal_binsize} as binsize, there are {len(redistributed_intervals)} redistributed intervals')
-	if not redistributed_intervals:
-		import sys
-		sys.exit('Issue calculating redistributed_intervals. Check input parameters')
-	max_bin = max([len(c) for c in redistributed_intervals])
-	min_bin = min([len(c) for c in redistributed_intervals])
-	print(f'Max binsize {max_bin}, min binsize {min_bin}')
+	for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
+		if chrom in contig_coverages_merged:
+			pool_compute_depth_args.append((chrom_breakpoints, contig_coverages_merged[chrom]))
+	pool_compute_depth.starmap(compute_depth, pool_compute_depth_args)
 
-	# calculate max tasksperchild (max num)
-	max_total_intervals_per_child = max(10000, max_bin+1) # figure this out by experiements
-	max_tasks = floor(max_total_intervals_per_child/max_bin)
-	print(f'Setting maxtasksperchild to {max_tasks}')
+	return
 
-	pool_local_depth = Pool(processes=threads, maxtasksperchild=max_tasks)
-	pool_local_depth_args = []
-	# convert aln_files into filenames (rather than objects - breaks parallelization)
-	for label in aln_files.keys():
-		aln_files[label] = aln_files[label].filename
-	for chrom_split in redistributed_intervals:
-		pool_local_depth_args.append((chrom_split, aln_files, is_cram, ref))
-	local_depth_results = pool_local_depth.starmap(add_local_depth, pool_local_depth_args)
-
+# single threaded option for coverage (works but is slow)
+def compute_depth_single_threaded(threads, sorted_bed, breakpoint_dict_chrom, contig_coverages_merged):
+	""" using the contig coverages to annotate the breakpoints """
 	uid_dp_dict = {}
-	"""
-	dictionary structured as so:
-	{
-		'uid': {'TUMOUR_DP': [0,0], 'NORMAL_DP': [0,0]}
-	}
-	"""
-	for result in local_depth_results:
-		for uid, counts in result.items():
-			if uid not in uid_dp_dict:
-				uid_dp_dict[uid] = {}
-			for aln_file, values in counts.items():
-				if aln_file not in uid_dp_dict[uid]:
-					uid_dp_dict[uid][aln_file] = [None, None]
-				for i, dp in enumerate(values):
-					uid_dp_dict[uid][aln_file][i] = dp if dp else uid_dp_dict[uid][aln_file][i]
+	for interval in sorted_bed:
+		# get info about interval
+		contig, start, end, uid, edge = interval
+		start, end, edge = int(start), int(end), int(edge)
+		# calculate depth by summing values (creds to mosdepth)
+		depth_sums = {}
+		if contig not in contig_coverages_merged:
+			print(f' > {contig} not in coverages array')
+			for label in ['tumour','normal']:
+				uid_dp_dict[uid][label] = ['0', '0']
+		else:
+			for chunk in contig_coverages_merged[contig]:
+				label = chunk['label']
+				if start > chunk['end']:
+					# need to sum entire chunk - check if already done
+					if 'total_sum' not in chunk:
+						chunk['total_sum'] = np.sum(chunk['coverage_array'])
+					depth_sums[label] = depth_sums.setdefault(label,0) + chunk['total_sum']
+				elif start >= chunk['start'] and end <= chunk['end']:
+					# need to split and sum positions before
+					depth_sums[label] = depth_sums.setdefault(label,0) + np.sum(chunk['coverage_array'][0:end+1])
+		if uid not in uid_dp_dict:
+			uid_dp_dict[uid] = {}
+		for label, csum  in depth_sums.items():
+			if label not in uid_dp_dict[uid]:
+				uid_dp_dict[uid][label] = [0, 0]
+			uid_dp_dict[uid][label][edge] = str(csum)
 
 	for breakpoints in breakpoint_dict_chrom.values():
 		for bp in breakpoints:
@@ -198,7 +184,7 @@ def pool_add_local_depth(threads, sorted_bed, breakpoint_dict_chrom, aln_files, 
 			else:
 				bp.local_depths = uid_dp_dict[bp.uid]
 
-	return breakpoints
+	return breakpoint_dict_chrom
 
 def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 	""" parallelise the identification of consensus breakpoints """
@@ -224,17 +210,82 @@ def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 
 	return breakpoint_dict_chrom, pruned_clusters
 
+# works directly on breakpoints - called by multithreading
+def compute_depth(breakpoints, contig_coverages):
+	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """
+	for bp in breakpoints:
+		bp.local_depths = {'tumour': [0,0], 'normal': [0,0]}
+		same_chrom = True if bp.start_chr == bp.end_chr else False
+		for chunk in contig_coverages[bp.start_chr]:
+			label = chunk['label']
+			if bp.start_loc > chunk['end']:
+				# need to sum entire chunk - don't redo if already computed
+				if 'total_sum' not in chunk:
+					# TODO: add a lock here?
+					chunk['total_sum'] = np.sum(chunk['coverage_array'])
+				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
+			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
+				# need to split and sum positions before
+				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:(bp.start_loc+1)])
+			# also compute for end if on same chrom
+			if same_chrom:
+				if bp.end_loc > chunk['end']:
+					if 'total_sum' not in chunk:
+						# TODO: add a lock here?
+						chunk['total_sum'] = np.sum(chunk['coverage_array'])
+					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
+				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
+					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.end_loc+1)])
+		if not same_chrom:
+			for chunk in contig_coverages.setdefault(bp.end_chr, []):
+				label = chunk['label']
+				if bp.end_loc > chunk['end']:
+					# need to sum entire chunk - don't redo if already computed
+					if 'total_sum' not in chunk:
+						#TODO: add a lock here?
+						chunk['total_sum'] = np.sum(chunk['coverage_array'])
+					bp.local_depths[label][0] = bp.local_depths[label][1] + chunk['total_sum']
+				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
+					# need to split and sum positions before
+					bp.local_depths[label][0] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.start_loc+1)])
+
+	return breakpoints
+
+# multithreads the computation of depth - contig_coverages is passed by reference rather than serialised
+def multithreading_compute_depth(threads, breakpoint_dict_chrom, contig_coverages_merged, debug):
+	""" computes the depth of breakpoints using the coverage arrays """
+	import concurrent.futures
+
+	executor = concurrent.futures.ThreadPoolExecutor(max_workers=threads+6)
+
+	results = executor.map(compute_depth, [breakpoints for breakpoints in breakpoint_dict_chrom.values()], [contig_coverages_merged]*len(breakpoint_dict_chrom.keys()))
+	result_collector = []
+	for i, result in enumerate(results):
+		result_collector.append((i, len(result)))
+	if debug:
+		print(f' > Finished computing depth, work split across {len(result_collector)} units in total')
+
+	return breakpoint_dict_chrom
+
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
-	print(f'Using multiprocessing with {args.threads} threads\n')
+	print(f'Using {args.threads} threads\n')
 	# 1) GET POTENTIAL BREAKPOINTS
 	potential_breakpoints_results = pool_get_potential_breakpoints(aln_files, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
 	# collect results per chrom
 	chrom_potential_breakpoints = {}
+	contig_coverages_merged = {}
 	for result in potential_breakpoints_results:
-		for chrom, potential_breakpoints in result.items():
+		potential_breakpoints_dict = result[0]
+		contig_coverages = result[1]
+		result_chrom = None
+		for chrom, potential_breakpoints in potential_breakpoints_dict.items():
+			result_chrom = chrom if not result_chrom else result_chrom
 			chrom_potential_breakpoints.setdefault(chrom,[]).extend(potential_breakpoints)
+		contig_coverages_merged.setdefault(contig_coverages.pop('contig'), []).append(contig_coverages)
+	# get rid (heavy memory footprint - no longer needed)
+	del potential_breakpoints_results
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
 	clusters = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
@@ -244,34 +295,25 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	breakpoint_dict_chrom, pruned_clusters = pool_call_breakpoints(args.threads, args.buffer, args.length, args.depth, clusters, args.debug)
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
-	total_breakpoints = 0
-	for c, b in breakpoint_dict_chrom.items():
-		total_breakpoints+=len(b)
-	print(f'Length after: {total_breakpoints}')
+	if args.debug:
+		total_breakpoints = 0
+		for _, b in breakpoint_dict_chrom.items():
+			total_breakpoints+=len(b)
+		print(f' > Total number of breakpoints post-calling: {total_breakpoints}')
 
+	#TODO: UNCOMMENT LATER - SKIP THIS DEBUGGING STEP FOR NOW
+	"""
 	if args.debug:
 		# 3.1) OUTPUT CLUSTERS
 		for bp_type in ["+-", "++", "-+", "--", "<INS>"]:
 			if bp_type in pruned_clusters:
 				pool_output_clusters(args, pruned_clusters[bp_type], outdir)
 		helper.time_function("Output pruned clusters", checkpoints, time_str)
+	"""
 
-	# 4) ADD LOCAL DEPTH
-	# generate interval files
-	bed_string = ''
-	total_num_breakpoints = 0
-	total_num_insertions = 0
-	contig_lengths = helper.get_contig_lengths(args.ref_index)
-	for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
-		total_num_breakpoints+=len(chrom_breakpoints)
-		for bp in chrom_breakpoints:
-			if bp.breakpoint_notation == "<INS>":
-				total_num_insertions += 1
-			bed_string += bp.as_bed(contig_lengths)
-	sorted_bed = pybedtools.BedTool(bed_string, from_string=True).sort(faidx=args.ref_index)
-	print(f'Total breakpoints: {total_num_breakpoints} ({total_num_insertions} insertions)')
-	pool_add_local_depth(args.threads, sorted_bed, breakpoint_dict_chrom, aln_files, args.is_cram, args.ref)
-	helper.time_function("Added local depth to breakpoints", checkpoints, time_str)
+	# 4) COMPUTE LOCAL DEPTH
+	multithreading_compute_depth(args.threads, breakpoint_dict_chrom, contig_coverages_merged, args.debug)
+	helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
 
 	# 5) OUTPUT BREAKPOINTS
 	# define filenames

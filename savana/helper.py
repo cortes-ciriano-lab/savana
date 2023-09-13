@@ -14,7 +14,31 @@ import sys
 from time import time
 from datetime import datetime
 
-__version__ = "1.0.3"
+# a - no change (no contigs for any)
+# b - used 8 threads
+# c - calculating max tasks by mean rather than max
+# d - setting max total intervals per child to 20,000
+# e - setting max tasks per child to 10,000, threads -2
+# f - threads -2 , no maxtasks
+# g - theads normal, maxtasks 5000/max_bin
+# h - threads - 2, maxtasks 1000/max_bin
+# i - threads - 2, maxtasks = 1 (max_bin/max_bin)
+# j - separating the tumour and normal local depth threading - maxtasks still 1
+# k - setting ideal_binsize to 1
+# l - seting ideal binsize to 20, max tasks per child to ~500/20 = 25
+# m - redistributing the chunks according to a ratio (maxtasks = 1, ideal_binsize=30)
+# n - redistributing the chunks according to a ratio fixed (maxtasks = 1, ideal_binsize=30)
+# o - saving intervals bed file, ref start < start discard, removed query name from depth list
+# p - reverting ratio for chunks + bed file saving, keeping removal of query name and ref start discard
+# q - testing first steps of complete depth refactoring using mosdepth solution
+# r - continuing depth refactoring - up to last step before sum() correction
+# s - maybe it's working?
+# t - bugfixed?
+# u - bugfixed??? 😭
+# v - using threads instead of multiprocessing
+# w - removing cluster writing (1/100 times crashes uncecessarily)
+# x - optimisations + with 16 threads
+__version__ = "1.0.4x"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M

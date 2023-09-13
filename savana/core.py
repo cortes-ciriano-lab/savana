@@ -219,17 +219,40 @@ class ConsensusBreakpoint():
 		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
-			info[0]+=f'TUMOUR_DP={self.local_depths["tumour"][0]};'
-			info[0]+=f'NORMAL_DP={self.local_depths["normal"][0]};'
+			try:
+				info[0]+=f'TUMOUR_DP={str(self.local_depths["tumour"][0])};'
+				info[0]+=f'NORMAL_DP={str(self.local_depths["normal"][0])};'
+			except Exception as e:
+				print(f' > No DP recorded for "ID_{self.count}" - this is possible when using subsetted BAM/CRAM files')
+				print(f' >> start_chr:{self.start_chr}, end_chr:{self.end_chr} (SVTYPE=INS)')
+				print(self.local_depths)
+				# replace None with '0'
+				for label in ['tumour', 'normal']:
+					self.local_depths[label] = ['0' if v is None else v for v in self.local_depths.setdefault(label, [None, None])]
+				info[0]+=f'TUMOUR_DP={self.local_depths["tumour"][0]};'
+				info[0]+=f'NORMAL_DP={self.local_depths["normal"][0]};'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
 			info[0] = f'SVTYPE=BND;MATEID=ID_{self.count}_2;' + info[0]
-			info[0]+=f'TUMOUR_DP={",".join(self.local_depths["tumour"])};'
-			info[0]+=f'NORMAL_DP={",".join(self.local_depths["normal"])};'
+			try:
+				info[0]+=f'TUMOUR_DP={",".join([str(d) for d in self.local_depths["tumour"]])};'
+				info[0]+=f'NORMAL_DP={",".join([str(d) for d in self.local_depths["normal"]])};'
+				info[1]+=f'TUMOUR_DP={",".join([str(d) for d in reversed(self.local_depths["tumour"])])};'
+				info[1]+=f'NORMAL_DP={",".join([str(d) for d in reversed(self.local_depths["normal"])])};'
+			except Exception as e:
+				print(f' > No DP recorded for "ID_{self.count}" - this is possible when using subsetted BAM/CRAM files')
+				print(f' >> start_chr:{self.start_chr}, end_chr:{self.end_chr}')
+				print(self.local_depths)
+				# replace None with '0'
+				for label in ['tumour', 'normal']:
+					self.local_depths[label] = ['0' if v is None else v for v in self.local_depths.setdefault(label, [None, None])]
+				info[0]+=f'TUMOUR_DP={",".join([str(d) for d in self.local_depths["tumour"]])};'
+				info[0]+=f'NORMAL_DP={",".join([str(d) for d in self.local_depths["normal"]])};'
+				info[1]+=f'TUMOUR_DP={",".join([str(d) for d in reversed(self.local_depths["tumour"])])};'
+				info[1]+=f'NORMAL_DP={",".join([str(d) for d in reversed(self.local_depths["normal"])])};'
+
 			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
-			info[1]+=f'TUMOUR_DP={",".join(reversed(self.local_depths["tumour"]))};'
-			info[1]+=f'NORMAL_DP={",".join(reversed(self.local_depths["normal"]))};'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,
