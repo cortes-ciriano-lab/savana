@@ -219,44 +219,23 @@ def compute_depth(breakpoints, contig_coverages, lock):
 		for chunk in contig_coverages[bp.start_chr]:
 			label = chunk['label']
 			if bp.start_loc > chunk['end']:
-				if bp.start_loc == 32059738:
-					print(' > Here @line 223')
 				# need to sum entire chunk - don't redo if already computed
 				if 'total_sum' not in chunk:
 					with lock:
 						chunk['total_sum'] = np.sum(chunk['coverage_array'])
 				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
 			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
-				if bp.start_loc == 32059738:
-					print(' > Here @line 231')
-					print(bp.start_loc)
-					print(np.sum(chunk['coverage_array'][0:(bp.start_loc-1)]))
-					print(np.sum(chunk['coverage_array'][0:(bp.start_loc)]))
-					print(np.sum(chunk['coverage_array'][0:(bp.start_loc+1)]))
-					print(' > End @line 236')
 				# need to split and sum positions before
 				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:(bp.start_loc)])
 			# also compute for end if on same chrom
 			if same_chrom:
 				if bp.end_loc > chunk['end']:
-					if bp.start_loc == 32059738:
-						print(' > Here @line 243')
 					if 'total_sum' not in chunk:
 						with lock:
 							chunk['total_sum'] = np.sum(chunk['coverage_array'])
 					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
 				elif bp.end_loc >= chunk['start'] and (bp.end_loc) <= chunk['end']:
-					if bp.start_loc == 32059738:
-						print(' > Here @line 250')
-						print(bp.end_loc)
-						print(np.sum(chunk['coverage_array'][0:(bp.end_loc-1)]))
-						print(np.sum(chunk['coverage_array'][0:(bp.end_loc)]))
-						print(np.sum(chunk['coverage_array'][0:(bp.end_loc+1)]))
-						print(' > End @line 255')
 					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.end_loc)])
-			if bp.start_loc == 32059738:
-				print(bp.local_depths)
-				print(chunk)
 		if not same_chrom:
 			for chunk in contig_coverages.setdefault(bp.end_chr, []):
 				label = chunk['label']

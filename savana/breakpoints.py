@@ -154,23 +154,10 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 			# record start/end in read incrementer
 			shifted_start = read.reference_start - start
 			shifted_end = read.reference_end - start
-			incremented = False
-			decremented = False
 			if shifted_start >= 0 and shifted_start < (end-start):
 				chunk_read_incrementer['coverage_array'][shifted_start]+=1
-				incremented = True
 			if shifted_end >= 0 and shifted_end < (end-start):
 				chunk_read_incrementer['coverage_array'][shifted_end]-=1
-				decremented = True
-			#if read.query_name in ["DRR258589.1233470","DRR258589.5174028","DRR258589.4710511","DRR258589.2801271","DRR258589.4878695"]:
-			if read.query_name in ["DRR258589.3060225","DRR258589.4626660","DRR258589.4400763","DRR258589.4054602","DRR258589.152577"]:
-				print(f' > Read: {read.query_name}')
-				print(f' Sum @ 32059738 before: {sum_before}')
-				print(f' shifted_start: {shifted_start} (start: {start})')
-				print(f' shifted_end: {shifted_end} (end: {end})')
-				print(f' incremented: {incremented}')
-				print(f' decremented: {decremented}')
-				print(f' Sum @ 32059738 after: {np.sum(chunk_read_incrementer["coverage_array"][0:32059738])}\n')
 		if read.is_secondary or read.is_supplementary:
 			continue # only consider primary
 		if read.mapping_quality < mapq:
