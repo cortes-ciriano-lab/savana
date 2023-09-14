@@ -38,7 +38,8 @@ from datetime import datetime
 # v - using threads instead of multiprocessing
 # w - removing cluster writing (1/100 times crashes uncecessarily)
 # x - optimisations + with 16 threads
-__version__ = "1.0.4x"
+# y - with Lock
+__version__ = "1.0.4y"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M

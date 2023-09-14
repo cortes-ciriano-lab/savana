@@ -211,7 +211,7 @@ def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 	return breakpoint_dict_chrom, pruned_clusters
 
 # works directly on breakpoints - called by multithreading
-def compute_depth(breakpoints, contig_coverages):
+def compute_depth(breakpoints, contig_coverages, lock):
 	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """
 	for bp in breakpoints:
 		bp.local_depths = {'tumour': [0,0], 'normal': [0,0]}
@@ -221,8 +221,8 @@ def compute_depth(breakpoints, contig_coverages):
 			if bp.start_loc > chunk['end']:
 				# need to sum entire chunk - don't redo if already computed
 				if 'total_sum' not in chunk:
-					# TODO: add a lock here?
-					chunk['total_sum'] = np.sum(chunk['coverage_array'])
+					with lock:
+						chunk['total_sum'] = np.sum(chunk['coverage_array'])
 				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
 			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
 				# need to split and sum positions before
@@ -231,8 +231,8 @@ def compute_depth(breakpoints, contig_coverages):
 			if same_chrom:
 				if bp.end_loc > chunk['end']:
 					if 'total_sum' not in chunk:
-						# TODO: add a lock here?
-						chunk['total_sum'] = np.sum(chunk['coverage_array'])
+						with lock:
+							chunk['total_sum'] = np.sum(chunk['coverage_array'])
 					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
 				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
 					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.end_loc+1)])
@@ -242,8 +242,8 @@ def compute_depth(breakpoints, contig_coverages):
 				if bp.end_loc > chunk['end']:
 					# need to sum entire chunk - don't redo if already computed
 					if 'total_sum' not in chunk:
-						#TODO: add a lock here?
-						chunk['total_sum'] = np.sum(chunk['coverage_array'])
+						with lock:
+							chunk['total_sum'] = np.sum(chunk['coverage_array'])
 					bp.local_depths[label][0] = bp.local_depths[label][1] + chunk['total_sum']
 				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
 					# need to split and sum positions before
@@ -254,11 +254,17 @@ def compute_depth(breakpoints, contig_coverages):
 # multithreads the computation of depth - contig_coverages is passed by reference rather than serialised
 def multithreading_compute_depth(threads, breakpoint_dict_chrom, contig_coverages_merged, debug):
 	""" computes the depth of breakpoints using the coverage arrays """
-	import concurrent.futures
+	from concurrent.futures import ThreadPoolExecutor
+	from threading import Lock
 
-	executor = concurrent.futures.ThreadPoolExecutor(max_workers=threads+6)
-
-	results = executor.map(compute_depth, [breakpoints for breakpoints in breakpoint_dict_chrom.values()], [contig_coverages_merged]*len(breakpoint_dict_chrom.keys()))
+	executor = ThreadPoolExecutor(max_workers=threads+6)
+	lock = Lock()
+	results = executor.map(
+		compute_depth,
+		[breakpoints for breakpoints in breakpoint_dict_chrom.values()],
+		[contig_coverages_merged]*len(breakpoint_dict_chrom.keys()),
+		[lock]*len(breakpoint_dict_chrom.keys())
+	)
 	result_collector = []
 	for i, result in enumerate(results):
 		result_collector.append((i, len(result)))
