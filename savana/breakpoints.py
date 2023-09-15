@@ -160,8 +160,6 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 				chunk_read_incrementer['coverage_array'][shifted_start]+=1
 			if shifted_end >= 0 and shifted_end < (end-start):
 				chunk_read_incrementer['coverage_array'][shifted_end]-=1
-		if read.is_secondary or read.is_supplementary:
-			continue # only consider primary
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {

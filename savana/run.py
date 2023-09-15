@@ -226,7 +226,8 @@ def compute_depth(breakpoints, contig_coverages, lock):
 				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
 			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
 				# need to split and sum positions before
-				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:(bp.start_loc)])
+				shifted_start = bp.start_loc - chunk['start']
+				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:shifted_start])
 			if same_chrom:
 				# also compute for end if on same chrom
 				if bp.end_loc > chunk['end']:
@@ -235,7 +236,8 @@ def compute_depth(breakpoints, contig_coverages, lock):
 							chunk['total_sum'] = np.sum(chunk['coverage_array'])
 					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
 				elif bp.end_loc >= chunk['start'] and (bp.end_loc) <= chunk['end']:
-					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.end_loc)])
+					shifted_end = bp.end_loc - chunk['start']
+					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
 		if not same_chrom:
 			for chunk in contig_coverages.setdefault(bp.end_chr, []):
 				label = chunk['label']
@@ -247,7 +249,8 @@ def compute_depth(breakpoints, contig_coverages, lock):
 					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
 				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
 					# need to split and sum positions before
-					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.end_loc)])
+					shifted_end = bp.end_loc - chunk['start']
+					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
 
 	return breakpoints
 
