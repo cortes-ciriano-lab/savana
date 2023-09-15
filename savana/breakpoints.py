@@ -218,50 +218,6 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 
 	return potential_breakpoints, chunk_read_incrementer
 
-def add_local_depth(intervals, aln_filename, label, is_cram, ref):
-	""" given intervals and uids, get the local depth for each interval """
-	uid_dp_dict = {}
-	chrom = intervals[0][0]
-	start = max(int(intervals[0][1])-1, 0) # first start
-	end = int(intervals[-1][2]) # last end
-	read_stats = {}
-	#for file_type, filename in aln_filename.items():
-	if is_cram:
-		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
-	else:
-		aln_file = pysam.AlignmentFile(aln_filename, "rb")
-	read_stats = []
-	for read in aln_file.fetch(chrom, start, end):
-		if read.mapping_quality == 0 or read.is_duplicate or read.reference_start < start:
-			continue
-		read_stats.append([int(read.reference_start), int(read.reference_end)])
-		del read
-	aln_file.close()
-	del aln_file
-	for i in intervals:
-		uid = i[3]
-		interval_start = int(i[1])
-		interval_end = int(i[2])
-		edge = int(i[4])
-		comparison = [[(interval_start - r[1]), (r[0] - interval_end)] for r in read_stats]
-		dp = sum(1 for x,y in comparison if x <= 0 and y <= 0)
-		del comparison
-		# for some reason, these methods aren't faster
-		'''
-		comparison = [[(interval_start <= r[1]), (r[0] <= interval_end)] for r in reads]
-		dp = sum(1 for x,y in comparison if x and y)
-		del comparison
-		'''
-		# nor
-		#dp = sum(1 for r in reads if (interval_start - r[1]) <= 0 and (r[0] - interval_end) <= 0)
-		if uid not in uid_dp_dict:
-			uid_dp_dict[uid] = {}
-		if label not in uid_dp_dict[uid]:
-			uid_dp_dict[uid][label] = [None, None]
-		uid_dp_dict[uid][label][edge] = str(dp)
-
-	return uid_dp_dict
-
 def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
@@ -347,6 +303,49 @@ def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 								pruned_clusters.setdefault(bp_type, []).append(end_cluster)
 
 	return final_breakpoints, pruned_clusters, chrom
+
+def compute_depth(breakpoints, contig_coverages, lock):
+	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """
+	for bp in breakpoints:
+		bp.local_depths = {'tumour': [0,0], 'normal': [0,0]}
+		same_chrom = True if bp.start_chr == bp.end_chr else False
+		for chunk in contig_coverages[bp.start_chr]:
+			label = chunk['label']
+			if bp.start_loc > chunk['end']:
+				# need to sum entire chunk - don't redo if already computed
+				if 'total_sum' not in chunk:
+					with lock:
+						chunk['total_sum'] = np.sum(chunk['coverage_array'])
+				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
+			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
+				# need to split and sum positions before
+				shifted_start = bp.start_loc - chunk['start']
+				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:shifted_start])
+			if same_chrom:
+				# also compute for end if on same chrom
+				if bp.end_loc > chunk['end']:
+					if 'total_sum' not in chunk:
+						with lock:
+							chunk['total_sum'] = np.sum(chunk['coverage_array'])
+					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
+				elif bp.end_loc >= chunk['start'] and (bp.end_loc) <= chunk['end']:
+					shifted_end = bp.end_loc - chunk['start']
+					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
+		if not same_chrom:
+			for chunk in contig_coverages.setdefault(bp.end_chr, []):
+				label = chunk['label']
+				if bp.end_loc > chunk['end']:
+					# need to sum entire chunk - don't redo if already computed
+					if 'total_sum' not in chunk:
+						with lock:
+							chunk['total_sum'] = np.sum(chunk['coverage_array'])
+					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
+				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
+					# need to split and sum positions before
+					shifted_end = bp.end_loc - chunk['start']
+					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
+
+	return breakpoints
 
 if __name__ == "__main__":
 	print("Breakpoint Functions")

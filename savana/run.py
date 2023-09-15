@@ -17,7 +17,7 @@ import pysam.bcftools as bcftools
 import pybedtools
 
 import savana.helper as helper
-from savana.breakpoints import get_potential_breakpoints, call_breakpoints, add_local_depth
+from savana.breakpoints import get_potential_breakpoints, call_breakpoints, compute_depth
 from savana.clusters import cluster_breakpoints, output_clusters
 
 # developer dependencies
@@ -128,64 +128,6 @@ def pool_output_clusters(args, clusters, outdir):
 	pool_output.close()
 	pool_output.join()
 
-# multi-processing solution (memory crashes due to issues serialising contig coverage arrays
-def pool_compute_depth(threads, breakpoint_dict_chrom, contig_coverages_merged):
-	""" parallelize the computation of depth """
-	pool_compute_depth = Pool(processes=threads)
-	pool_compute_depth_args = []
-
-	for chrom, chrom_breakpoints in breakpoint_dict_chrom.items():
-		if chrom in contig_coverages_merged:
-			pool_compute_depth_args.append((chrom_breakpoints, contig_coverages_merged[chrom]))
-	pool_compute_depth.starmap(compute_depth, pool_compute_depth_args)
-
-	return
-
-# single threaded option for coverage (works but is slow)
-def compute_depth_single_threaded(threads, sorted_bed, breakpoint_dict_chrom, contig_coverages_merged):
-	""" using the contig coverages to annotate the breakpoints """
-	uid_dp_dict = {}
-	for interval in sorted_bed:
-		# get info about interval
-		contig, start, end, uid, edge = interval
-		start, end, edge = int(start), int(end), int(edge)
-		# calculate depth by summing values (creds to mosdepth)
-		depth_sums = {}
-		if contig not in contig_coverages_merged:
-			print(f' > {contig} not in coverages array')
-			for label in ['tumour','normal']:
-				uid_dp_dict[uid][label] = ['0', '0']
-		else:
-			for chunk in contig_coverages_merged[contig]:
-				label = chunk['label']
-				if start > chunk['end']:
-					# need to sum entire chunk - check if already done
-					if 'total_sum' not in chunk:
-						chunk['total_sum'] = np.sum(chunk['coverage_array'])
-					depth_sums[label] = depth_sums.setdefault(label,0) + chunk['total_sum']
-				elif start >= chunk['start'] and end <= chunk['end']:
-					# need to split and sum positions before
-					depth_sums[label] = depth_sums.setdefault(label,0) + np.sum(chunk['coverage_array'][0:end+1])
-		if uid not in uid_dp_dict:
-			uid_dp_dict[uid] = {}
-		for label, csum  in depth_sums.items():
-			if label not in uid_dp_dict[uid]:
-				uid_dp_dict[uid][label] = [0, 0]
-			uid_dp_dict[uid][label][edge] = str(csum)
-
-	for breakpoints in breakpoint_dict_chrom.values():
-		for bp in breakpoints:
-			if bp.breakpoint_notation == "<INS>":
-				# remove None values for insertions
-				reformatted_dp = {}
-				for t,d in uid_dp_dict[bp.uid].items():
-					reformatted_dp[t] = [d[0]]
-				bp.local_depths = reformatted_dp
-			else:
-				bp.local_depths = uid_dp_dict[bp.uid]
-
-	return breakpoint_dict_chrom
-
 def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 	""" parallelise the identification of consensus breakpoints """
 	pool_calling = Pool(processes=threads)
@@ -210,53 +152,10 @@ def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 
 	return breakpoint_dict_chrom, pruned_clusters
 
-# works directly on breakpoints - called by multithreading
-def compute_depth(breakpoints, contig_coverages, lock):
-	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """
-	for bp in breakpoints:
-		bp.local_depths = {'tumour': [0,0], 'normal': [0,0]}
-		same_chrom = True if bp.start_chr == bp.end_chr else False
-		for chunk in contig_coverages[bp.start_chr]:
-			label = chunk['label']
-			if bp.start_loc > chunk['end']:
-				# need to sum entire chunk - don't redo if already computed
-				if 'total_sum' not in chunk:
-					with lock:
-						chunk['total_sum'] = np.sum(chunk['coverage_array'])
-				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
-			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
-				# need to split and sum positions before
-				shifted_start = bp.start_loc - chunk['start']
-				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:shifted_start])
-			if same_chrom:
-				# also compute for end if on same chrom
-				if bp.end_loc > chunk['end']:
-					if 'total_sum' not in chunk:
-						with lock:
-							chunk['total_sum'] = np.sum(chunk['coverage_array'])
-					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
-				elif bp.end_loc >= chunk['start'] and (bp.end_loc) <= chunk['end']:
-					shifted_end = bp.end_loc - chunk['start']
-					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
-		if not same_chrom:
-			for chunk in contig_coverages.setdefault(bp.end_chr, []):
-				label = chunk['label']
-				if bp.end_loc > chunk['end']:
-					# need to sum entire chunk - don't redo if already computed
-					if 'total_sum' not in chunk:
-						with lock:
-							chunk['total_sum'] = np.sum(chunk['coverage_array'])
-					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
-				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
-					# need to split and sum positions before
-					shifted_end = bp.end_loc - chunk['start']
-					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
 
-	return breakpoints
 
-# multithreads the computation of depth - contig_coverages is passed by reference rather than serialised
 def multithreading_compute_depth(threads, breakpoint_dict_chrom, contig_coverages_merged, debug):
-	""" computes the depth of breakpoints using the coverage arrays """
+	""" computes the depth of breakpoints using coverage arrays """
 	from concurrent.futures import ThreadPoolExecutor
 	from threading import Lock
 
