@@ -227,8 +227,8 @@ def compute_depth(breakpoints, contig_coverages, lock):
 			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
 				# need to split and sum positions before
 				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:(bp.start_loc)])
-			# also compute for end if on same chrom
 			if same_chrom:
+				# also compute for end if on same chrom
 				if bp.end_loc > chunk['end']:
 					if 'total_sum' not in chunk:
 						with lock:
@@ -244,10 +244,10 @@ def compute_depth(breakpoints, contig_coverages, lock):
 					if 'total_sum' not in chunk:
 						with lock:
 							chunk['total_sum'] = np.sum(chunk['coverage_array'])
-					bp.local_depths[label][0] = bp.local_depths[label][1] + chunk['total_sum']
+					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
 				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
 					# need to split and sum positions before
-					bp.local_depths[label][0] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.start_loc+1)])
+					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:(bp.end_loc)])
 
 	return breakpoints
 

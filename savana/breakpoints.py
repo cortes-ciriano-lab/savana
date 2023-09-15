@@ -150,7 +150,9 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 		'coverage_array': np.zeros((end-start,), dtype=int)
 	}
 	for read in aln_file.fetch(contig, start, end):
-		if read.mapping_quality > 0 and not read.is_secondary:
+		if read.is_secondary:
+			continue
+		if read.mapping_quality > 0:
 			# record start/end in read incrementer
 			shifted_start = read.reference_start - start
 			shifted_end = read.reference_end - start

@@ -219,6 +219,8 @@ def get_clipping(cigar_tuples, is_reverse):
 
 def get_chimeric_regions(read, mapq_filter):
 	""" get info for the chimeric regions of a read and store in a dict """
+	if read.is_supplementary:
+		return None
 	chimeric_regions = []
 	sa_keys = ['chrom', 'pos', 'strand', 'CIGAR', 'mapQ', 'NM']
 	for tag, value in read.get_tags():
