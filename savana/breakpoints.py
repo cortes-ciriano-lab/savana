@@ -147,6 +147,8 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 	args_length = max((args.length - floor(args.length/5)), 0) if label == 'normal' else args.length
 	mapq = min((args.mapq - ceil(args.mapq/2)), 1) if label == 'normal' else args.mapq
 	# store the read start/ends for calculating depth later
+	"""
+	COMMENTING DEPTH
 	chunk_read_incrementer = {
 		'contig': contig,
 		'start': int(start),
