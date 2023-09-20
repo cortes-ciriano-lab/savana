@@ -15,6 +15,11 @@ from math import floor, ceil
 import savana.helper as helper
 from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 
+# developer dependencies
+from memory_profiler import profile
+from pympler import muppy, summary, refbrowser
+import objgraph
+
 def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order):
 	""" reconstruct the breakpoints from the supplementary alignments """
 	primary_clipping = helper.get_clipping(cigar_tuples, read.is_reverse)
@@ -149,9 +154,12 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 		'label': label,
 		'coverage_array': np.zeros((end-start,), dtype=int)
 	}
+	"""
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary:
 			continue
+		"""
+		COMMENTING DEPTH
 		if read.mapping_quality > 0:
 			# record start/end in read incrementer
 			shifted_start = read.reference_start - start
@@ -160,6 +168,7 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 				chunk_read_incrementer['coverage_array'][shifted_start]+=1
 			if shifted_end >= 0 and shifted_end < (end-start):
 				chunk_read_incrementer['coverage_array'][shifted_end]-=1
+		"""
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
@@ -215,8 +224,16 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
 
 	aln_file.close()
+	del aln_file
+	""" PROFILING CODE
+	sum2 = summary.summarize(muppy.get_objects())
+	diff = summary.get_diff(sum1, sum2)
+	print(f'Object difference for {contig}:{start}-{end}')
+	summary.print_(diff)
+	END PROFILING CODE """
 
-	return potential_breakpoints, chunk_read_incrementer
+	#return potential_breakpoints, chunk_read_incrementer
+	return potential_breakpoints
 
 def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """

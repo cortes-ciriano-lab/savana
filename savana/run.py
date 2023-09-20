@@ -21,11 +21,9 @@ from savana.breakpoints import get_potential_breakpoints, call_breakpoints, comp
 from savana.clusters import cluster_breakpoints, output_clusters
 
 # developer dependencies
-"""
 from memory_profiler import profile
 from pympler import muppy, summary, refbrowser
 import objgraph
-"""
 
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
@@ -152,8 +150,6 @@ def pool_call_breakpoints(threads, buffer, length, depth, clusters, debug):
 
 	return breakpoint_dict_chrom, pruned_clusters
 
-
-
 def multithreading_compute_depth(threads, breakpoint_dict_chrom, contig_coverages_merged, debug):
 	""" computes the depth of breakpoints using coverage arrays """
 	from concurrent.futures import ThreadPoolExecutor
@@ -178,22 +174,31 @@ def multithreading_compute_depth(threads, breakpoint_dict_chrom, contig_coverage
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using {args.threads} threads\n')
+
 	# 1) GET POTENTIAL BREAKPOINTS
 	potential_breakpoints_results = pool_get_potential_breakpoints(aln_files, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
+
 	# collect results per chrom
 	chrom_potential_breakpoints = {}
 	contig_coverages_merged = {}
 	for result in potential_breakpoints_results:
+		potential_breakpoints_dict = result
+		"""
+		COMMENTING DEPTH
 		potential_breakpoints_dict = result[0]
 		contig_coverages = result[1]
+		"""
 		result_chrom = None
 		for chrom, potential_breakpoints in potential_breakpoints_dict.items():
 			result_chrom = chrom if not result_chrom else result_chrom
 			chrom_potential_breakpoints.setdefault(chrom,[]).extend(potential_breakpoints)
+		""" COMMENTING DEPTH
 		contig_coverages_merged.setdefault(contig_coverages.pop('contig'), []).append(contig_coverages)
+		"""
 	# get rid (heavy memory footprint - no longer needed)
 	del potential_breakpoints_results
+
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
 	clusters = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
@@ -220,8 +225,8 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	"""
 
 	# 4) COMPUTE LOCAL DEPTH
-	multithreading_compute_depth(args.threads, breakpoint_dict_chrom, contig_coverages_merged, args.debug)
-	helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
+	#multithreading_compute_depth(args.threads, breakpoint_dict_chrom, contig_coverages_merged, args.debug)
+	#helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
 
 	# 5) OUTPUT BREAKPOINTS
 	# define filenames

@@ -223,9 +223,11 @@ class ConsensusBreakpoint():
 				info[0]+=f'TUMOUR_DP={str(self.local_depths["tumour"][0])};'
 				info[0]+=f'NORMAL_DP={str(self.local_depths["normal"][0])};'
 			except Exception as e:
+				""" COMMENTING DEPTH
 				print(f' > No DP recorded for "ID_{self.count}" - this is possible when using subsetted BAM/CRAM files')
 				print(f' >> start_chr:{self.start_chr}, end_chr:{self.end_chr} (SVTYPE=INS)')
 				print(self.local_depths)
+				"""
 				# replace None with '0'
 				for label in ['tumour', 'normal']:
 					self.local_depths[label] = ['0' if v is None else v for v in self.local_depths.setdefault(label, [None, None])]
@@ -241,9 +243,11 @@ class ConsensusBreakpoint():
 				info[1]+=f'TUMOUR_DP={",".join([str(d) for d in reversed(self.local_depths["tumour"])])};'
 				info[1]+=f'NORMAL_DP={",".join([str(d) for d in reversed(self.local_depths["normal"])])};'
 			except Exception as e:
+				""" COMMENTING DEPTH
 				print(f' > No DP recorded for "ID_{self.count}" - this is possible when using subsetted BAM/CRAM files')
 				print(f' >> start_chr:{self.start_chr}, end_chr:{self.end_chr}')
 				print(self.local_depths)
+				"""
 				# replace None with '0'
 				for label in ['tumour', 'normal']:
 					self.local_depths[label] = ['0' if v is None else v for v in self.local_depths.setdefault(label, [None, None])]
