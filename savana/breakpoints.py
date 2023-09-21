@@ -135,20 +135,25 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, start, end):
+#helper.conditionally_decorate(profile, True)
+#@profile
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	# TODO: look into removing contig from potential_breakpoints as we're double-storing it in chunk coverage
+	""" PROFILING CODE
+	sum1 = summary.summarize(muppy.get_objects())
+	END PROFILING CODE """
 	potential_breakpoints = {}
-	if args.is_cram:
-		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=args.ref)
+	if is_cram:
+		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
 	else:
 		aln_file = pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
-	args_length = max((args.length - floor(args.length/5)), 0) if label == 'normal' else args.length
-	mapq = min((args.mapq - ceil(args.mapq/2)), 1) if label == 'normal' else args.mapq
-	# store the read start/ends for calculating depth later
+	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
+	mapq = min((mapq - ceil(mapq/2)), 1) if label == 'normal' else mapq
 	"""
 	COMMENTING DEPTH
+	# store the read start/ends for calculating depth later
 	chunk_read_incrementer = {
 		'contig': contig,
 		'start': int(start),

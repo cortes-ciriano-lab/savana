@@ -14,7 +14,19 @@ import sys
 from time import time
 from datetime import datetime
 
-__version__ = "1.0.5"
+__version__ = "1.0.5l"
+# a - removing depth calculation to evaluate the memory usage
+# b - removing arg object pass to multiprocessing
+# c - setting maxtasksperchild to 1 for pool_potential_breakpoints
+# d - reducing the ideal reads per thread by half
+# e - reverting but keeping the debug statements
+# f - reverting to earlier version chunking by 500k intervals
+# g - increasing to 60-million bp sized chunks
+# h - using 'chunk-by-read' but with threads*100 in ideal reads calculation
+# i - using 'chunk-by-read' but with threads*1000 in ideal reads calculation
+# j - going back to f with 100k intervals
+# k - now using f but submitting on regular queue
+# l - using f but regular queue with 16 threads
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
