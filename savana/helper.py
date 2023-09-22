@@ -14,7 +14,7 @@ import sys
 from time import time
 from datetime import datetime
 
-__version__ = "1.0.5l"
+__version__ = "1.0.5v-100k"
 # a - removing depth calculation to evaluate the memory usage
 # b - removing arg object pass to multiprocessing
 # c - setting maxtasksperchild to 1 for pool_potential_breakpoints
@@ -27,6 +27,16 @@ __version__ = "1.0.5l"
 # j - going back to f with 100k intervals
 # k - now using f but submitting on regular queue
 # l - using f but regular queue with 16 threads
+# m - putting back in the depth - increating chunk to 1 million (memory constraints) - run on non-hyperthreaded w max threads
+# n - same as m but with chunksize of 500k as test
+# o - same as before but 1.5Million sized chunks
+# p - same as o but on regular queue
+# q - same as o/p but on regular queue with 16 threads
+# r - same as o/p/q but on regular queue with 8 threads
+# s - same as p (regular queue) but with 1 maxtasksperchild
+# t - 100k, 500k, 1m, 1.5m, 3m, 5m - all on regular queue with max threads (96) - maxtasksperchild set to 1
+# u - 100k, 500k, 1m, 1.5m, 3m, 5m - all on regular queue with 16 threads - maxtasksperchild set to 1
+# v - 100k, 500k, 1m, 1.5m, 3m, 5m - all on regular queue with 8 threads - maxtasksperchild set to 1
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M

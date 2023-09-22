@@ -151,8 +151,6 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	# adjust the thresholds depending on sample source
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
 	mapq = min((mapq - ceil(mapq/2)), 1) if label == 'normal' else mapq
-	"""
-	COMMENTING DEPTH
 	# store the read start/ends for calculating depth later
 	chunk_read_incrementer = {
 		'contig': contig,
@@ -161,12 +159,9 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 		'label': label,
 		'coverage_array': np.zeros((end-start,), dtype=int)
 	}
-	"""
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary:
 			continue
-		"""
-		COMMENTING DEPTH
 		if read.mapping_quality > 0:
 			# record start/end in read incrementer
 			shifted_start = read.reference_start - start
@@ -175,7 +170,6 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				chunk_read_incrementer['coverage_array'][shifted_start]+=1
 			if shifted_end >= 0 and shifted_end < (end-start):
 				chunk_read_incrementer['coverage_array'][shifted_end]-=1
-		"""
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
@@ -239,8 +233,8 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	summary.print_(diff)
 	END PROFILING CODE """
 
-	#return potential_breakpoints, chunk_read_incrementer
-	return potential_breakpoints
+	return potential_breakpoints, chunk_read_incrementer
+	#return potential_breakpoints
 
 def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """

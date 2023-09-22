@@ -27,8 +27,8 @@ import objgraph
 
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
-	#pool_potential = Pool(processes=args.threads, maxtasksperchild=100)
-	pool_potential = Pool(processes=args.threads)
+	pool_potential = Pool(processes=args.threads, maxtasksperchild=1)
+	#pool_potential = Pool(processes=args.threads)
 
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
@@ -73,7 +73,8 @@ def pool_get_potential_breakpoints(aln_files, args):
 					contig_fates['unsplit'] += 1
 					pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, 0, chrom_length))
 	elif not args.is_cram and True:
-		chunk_size = 500000 # 500k
+		chunk_size = 100000
+		print(f'Setting chunksize for split to {chunk_size}')
 		#chunk_size = 60000000 # 60 million
 		for label, aln_file in aln_files.items():
 			for contig in aln_file.get_index_statistics():
@@ -219,22 +220,16 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	chrom_potential_breakpoints = {}
 	contig_coverages_merged = {}
 	for result in potential_breakpoints_results:
-		potential_breakpoints_dict = result
-		"""
-		COMMENTING DEPTH
+		#potential_breakpoints_dict = result
 		potential_breakpoints_dict = result[0]
 		contig_coverages = result[1]
-		"""
 		result_chrom = None
 		for chrom, potential_breakpoints in potential_breakpoints_dict.items():
 			result_chrom = chrom if not result_chrom else result_chrom
 			chrom_potential_breakpoints.setdefault(chrom,[]).extend(potential_breakpoints)
-		""" COMMENTING DEPTH
 		contig_coverages_merged.setdefault(contig_coverages.pop('contig'), []).append(contig_coverages)
-		"""
 	# get rid (heavy memory footprint - no longer needed)
 	del potential_breakpoints_results
-
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
 	clusters = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
@@ -261,8 +256,8 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	"""
 
 	# 4) COMPUTE LOCAL DEPTH
-	#multithreading_compute_depth(args.threads, breakpoint_dict_chrom, contig_coverages_merged, args.debug)
-	#helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
+	multithreading_compute_depth(args.threads, breakpoint_dict_chrom, contig_coverages_merged, args.debug)
+	helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
 
 	# 5) OUTPUT BREAKPOINTS
 	# define filenames
