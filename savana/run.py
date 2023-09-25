@@ -20,62 +20,22 @@ import savana.helper as helper
 from savana.breakpoints import get_potential_breakpoints, call_breakpoints, compute_depth
 from savana.clusters import cluster_breakpoints, output_clusters
 
+"""
 # developer dependencies
 from memory_profiler import profile
 from pympler import muppy, summary, refbrowser
 import objgraph
+"""
 
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
 	pool_potential = Pool(processes=args.threads, maxtasksperchild=1)
-	#pool_potential = Pool(processes=args.threads)
-
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
 	contig_lengths = helper.get_contig_lengths(args.ref_index)
-	contig_fates = {
-		'split': 0,
-		'unsplit': 0
-	}
-	if not args.is_cram and False:
-		# calculate how to split contigs based on total mapped reads
-		total_num_mapped_reads = 0
-		for label, aln_file in aln_files.items():
-			for contig in aln_file.get_index_statistics():
-				#if contig.contig in contigs_to_consider and int(aln_file.get_reference_length(contig.contig)) > 80000000:
-				if contig.contig in contigs_to_consider:
-					total_num_mapped_reads+=contig.mapped
-		#ideal_reads_per_thread = ceil(total_num_mapped_reads/(args.threads/2))
-		ideal_reads_per_thread = ceil(total_num_mapped_reads/(args.threads*100)) # want each thread to have 100 tasks
-		print(f'Ideal reads per thread: {ideal_reads_per_thread}. Total number of mapped reads {total_num_mapped_reads}')
-		# balance approx. number of reads per worker thread
-		for label, aln_file in aln_files.items():
-			for contig in aln_file.get_index_statistics():
-				if contig.contig not in contigs_to_consider:
-					continue
-				if contig.mapped == 0:
-					continue
-				mapped_reads = contig.mapped
-				chrom_length = int(aln_file.get_reference_length(contig.contig))
-				num_chunks = max(floor(mapped_reads/ideal_reads_per_thread), 1)
-				#if num_chunks > 1 and chrom_length > 80000000:
-				if num_chunks > 1:
-					contig_fates['split'] += 1
-					start_pos = 0
-					chunk_size = ceil(chrom_length/num_chunks)
-					for i in range(1, num_chunks+1):
-						end_pos = start_pos + chunk_size
-						end_pos = chrom_length if end_pos > chrom_length else end_pos # don't extend past end
-						pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, start_pos, end_pos))
-						start_pos = end_pos + 1
-				else:
-					# examine entire length of contig
-					contig_fates['unsplit'] += 1
-					pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, 0, chrom_length))
-	elif not args.is_cram and True:
-		chunk_size = 100000
-		print(f'Setting chunksize for split to {chunk_size}')
-		#chunk_size = 60000000 # 60 million
+	if not args.is_cram:
+		if args.debug:
+			print(f' > Setting chunksize for split to {args.chunksize}')
 		for label, aln_file in aln_files.items():
 			for contig in aln_file.get_index_statistics():
 				if contig.contig not in contigs_to_consider:
@@ -83,33 +43,30 @@ def pool_get_potential_breakpoints(aln_files, args):
 				if contig.mapped == 0:
 					continue
 				chrom_length = int(aln_file.get_reference_length(contig.contig))
-				if chrom_length > chunk_size:
-					contig_fates['split'] += 1
+				if chrom_length > args.chunksize:
 					# split the chrom into parts
-					num_intervals = ceil(chrom_length/chunk_size) + 1
+					num_intervals = floor(chrom_length/args.chunksize) + 1
 					start_pos = 0
 					for i in range(1, num_intervals):
-						end_pos = start_pos + chunk_size
+						end_pos = start_pos + args.chunksize
 						end_pos = chrom_length if end_pos > chrom_length else end_pos # don't extend past end
 						pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, start_pos, end_pos))
 						start_pos = end_pos + 1
 				else:
-					contig_fates['unsplit'] += 1
 					pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, 0, chrom_length))
 	else:
 		#TODO: make coverage work for cram
 		# parallelize by contig (unable to see num. mapped reads per contig with cram)
-		chunk_size = 60000000 # 60 million
 		for label, aln_file in aln_files.items():
 			for contig, contig_length in contig_lengths.items():
 				if contig not in contigs_to_consider:
 					continue
-				if contig_length > chunk_size:
+				if contig_length > args.chunksize:
 					# split the chrom into parts
-					num_intervals = ceil(contig_length/chunk_size) + 1
+					num_intervals = ceil(contig_length/args.chunksize) + 1
 					start_pos = 0
 					for i in range(1, num_intervals):
-						end_pos = start_pos + chunk_size
+						end_pos = start_pos + args.chunksize
 						end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
 						pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig, start_pos, end_pos))
 						start_pos = end_pos + 1
@@ -117,7 +74,6 @@ def pool_get_potential_breakpoints(aln_files, args):
 					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig))
 	if args.debug:
 		print(f' > Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads')
-		print(f' > In total, {contig_fates["split"]} contigs split, {contig_fates["unsplit"]} unsplit')
 
 	potential_breakpoints_results = pool_potential.starmap(get_potential_breakpoints, pool_potential_args)
 	pool_potential.close()
