@@ -15,10 +15,15 @@ from math import floor, ceil
 import savana.helper as helper
 from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 
+"""
 # developer dependencies
 from memory_profiler import profile
 from pympler import muppy, summary, refbrowser
 import objgraph
+
+# decorate functions like so:
+#helper.conditionally_decorate(profile, True)
+"""
 
 def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order):
 	""" reconstruct the breakpoints from the supplementary alignments """
@@ -135,8 +140,6 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-#helper.conditionally_decorate(profile, True)
-#@profile
 def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	# TODO: look into removing contig from potential_breakpoints as we're double-storing it in chunk coverage
