@@ -52,8 +52,6 @@ def savana_run(args):
 			'tumour': pysam.AlignmentFile(args.tumour, "rc"),
 			'normal': pysam.AlignmentFile(args.normal, "rc")
 		}
-		if not args.contigs:
-			print("WARNING: when using CRAM files, it's highly recommended to supply contigs of interest via the --contigs argument (see README.md and example/contigs.chr.hg38.txt)")
 	else:
 		sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
 
@@ -202,12 +200,13 @@ def main():
 	run_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='MAPQ filter on reads which are considered (default=5)')
 	run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
 	run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
-	run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis (default=1.0x10^6)')
 	run_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Minumum number of supporting reads from tumour OR normal to consider variant (default=3)')
 	run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
 	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+	run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+	run_parser.add_argument('--maxtasksperchild', nargs='?', type=int, default=1, help='Max number of tasks to run before refreshing child process - used to optimise memory (default=1)')
 	run_parser.set_defaults(func=savana_run)
 
 	# savana classify
@@ -270,11 +269,12 @@ def main():
 		global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
 		global_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Minumum number of supporting reads from tumour OR normal to consider variant (default=3)')
 		global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
-		global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis (default=1.0x10^6)')
 		global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 		global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
 		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+		global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+		global_parser.add_argument('--maxtasksperchild', nargs='?', type=int, default=1, help='Max number of tasks to run before refreshing child process - used to optimise memory (default=1)')
 		# classify args
 		classify_group = global_parser.add_mutually_exclusive_group()
 		classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')

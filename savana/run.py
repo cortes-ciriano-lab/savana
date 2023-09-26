@@ -29,51 +29,29 @@ import objgraph
 
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
-	pool_potential = Pool(processes=args.threads, maxtasksperchild=1)
+	pool_potential = Pool(processes=args.threads, maxtasksperchild=args.maxtasksperchild) if args.maxtasksperchild else Pool(processes=args.threads)
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
-	contig_lengths = helper.get_contig_lengths(args.ref_index)
-	if not args.is_cram:
-		if args.debug:
-			print(f' > Setting chunksize for split to {args.chunksize}')
-		for label, aln_file in aln_files.items():
-			for contig in aln_file.get_index_statistics():
-				if contig.contig not in contigs_to_consider:
-					continue
-				if contig.mapped == 0:
-					continue
-				chrom_length = int(aln_file.get_reference_length(contig.contig))
-				if chrom_length > args.chunksize:
-					# split the chrom into parts
-					num_intervals = floor(chrom_length/args.chunksize) + 1
-					start_pos = 0
-					for i in range(1, num_intervals):
-						end_pos = start_pos + args.chunksize
-						end_pos = chrom_length if end_pos > chrom_length else end_pos # don't extend past end
-						pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, start_pos, end_pos))
-						start_pos = end_pos + 1
-				else:
-					pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig.contig, 0, chrom_length))
-	else:
-		#TODO: make coverage work for cram
-		# parallelize by contig (unable to see num. mapped reads per contig with cram)
-		for label, aln_file in aln_files.items():
-			for contig, contig_length in contig_lengths.items():
-				if contig not in contigs_to_consider:
-					continue
-				if contig_length > args.chunksize:
-					# split the chrom into parts
-					num_intervals = ceil(contig_length/args.chunksize) + 1
-					start_pos = 0
-					for i in range(1, num_intervals):
-						end_pos = start_pos + args.chunksize
-						end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
-						pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig, start_pos, end_pos))
-						start_pos = end_pos + 1
-				else:
-					pool_potential_args.append((aln_file.filename, args, label, contigs_to_consider, contig))
 	if args.debug:
-		print(f' > Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads')
+		print(f' > Setting chunksize for split to {args.chunksize}')
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	for label, aln_file in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig not in contigs_to_consider:
+				continue
+			if contig_length > args.chunksize:
+				# split the chrom into parts
+				num_intervals = floor(contig_length/args.chunksize) + 1
+				start_pos = 0
+				for i in range(1, num_intervals):
+					end_pos = start_pos + args.chunksize
+					end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
+					pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig, start_pos, end_pos))
+					start_pos = end_pos + 1
+			else:
+				pool_potential_args.append((aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig, 0, contig_length))
+	if args.debug:
+		print(f' > Submitting {len(pool_potential_args)} "get_potential_breakpoints" tasks to {args.threads} worker threads ({args.maxtasksperchild} maxtasksperchild)')
 
 	potential_breakpoints_results = pool_potential.starmap(get_potential_breakpoints, pool_potential_args)
 	pool_potential.close()
