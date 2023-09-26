@@ -52,8 +52,6 @@ def savana_run(args):
 			'tumour': pysam.AlignmentFile(args.tumour, "rc"),
 			'normal': pysam.AlignmentFile(args.normal, "rc")
 		}
-		if not args.contigs:
-			print("WARNING: when using CRAM files, it's highly recommended to supply contigs of interest via the --contigs argument (see README.md and example/contigs.chr.hg38.txt)")
 	else:
 		sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
 
@@ -207,6 +205,8 @@ def main():
 	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
 	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+	run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+	run_parser.add_argument('--maxtasksperchild', nargs='?', type=int, default=1, help='Max number of tasks to run before refreshing child process - used to optimise memory (default=1)')
 	run_parser.set_defaults(func=savana_run)
 
 	# savana classify
@@ -273,6 +273,8 @@ def main():
 		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 		global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
 		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+		global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+		global_parser.add_argument('--maxtasksperchild', nargs='?', type=int, default=1, help='Max number of tasks to run before refreshing child process - used to optimise memory (default=1)')
 		# classify args
 		classify_group = global_parser.add_mutually_exclusive_group()
 		classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')

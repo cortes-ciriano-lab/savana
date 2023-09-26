@@ -15,6 +15,16 @@ from math import floor, ceil
 import savana.helper as helper
 from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 
+"""
+# developer dependencies
+from memory_profiler import profile
+from pympler import muppy, summary, refbrowser
+import objgraph
+
+# decorate functions like so:
+#helper.conditionally_decorate(profile, True)
+"""
+
 def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order):
 	""" reconstruct the breakpoints from the supplementary alignments """
 	primary_clipping = helper.get_clipping(cigar_tuples, read.is_reverse)
@@ -130,17 +140,17 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, start, end):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	# TODO: look into removing contig from potential_breakpoints as we're double-storing it in chunk coverage
 	potential_breakpoints = {}
-	if args.is_cram:
-		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=args.ref)
+	if is_cram:
+		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
 	else:
 		aln_file = pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
-	args_length = max((args.length - floor(args.length/5)), 0) if label == 'normal' else args.length
-	mapq = min((args.mapq - ceil(args.mapq/2)), 1) if label == 'normal' else args.mapq
+	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
+	mapq = min((mapq - ceil(mapq/2)), 1) if label == 'normal' else mapq
 	# store the read start/ends for calculating depth later
 	chunk_read_incrementer = {
 		'contig': contig,
@@ -215,6 +225,7 @@ def get_potential_breakpoints(aln_filename, args, label, contig_order, contig, s
 			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
 
 	aln_file.close()
+	del aln_file
 
 	return potential_breakpoints, chunk_read_incrementer
 

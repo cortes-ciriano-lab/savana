@@ -110,10 +110,6 @@ normal|Normal BAM/CRAM file (must have index in .bai/.crai format)
 outdir|Output directory (can exist but must be empty)
 ref|Full path to reference genome that was used to align the `tumour` and `normal` BAM
 
-#### Note about CRAM Files
-
-As of version 1.0.3 SAVANA supports CRAM files. However, there is a reduction in speed when using these files due to the inability to optimise based on the number of reads mapped per chromosome (cram indices do not contain this information). To minimisie this impact, it's **highly** recommended to supply a list of contigs of interest via the `--contigs` argument (an example file is at `example/contigs.chr.hg38.txt`).
-
 ### Optional Arguments
 Argument|Description
 --------|-----------
