@@ -143,9 +143,6 @@ def count_num_labels(source_breakpoints):
 def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	# TODO: look into removing contig from potential_breakpoints as we're double-storing it in chunk coverage
-	""" PROFILING CODE
-	sum1 = summary.summarize(muppy.get_objects())
-	END PROFILING CODE """
 	potential_breakpoints = {}
 	if is_cram:
 		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
@@ -229,15 +226,8 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 
 	aln_file.close()
 	del aln_file
-	""" PROFILING CODE
-	sum2 = summary.summarize(muppy.get_objects())
-	diff = summary.get_diff(sum1, sum2)
-	print(f'Object difference for {contig}:{start}-{end}')
-	summary.print_(diff)
-	END PROFILING CODE """
 
 	return potential_breakpoints, chunk_read_incrementer
-	#return potential_breakpoints
 
 def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """
