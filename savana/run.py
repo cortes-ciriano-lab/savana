@@ -27,9 +27,79 @@ from pympler import muppy, summary, refbrowser
 import objgraph
 """
 
+def multithreading_get_potential_breakpoints(aln_files, args):
+	""" split the genome into chunks and identify PotentialBreakpoints via multithreading """
+	from concurrent.futures import ThreadPoolExecutor
+	from threading import Lock
+
+	executor = ThreadPoolExecutor(max_workers=args.threads)
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	get_potential_breakpoints_args = {
+		'aln_filename': [],
+		'is_cram': [],
+		'ref': [],
+		'length': [],
+		'mapq': [],
+		'label': [],
+		'contigs_to_consider': [],
+		'contig': [],
+		'start_pos': [],
+		'end_pos': []
+	}
+	for label, aln_file in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig not in contigs_to_consider:
+				continue
+			if contig_length > args.chunksize:
+				# split the chrom into parts
+				num_intervals = floor(contig_length/args.chunksize) + 1
+				start_pos = 0
+				for i in range(1, num_intervals):
+					end_pos = start_pos + args.chunksize
+					end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
+					get_potential_breakpoints_args['aln_filename'].append(aln_file.filename)
+					get_potential_breakpoints_args['is_cram'].append(args.is_cram)
+					get_potential_breakpoints_args['ref'].append(args.ref)
+					get_potential_breakpoints_args['length'].append(args.length)
+					get_potential_breakpoints_args['mapq'].append(args.mapq)
+					get_potential_breakpoints_args['label'].append(label)
+					get_potential_breakpoints_args['contigs_to_consider'].append(contigs_to_consider)
+					get_potential_breakpoints_args['contig'].append(contig)
+					get_potential_breakpoints_args['start_pos'].append(start_pos)
+					get_potential_breakpoints_args['end_pos'].append(end_pos)
+					start_pos = end_pos + 1
+			else:
+				get_potential_breakpoints_args['aln_filename'].append(aln_file.filename)
+				get_potential_breakpoints_args['is_cram'].append(args.is_cram)
+				get_potential_breakpoints_args['ref'].append(args.ref)
+				get_potential_breakpoints_args['length'].append(args.length)
+				get_potential_breakpoints_args['mapq'].append(args.mapq)
+				get_potential_breakpoints_args['label'].append(label)
+				get_potential_breakpoints_args['contigs_to_consider'].append(contigs_to_consider)
+				get_potential_breakpoints_args['contig'].append(contig)
+				get_potential_breakpoints_args['start_pos'].append(0)
+				get_potential_breakpoints_args['end_pos'].append(contig_length)
+	results = executor.map(
+		get_potential_breakpoints,
+		get_potential_breakpoints_args['aln_filename'],
+		get_potential_breakpoints_args['is_cram'],
+		get_potential_breakpoints_args['ref'],
+		get_potential_breakpoints_args['length'],
+		get_potential_breakpoints_args['mapq'],
+		get_potential_breakpoints_args['label'],
+		get_potential_breakpoints_args['contigs_to_consider'],
+		get_potential_breakpoints_args['contig'],
+		get_potential_breakpoints_args['start_pos'],
+		get_potential_breakpoints_args['end_pos']
+	)
+
+	return results
+
+
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
-	pool_potential = Pool(processes=args.threads, maxtasksperchild=args.maxtasksperchild) if args.maxtasksperchild else Pool(processes=args.threads)
+	#pool_potential = Pool(processes=args.threads, maxtasksperchild=args.maxtasksperchild) if args.maxtasksperchild else Pool(processes=args.threads)
 	pool_potential_args = []
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
 	if args.debug:
