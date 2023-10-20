@@ -96,6 +96,98 @@ def multithreading_get_potential_breakpoints(aln_files, args):
 
 	return results
 
+def multiprocessing_get_potential_breakpoints(aln_files, args):
+	""" split the genome into chunks and identify PotentialBreakpoints via multithreading """
+	from concurrent.futures import ProcessPoolExecutor
+	from threading import Lock
+
+	executor = ProcessPoolExecutor(max_workers=args.threads)
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	get_potential_breakpoints_args = {
+		'aln_filename': [],
+		'is_cram': [],
+		'ref': [],
+		'length': [],
+		'mapq': [],
+		'label': [],
+		'contigs_to_consider': [],
+		'contig': [],
+		'start_pos': [],
+		'end_pos': []
+	}
+	for label, aln_file in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig not in contigs_to_consider:
+				continue
+			if contig_length > args.chunksize:
+				# split the chrom into parts
+				num_intervals = floor(contig_length/args.chunksize) + 1
+				start_pos = 0
+				for i in range(1, num_intervals):
+					end_pos = start_pos + args.chunksize
+					end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
+					get_potential_breakpoints_args['aln_filename'].append(aln_file.filename)
+					get_potential_breakpoints_args['is_cram'].append(args.is_cram)
+					get_potential_breakpoints_args['ref'].append(args.ref)
+					get_potential_breakpoints_args['length'].append(args.length)
+					get_potential_breakpoints_args['mapq'].append(args.mapq)
+					get_potential_breakpoints_args['label'].append(label)
+					get_potential_breakpoints_args['contigs_to_consider'].append(contigs_to_consider)
+					get_potential_breakpoints_args['contig'].append(contig)
+					get_potential_breakpoints_args['start_pos'].append(start_pos)
+					get_potential_breakpoints_args['end_pos'].append(end_pos)
+					start_pos = end_pos + 1
+			else:
+				get_potential_breakpoints_args['aln_filename'].append(aln_file.filename)
+				get_potential_breakpoints_args['is_cram'].append(args.is_cram)
+				get_potential_breakpoints_args['ref'].append(args.ref)
+				get_potential_breakpoints_args['length'].append(args.length)
+				get_potential_breakpoints_args['mapq'].append(args.mapq)
+				get_potential_breakpoints_args['label'].append(label)
+				get_potential_breakpoints_args['contigs_to_consider'].append(contigs_to_consider)
+				get_potential_breakpoints_args['contig'].append(contig)
+				get_potential_breakpoints_args['start_pos'].append(0)
+				get_potential_breakpoints_args['end_pos'].append(contig_length)
+	results = executor.map(
+		get_potential_breakpoints,
+		get_potential_breakpoints_args['aln_filename'],
+		get_potential_breakpoints_args['is_cram'],
+		get_potential_breakpoints_args['ref'],
+		get_potential_breakpoints_args['length'],
+		get_potential_breakpoints_args['mapq'],
+		get_potential_breakpoints_args['label'],
+		get_potential_breakpoints_args['contigs_to_consider'],
+		get_potential_breakpoints_args['contig'],
+		get_potential_breakpoints_args['start_pos'],
+		get_potential_breakpoints_args['end_pos']
+	)
+
+	return results
+
+def single_thread_get_potential_breakpoints(aln_files, args):
+	potential_breakpoints_results = []
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	if args.debug:
+		print(f' > Setting chunksize for split to {args.chunksize}')
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	for label, aln_file in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig not in contigs_to_consider:
+				continue
+			if contig_length > args.chunksize:
+				# split the chrom into parts
+				num_intervals = floor(contig_length/args.chunksize) + 1
+				start_pos = 0
+				for i in range(1, num_intervals):
+					end_pos = start_pos + args.chunksize
+					end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
+					potential_breakpoints_results.append(get_potential_breakpoints(aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig, start_pos, end_pos))
+					start_pos = end_pos + 1
+			else:
+					potential_breakpoints_results.append(get_potential_breakpoints(aln_file.filename, args.is_cram, args.ref, args.length, args.mapq, label, contigs_to_consider, contig, 0, contig_length))
+
+	return potential_breakpoints_results
 
 def pool_get_potential_breakpoints(aln_files, args):
 	""" split the genome into chunks and identify PotentialBreakpoints """
@@ -212,13 +304,340 @@ def multithreading_compute_depth(threads, breakpoint_dict_chrom, contig_coverage
 
 	return breakpoint_dict_chrom
 
+class Collector():
+	def __init__(self):
+		self.results = []
+
+from multiprocessing import Process, Pipe, current_process, Manager
+
+def recieve_work(conn, manager):
+	import time
+	while True:
+		obj = conn.recv()
+		if not obj:
+			break
+		# unpackage the reciever object
+		contig_arg_dict, thread = obj
+		print(f'Recieved {contig_arg_dict} from thread {thread}')
+		manager.append(([contig_arg_dict['contig'], contig_arg_dict['label']], thread))
+	print(f'Reciever is done, recieved {obj}', flush=True)
+
+def generate_work(conn, pkg):
+	""" generate """
+	aln_files, args, thread = pkg
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	for label, aln_file in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig in contigs_to_consider:
+				contig_arg_dict = {
+					'is_cram': args.is_cram,
+					'ref': args.ref,
+					'length': args.length,
+					'mapq': args.mapq,
+					'label': label,
+					'contig_order': contigs_to_consider,
+					'contig': contig,
+					'start_pos': 0,
+					'end_pos': contig_length
+				}
+				conn.send((contig_arg_dict, thread))
+	conn.send(None)
+
+def execute_get_potential_breakpoint_task(task_arg_dict, contig_coverage_array, completed_tasks_counter, conn):
+	""" """
+	potential_breakpoints, chunk_read_incrementer = get_potential_breakpoints(
+		task_arg_dict['aln_file'],
+		task_arg_dict['is_cram'],
+		task_arg_dict['ref'],
+		task_arg_dict['length'],
+		task_arg_dict['mapq'],
+		task_arg_dict['label'],
+		task_arg_dict['contig_order'],
+		task_arg_dict['contig'],
+		task_arg_dict['start_pos'],
+		task_arg_dict['end_pos'],
+		contig_coverage_array
+		)
+	completed_tasks_counter.value += 1
+	conn.send(potential_breakpoints)
+	conn.close()
+
+def generate_tasks(aln_files, args):
+	""" generate tasks by chunking the genome """
+	tasks = []
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	for label, aln_file in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig not in contigs_to_consider:
+				continue
+			if contig_length > args.chunksize:
+				# split the chrom into parts
+				num_intervals = floor(contig_length/args.chunksize) + 1
+				start_pos = 0
+				for _ in range(0, num_intervals):
+					end_pos = start_pos + args.chunksize
+					end_pos = contig_length if end_pos > contig_length else end_pos # don't extend past end
+					tasks.append({
+						'aln_file': aln_file.filename,
+						'label': label,
+						'is_cram': args.is_cram,
+						'ref': args.ref,
+						'length': args.length,
+						'mapq': args.mapq,
+						'contig_order': contigs_to_consider,
+						'contig': contig,
+						'start_pos': start_pos,
+						'end_pos': end_pos
+					})
+					start_pos = end_pos + 1
+			else:
+				tasks.append({
+					'aln_file': aln_file.filename,
+					'label': label,
+					'is_cram': args.is_cram,
+					'ref': args.ref,
+					'length': args.length,
+					'mapq': args.mapq,
+					'contig_order': contigs_to_consider,
+					'contig': contig,
+					'start_pos': 0,
+					'end_pos': contig_length
+				})
+	return tasks
+
+def generate_coverage_arrays(aln_files, args):
+	""" generate empty numpy arrays """
+	from multiprocessing import sharedctypes
+	coverage_arrays = {}
+	contig_lengths = helper.get_contig_lengths(args.ref_index)
+	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
+	for label, _ in aln_files.items():
+		for contig, contig_length in contig_lengths.items():
+			if contig not in contigs_to_consider:
+				continue
+			#coverage_arrays.setdefault(label, {})[contig] = np.zeros((contig_length,), dtype=np.int16)
+			#coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('h', np.zeros((contig_length,), dtype=np.int16))
+			coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('h', contig_length)
+	return coverage_arrays
+
+def run_get_breakpoint_tasks(aln_files, args):
+	""" """
+	import time
+	from multiprocessing import Value
+	tasks = generate_tasks(aln_files, args)
+	tasks_counter = {
+		'initial': len(tasks),
+		'completed': Value('i', 0)
+	}
+	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
+
+	# allocate tasks to free processes
+	results = []
+	pipes = [Pipe(duplex=False) for _ in range(args.threads)]
+	processes = [None] * args.threads
+	last_tasks_to_processes = [None] * args.threads
+	while tasks:
+		print(f'{len(tasks)} left to allocate, checking processes')
+		for i, process in enumerate(processes):
+			if not process and tasks:
+				# pop task off the tasks list
+				task_args = tasks.pop(0)
+				# retrieve reference to the relevant contig's coverage array
+				contig_coverage_array = shared_cov_arrays[task_args['label']][task_args['contig']]
+				# create a new pipe
+				pipes[i] = Pipe(duplex=False)
+				# create a new process and replace it (matching the pipe with its process)
+				proc = Process(target=execute_get_potential_breakpoint_task, args=(task_args, contig_coverage_array, tasks_counter['completed'], pipes[i][1]))
+				last_tasks_to_processes[i] = task_args
+				processes[i] = proc
+				proc.start()
+		time.sleep(1)
+		# Check for completed tasks
+		for i, process in enumerate(processes):
+			if process and not process.is_alive():
+				result_conn = pipes[i][0]
+				if result_conn.poll():
+					result = result_conn.recv()
+					process.join()
+					result_conn.close()
+					results.append(result)
+				del process
+				processes[i] = None
+				pipes[i] = None # ensure we're not reusing
+
+	# TODO: handle case where some tasks don't complete
+	while tasks_counter['completed'].value < tasks_counter['initial']:
+		print(f'All tasks allocated - waiting for {tasks_counter["initial"]-tasks_counter["completed"].value}/{tasks_counter["initial"]} processes to complete')
+		time.sleep(1)
+
+	print(f'All tasks completed ({tasks_counter["completed"].value}/{tasks_counter["initial"]}) - collecting results')
+
+	for i, process in enumerate(processes):
+		if process and not process.is_alive():
+			result_conn = pipes[i][0]
+			if result_conn.poll():
+				result = result_conn.recv()
+				process.join()
+				result_conn.close()
+				results.append(result)
+			del process
+			processes[i] = None
+		elif process and process.is_alive():
+			# process still alive but all tasks done? manually shut it down
+			result_conn = pipes[i][0]
+			if result_conn.poll(1):
+				result = result_conn.recv()
+				process.join(timeout=1)
+				result_conn.close()
+				results.append(result)
+			else:
+				print(f'Nothing to collect from process {i}')
+			del process
+			processes[i] = None
+	# Wait for processes to complete
+	"""
+	cycle_count = 0
+	while processes.count(None) < len(processes):
+		print(f'All tasks allocated - waiting for {len(processes)-processes.count(None)}/{len(processes)} processes to complete:')
+		for i, process in enumerate(processes):
+			if process and not process.is_alive():
+				result_conn = pipes[i][0]
+				if result_conn.poll():
+					result = result_conn.recv()
+					process.join()
+					result_conn.close()
+					results.append(result)
+					del process
+				processes[i] = None
+			elif process and process.is_alive():
+				# process still alive, give it a bit of time
+				if cycle_count > 300:
+					print(f'Max cycles reached - manually closing process {i}')
+					try:
+						result_conn = pipes[i][0]
+						if result_conn.poll(5):
+							result = result_conn.recv()
+							process.join(timeout=1)
+							result_conn.close()
+						else:
+							print(f'Gave up waiting for process {i} to finish ({process})')
+							print(last_tasks_to_processes[i])
+						del process
+						processes[i] = None
+					except Exception as e:
+						print('Error retrieving results')
+				cycle_count += 1
+			#""
+			# commented out
+			if process and process.join(5):
+				result_conn = pipes[i][0]
+				if result_conn.poll():
+					# still results left in pipe
+					result = result_conn.recv()
+					results.append(result)
+					del process
+					processes[i] = None
+				print(f'Therefore it must reach here??')
+				if result_conn.poll():
+					result = result_conn.recv()
+					results.append(result)
+					process.join()
+					del process
+					processes[i] = None
+				else:
+					# process is finished and nothing left to read
+					del process
+					processes[i] = None
+
+			elif process and process.is_alive():
+				print(f'process {process} is still alive')
+
+			#""
+	"""
+	"""
+	for p in processes:
+		if p is not None:
+			p.join()
+	"""
+
+	contig_potential_breakpoints = {}
+	for result in results:
+		for contig, potential_breakpoints in result.items():
+			contig_potential_breakpoints.setdefault(contig, []).extend(potential_breakpoints)
+	# counting results
+	for contig, potential_breakpoints in contig_potential_breakpoints.items():
+		print(f'{len(potential_breakpoints)} for {contig}')
+
+	"""
+	# collect and print results
+	print('Collecting Results')
+	contig_potential_breakpoints = {}
+	counter = 1
+	for parent_conn, child_conn in pipes:
+		print(f'Examining pipe {counter}')
+		potential_breakpoint_results = parent_conn.recv()
+		result_contig = None
+		for contig, potential_breakpoints in potential_breakpoint_results.items():
+			result_contig = contig if not result_contig else result_contig
+			contig_potential_breakpoints.setdefault(contig, []).extend(potential_breakpoints)
+		#contig_coverages_merged.setdefault(cri_results.pop('contig'), []).append(cri_results)
+		counter+=1
+	"""
+
+	#print(contig_potential_breakpoints)
+	print('Results Collected')
+	return contig_potential_breakpoints, shared_cov_arrays
+
+def pipe_test(aln_files, args):
+	# convert aln files to pickle-able types
+	aln_files = {label:file.filename for (label, file) in aln_files.items()}
+	s_processes, r_processes = [], []
+	pipes = []
+	with Manager() as manager:
+		managed_list = manager.list()
+		for t in range(1, args.threads+1):
+			# create the pipe
+			parent_conn, child_conn = Pipe(duplex=False)
+			pipes.append((parent_conn, child_conn))
+			# start the sender processe s
+			s_proc = Process(target=generate_work, args=(child_conn, (aln_files, args, t)))
+			s_proc.start()
+			s_processes.append(s_proc)
+			# start the reciever processes
+			r_proc = Process(target=recieve_work, args=(parent_conn, managed_list))
+			r_proc.start()
+			r_processes.append(r_proc)
+		for i in range(args.threads):
+			print(f'Joining process {i+1}')
+			s_processes[i].join()
+			r_processes[i].join() 
+		print(managed_list)
+
+	for conn, _ in pipes:
+		conn.close()
+
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using {args.threads} thread(s)\n')
+	import tracemalloc
+	tracemalloc.start()
+
+	potential_breakpoints, coverage_arrays = run_get_breakpoint_tasks(aln_files, args)
+
+	# displaying the memory
+	max_mem = tracemalloc.get_traced_memory()[1]
+	print(f'GB Max Memory: {max_mem/10**9}GB')
+	tracemalloc.stop()
+	import sys
+	sys.exit('Done.')
 
 	# 1) GET POTENTIAL BREAKPOINTS
-	potential_breakpoints_results = pool_get_potential_breakpoints(aln_files, args)
-	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
+	#potential_breakpoints_results = pool_get_potential_breakpoints(aln_files, args)
+	#potential_breakpoints_results = multiprocessing_get_potential_breakpoints(aln_files, args)
+	#potential_breakpoints_results = multithreading_get_potential_breakpoints(aln_files, args)
+	potential_breakpoints_results = single_thread_get_potential_breakpoints(aln_files, args)
 
 	# collect results per chrom
 	chrom_potential_breakpoints = {}
@@ -234,6 +653,7 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 		contig_coverages_merged.setdefault(contig_coverages.pop('contig'), []).append(contig_coverages)
 	# get rid (heavy memory footprint - no longer needed)
 	del potential_breakpoints_results
+	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
 	clusters = pool_cluster_breakpoints(args.threads, args.buffer, args.insertion_buffer, chrom_potential_breakpoints)
