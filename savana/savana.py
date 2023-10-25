@@ -159,6 +159,7 @@ def savana_main(args):
 	""" default workflow for savana: savana_run, savana_classify, savana_evaluate """
 	# call raw breakpoints
 	savana_run(args)
+	return
 	# set the input VCF for classification
 	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
 	if not args.model and not args.custom_params and not args.legacy and not args.ont_noisy and not args.predict_germline:

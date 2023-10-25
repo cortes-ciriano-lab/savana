@@ -6,11 +6,11 @@ Hillary Elrick
 """
 #!/usr/bin/env python3
 
-from statistics import median
 import pysam
 import numpy as np
 
 from math import floor, ceil
+from statistics import median
 
 import savana.helper as helper
 from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
@@ -19,7 +19,6 @@ from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 # developer dependencies
 from memory_profiler import profile
 from pympler import muppy, summary, refbrowser
-import objgraph
 
 # decorate functions like so:
 #helper.conditionally_decorate(profile, True)
@@ -142,38 +141,22 @@ def count_num_labels(source_breakpoints):
 
 def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, contig_coverage_array):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
-	# TODO: look into removing contig from potential_breakpoints as we're double-storing it in chunk coverage
 	potential_breakpoints = {}
-	if is_cram:
-		aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref)
-	else:
-		aln_file = pysam.AlignmentFile(aln_filename, "rb")
+	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
 	mapq = min((mapq - ceil(mapq/2)), 1) if label == 'normal' else mapq
-	# store the read start/ends for calculating depth later
-	chunk_read_incrementer = {
-		'contig': contig,
-		'start': int(start),
-		'end': int(end),
-		'label': label,
-		'coverage_array': np.zeros((end-start,), dtype=int)
-	}
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary:
 			continue
 		if read.mapping_quality > 0:
 			# record start/end in read incrementer
-			contig_coverage_array[read.reference_start]+=1
-			contig_coverage_array[read.reference_end]-=1
-			"""
-			shifted_start = read.reference_start - start
-			shifted_end = read.reference_end - start
-			if shifted_start >= 0 and shifted_start < (end-start):
-				chunk_read_incrementer['coverage_array'][shifted_start]+=1
-			if shifted_end >= 0 and shifted_end < (end-start):
-				chunk_read_incrementer['coverage_array'][shifted_end]-=1
-			"""
+			try:
+				contig_coverage_array[read.reference_start-1]+=1
+				contig_coverage_array[read.reference_end-1]-=1
+			except IndexError as e:
+				print(f'Unable to update coverage for contig {contig}')
+				print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
@@ -231,8 +214,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	aln_file.close()
 	del aln_file
 
-	#return potential_breakpoints, chunk_read_incrementer
-	return potential_breakpoints, None
+	return potential_breakpoints
 
 def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """
