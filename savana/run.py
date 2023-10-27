@@ -11,6 +11,7 @@ import gc
 
 from math import ceil, floor
 from multiprocessing import Pool
+from multiprocessing import Array, Pipe, Process
 
 import numpy as np
 import pysam
@@ -27,32 +28,6 @@ from memory_profiler import profile
 import objgraph
 from pympler import muppy, summary, refbrowser
 """
-
-def pool_cluster_breakpoints(threads, buffer, ins_buffer, chrom_potential_breakpoints):
-	""" perform initial clustering of Potential Breakpoints """
-	pool_clustering = Pool(processes=threads)
-	pool_clustering_args = []
-	for chrom, breakpoints in chrom_potential_breakpoints.items():
-		pool_clustering_args.append((chrom, breakpoints, buffer, ins_buffer))
-	clustering_results = pool_clustering.starmap(cluster_breakpoints, pool_clustering_args)
-	pool_clustering.close()
-	pool_clustering.join()
-	clusters = {}
-	""" collect & store results in multi-level dict
-	clusters = {
-		'chr1': {
-			{
-				'+-': [cluster, cluster, ...],
-				'--': [cluster, cluster, ...]
-			}
-		}
-		...
-	} """
-	for chrom, result in clustering_results:
-		if chrom not in clusters:
-			clusters[chrom] = result
-
-	return clusters
 
 def pool_output_clusters(args, clusters, outdir):
 	""" output trimmed fastqs of the reads in each cluster """
@@ -134,8 +109,8 @@ def execute_get_potential_breakpoint_task(task_arg_dict, contig_coverage_array, 
 	gc.collect()
 	conn.close()
 
-def generate_tasks(aln_files, args):
-	""" generate tasks by chunking the genome """
+def generate_get_potential_breakpoint_tasks(aln_files, args):
+	""" generate get_potential_breakpoint tasks by chunking the genome """
 	tasks = []
 	task_id_counter = 0
 	contig_lengths = helper.get_contig_lengths(args.ref_index)
@@ -199,11 +174,179 @@ def generate_coverage_arrays(aln_files, args):
 			coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('h', contig_length)
 	return coverage_arrays
 
+def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
+	""" submit task arguments to the function and send results through pipe """
+	breakpoints, _, contig = call_breakpoints(
+		task_arg_dict['clusters'],
+		task_arg_dict['buffer'],
+		task_arg_dict['length'],
+		task_arg_dict['depth'],
+		task_arg_dict['contig']
+	)
+	task_tracker[task_arg_dict['task_id']] = 1
+	conn.send((breakpoints, contig))
+	# cleanup
+	del task_arg_dict
+	gc.collect()
+	conn.close()
+
+def execute_cluster_breakpoints(task_arg_dict, task_tracker, conn):
+	""" submit the task arguments to the function and send results through pipe """
+	contig, clustered_breakpoints = cluster_breakpoints(
+		task_arg_dict['contig'],
+		task_arg_dict['breakpoints'],
+		task_arg_dict['buffer'],
+		task_arg_dict['ins_buffer'],
+	)
+	task_tracker[task_arg_dict['task_id']] = 1
+	conn.send((contig, clustered_breakpoints))
+	# cleanup
+	del task_arg_dict
+	gc.collect()
+	conn.close()
+
+def generate_cluster_breakpoints_tasks(potential_breakpoints, args):
+	""" """
+	tasks = []
+	task_id_counter = 0
+	for contig, breakpoints in potential_breakpoints.items():
+		tasks.append({
+			'contig': contig,
+			'breakpoints': breakpoints,
+			'buffer': args.buffer,
+			'ins_buffer': args.insertion_buffer,
+			'task_id': task_id_counter
+		})
+		task_id_counter += 1
+	return tasks
+
+def generate_call_breakpoint_tasks(clustered_breakpoints, args):
+	""""""
+	tasks = []
+	task_id_counter = 0
+	for contig, clusters in clustered_breakpoints.items():
+		tasks.append({
+			'contig': contig,
+			'clusters': clusters,
+			'buffer': args.buffer,
+			'length': args.length,
+			'depth': args.depth,
+			'task_id': task_id_counter
+		})
+		task_id_counter += 1
+	return tasks
+
+def run_call_breakpoints(clustered_breakpoints, args):
+	""" generate task list for calling breakpoints and coordinate the execution """
+	tasks = generate_call_breakpoint_tasks(clustered_breakpoints, args)
+	task_tracker = Array('h', [0]*len(tasks))
+	print(f' > {len(tasks)} calling tasks')
+
+	results = []
+	pipes = [None] * min(args.threads, len(tasks))
+	processes = [None] * min(args.threads, len(tasks))
+	while tasks or processes.count(None) != len(processes):
+		for i, process in enumerate(processes):
+			# check if free process and remaining tasks
+			if not process and tasks:
+				# pop task off task list
+				task_args = tasks.pop(0)
+				# create new pipe
+				pipes[i] = Pipe(duplex=False)
+				# create a new process and replace it (match pipe w process)
+				proc = Process(target=execute_call_breakpoints, args=(task_args, task_tracker, pipes[i][1]))
+				processes[i] = (proc, task_args['task_id'])
+				proc.start()
+		for i, process in enumerate(processes):
+			if process:
+				proc, assigned_task_id = process
+				result_conn = pipes[i][0]
+				if proc and not proc.is_alive():
+					if result_conn.poll():
+						result = result_conn.recv()
+						proc.join()
+						result_conn.close()
+						results.append(result)
+					del process
+					processes[i] = None
+					pipes[i] = None
+				elif proc.is_alive() and task_tracker[assigned_task_id] != 0:
+					# even though process alive, can see task is done
+					if result_conn.poll(10):
+						result = result_conn.recv()
+						proc.join(timeout=1) # these hang
+						result_conn.close()
+						results.append(result)
+					else:
+						print(f'Timeout polling process {i} (task {assigned_task_id})')
+					del process
+					processes[i] = None
+					pipes[i] = None
+	del task_tracker
+	called_breakpoints = {}
+	for result in results:
+		breakpoints, contig = result
+		called_breakpoints.setdefault(contig, []).append(breakpoints)
+
+	return called_breakpoints
+
+def run_cluster_breakpoints(potential_breakpoints, args):
+	""" generate the task list and coordinate the task execution """
+	tasks = generate_cluster_breakpoints_tasks(potential_breakpoints, args)
+	task_tracker = Array('h', [0]*len(tasks))
+	print(f' > {len(tasks)} clustering tasks')
+
+	results = []
+	pipes = [None] * min(args.threads, len(tasks))
+	processes = [None] * min(args.threads, len(tasks))
+	while tasks or processes.count(None) != len(processes):
+		for i, process in enumerate(processes):
+			# check if free process and remaining tasks
+			if not process and tasks:
+				# pop task off the tasks list
+				task_args = tasks.pop(0)
+				# create new pipe
+				pipes[i] = Pipe(duplex=False)
+				# create a new process and replace it (matching pipe with its process)
+				proc = Process(target=execute_cluster_breakpoints, args=(task_args, task_tracker, pipes[i][1]))
+				processes[i] = (proc, task_args['task_id'])
+				proc.start()
+		for i, process in enumerate(processes):
+			if process:
+				proc, assigned_task_id = process
+				result_conn = pipes[i][0]
+				if proc and not proc.is_alive():
+					if result_conn.poll():
+						result = result_conn.recv()
+						proc.join()
+						result_conn.close()
+						results.append(result)
+					del process
+					processes[i] = None
+					pipes[i] = None
+				elif proc.is_alive() and task_tracker[assigned_task_id] != 0:
+					# even though process alive, can see task is done
+					if result_conn.poll(10):
+						result = result_conn.recv()
+						proc.join(timeout=1) # these processes hang
+						result_conn.close()
+						results.append(result)
+					else:
+						print(f'Timeout polling process {i} (task {assigned_task_id})')
+					del process
+					processes[i] = None
+					pipes[i] = None
+	del task_tracker
+	clustered_breakpoints = {}
+	for result in results:
+		contig, breakpoints = result
+		clustered_breakpoints[contig] = breakpoints
+
+	return clustered_breakpoints
+
 def run_get_potential_breakpoints(aln_files, args):
 	""" generate the task list and coordinate the task execution by processes  """
-	import time
-	from multiprocessing import Array, Pipe, Process
-	tasks = generate_tasks(aln_files, args)
+	tasks = generate_get_potential_breakpoint_tasks(aln_files, args)
 	task_tracker = Array('h', [0]*len(tasks))
 	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
 
@@ -255,9 +398,8 @@ def run_get_potential_breakpoints(aln_files, args):
 					del process
 					processes[i] = None
 					pipes[i] = None
-
 	# TODO: handle case where some tasks don't complete
-
+	del task_tracker
 	contig_potential_breakpoints = {}
 	for result in results:
 		for contig, potential_breakpoints in result.items():
@@ -274,8 +416,25 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	potential_breakpoints, shared_cov_arrays = run_get_potential_breakpoints(aln_files, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
 
-	print(sum(shared_cov_arrays['tumour']['chr10'][0:53717136]))
+	# 2) CLUSTER POTENTIAL BREAKPOINTS
+	clustered_breakpoints = run_cluster_breakpoints(potential_breakpoints, args)
+	helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
+
+	# 3) CALL BREAKPOINTS FROM CLUSTERS
+	called_breakpoints = run_call_breakpoints(clustered_breakpoints, args)
+	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
+
+	# cleanup
+	del potential_breakpoints
+	del clustered_breakpoints
+	gc.collect()
+
+	#print(sum(shared_cov_arrays['tumour']['chr10'][0:53717136]))
 	#print(sum(coverage_arrays['tumour']['chr1'][0:224595093]))
+
+	# 4) COMPUTE LOCAL DEPTH
+	#multithreading_compute_depth(args.threads, breakpoint_dict_chrom, contig_coverages_merged, args.debug)
+	#helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
 
 	return checkpoints, time_str
 
