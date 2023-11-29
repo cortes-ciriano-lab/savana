@@ -139,7 +139,7 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, contig_coverage_array):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
@@ -147,15 +147,16 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
 	mapq = min((mapq - ceil(mapq/2)), 1) if label == 'normal' else mapq
 	for read in aln_file.fetch(contig, start, end):
-		if read.is_secondary:
+		if read.is_secondary or read.is_unmapped:
 			continue
 		if read.mapping_quality > 0:
 			# record start/end in read incrementer
 			try:
-				contig_coverage_array[read.reference_start-1]+=1
-				contig_coverage_array[read.reference_end-1]-=1
+				contig_coverage_array[floor((read.reference_start-1)/coverage_binsize)]+=1
+				contig_coverage_array[floor((read.reference_end-1)/coverage_binsize)]-=1
 			except IndexError as e:
 				print(f'Unable to update coverage for contig {contig}')
+				print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
 				print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
@@ -216,7 +217,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 
 	return potential_breakpoints
 
-def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
+def call_breakpoints(clusters, end_buffer, min_length, min_depth, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
@@ -269,7 +270,7 @@ def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 					cluster_stack = []
 					for bp in source_breakpoints:
 						new_cluster = False
-						if len(cluster_stack) == 0 or not abs(cluster_stack[-1].start - bp.start_loc) < buffer:
+						if len(cluster_stack) == 0 or not abs(cluster_stack[-1].start - bp.start_loc) < end_buffer:
 							# put a new cluster onto top of stack
 							new_cluster = Cluster(bp)
 							cluster_stack.append(new_cluster)
@@ -302,46 +303,27 @@ def call_breakpoints(clusters, buffer, min_length, min_depth, chrom):
 
 	return final_breakpoints, pruned_clusters, chrom
 
-def compute_depth(breakpoints, contig_coverages, lock):
+def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """
 	for bp in breakpoints:
-		bp.local_depths = {'tumour': [0,0], 'normal': [0,0]}
-		same_chrom = True if bp.start_chr == bp.end_chr else False
-		for chunk in contig_coverages[bp.start_chr]:
-			label = chunk['label']
-			if bp.start_loc > chunk['end']:
-				# need to sum entire chunk - don't redo if already computed
-				if 'total_sum' not in chunk:
-					with lock:
-						chunk['total_sum'] = np.sum(chunk['coverage_array'])
-				bp.local_depths[label][0] = bp.local_depths[label][0] + chunk['total_sum']
-			elif bp.start_loc >= chunk['start'] and (bp.start_loc + 1) <= chunk['end']:
-				# need to split and sum positions before
-				shifted_start = bp.start_loc - chunk['start']
-				bp.local_depths[label][0] = bp.local_depths[label][0] + np.sum(chunk['coverage_array'][0:shifted_start])
-			if same_chrom:
-				# also compute for end if on same chrom
-				if bp.end_loc > chunk['end']:
-					if 'total_sum' not in chunk:
-						with lock:
-							chunk['total_sum'] = np.sum(chunk['coverage_array'])
-					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
-				elif bp.end_loc >= chunk['start'] and (bp.end_loc) <= chunk['end']:
-					shifted_end = bp.end_loc - chunk['start']
-					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
-		if not same_chrom:
-			for chunk in contig_coverages.setdefault(bp.end_chr, []):
-				label = chunk['label']
-				if bp.end_loc > chunk['end']:
-					# need to sum entire chunk - don't redo if already computed
-					if 'total_sum' not in chunk:
-						with lock:
-							chunk['total_sum'] = np.sum(chunk['coverage_array'])
-					bp.local_depths[label][1] = bp.local_depths[label][1] + chunk['total_sum']
-				elif bp.end_loc >= chunk['start'] and (bp.end_loc + 1) <= chunk['end']:
-					# need to split and sum positions before
-					shifted_end = bp.end_loc - chunk['start']
-					bp.local_depths[label][1] = bp.local_depths[label][1] + np.sum(chunk['coverage_array'][0:shifted_end])
+		bp.local_depths = {
+			'tumour': [[0,0],[0,0],[0,0]],
+			'normal': [[0,0],[0,0],[0,0]],
+		}
+		for label in bp.local_depths.keys():
+			for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):
+				centre_bin = floor(loc/coverage_binsize)
+				if centre_bin > 0:
+					bp.local_depths[label][0][i] = np.sum(shared_cov_arrays[label][chrom][0:centre_bin-1])
+				else:
+					# unlikely case it's the first bin
+					bp.local_depths[label][0][i] = 0
+				bp.local_depths[label][1][i] = bp.local_depths[label][0][i] + shared_cov_arrays[label][chrom][centre_bin]
+				try:
+					# handle extremely unlikely case that there's no next bin
+					bp.local_depths[label][2][i] = bp.local_depths[label][1][i] + shared_cov_arrays[label][chrom][centre_bin+1]
+				except IndexError as e:
+					bp.local_depths[label][2][i] = 0
 
 	return breakpoints
 

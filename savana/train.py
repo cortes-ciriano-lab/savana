@@ -13,10 +13,13 @@ import numpy as np
 import cyvcf2
 import pickle
 
-from sklearn.ensemble import RandomForestClassifier
+from random import random
+
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import *
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
-from scipy.stats import randint
+from scipy.stats import randint, uniform
 from sklearn.utils.class_weight import *
 
 # for plotting confusion matrix

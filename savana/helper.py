@@ -289,8 +289,12 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=SVLEN,Number=1,Type=Float,Description="Length of the SV">',
 		'##INFO=<ID=ORIGINATING_CLUSTER,Number=.,Type=String,Description="SAVANA internal originating cluster id supporting variant">',
 		'##INFO=<ID=END_CLUSTER,Number=.,Type=String,Description="SAVANA internal end cluster id supporting variant">',
-		'##INFO=<ID=TUMOUR_DP,Number=.,Type=Float,Description="Local depth in tumour at the breakpoint(s) of an SV">',
-		'##INFO=<ID=NORMAL_DP,Number=.,Type=Float,Description="Local depth in normal at the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_DP_BEFORE,Number=.,Type=Float,Description="Local tumour depth in bin before the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_DP_AT,Number=.,Type=Float,Description="Local tumour depth in bin at the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_DP_AFTER,Number=.,Type=Float,Description="Local tumour depth in bin after the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP_BEFORE,Number=.,Type=Float,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP_AT,Number=.,Type=Float,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP_AFTER,Number=.,Type=Float,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
 	])
 	# add the stat info fields

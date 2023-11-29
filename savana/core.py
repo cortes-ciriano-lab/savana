@@ -59,6 +59,7 @@ class ConsensusBreakpoint():
 			"originating_cluster": self.originating_cluster.uid,
 			"end_cluster": self.end_cluster.uid,
 			"labels": "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()]),
+			#"local_depths": self.local_depths, TODO: put this into a string format
 			"breakpoint_notation": self.breakpoint_notation
 		}
 		return self_dict
@@ -219,43 +220,17 @@ class ConsensusBreakpoint():
 		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
-			try:
-				info[0]+=f'TUMOUR_DP={str(self.local_depths["tumour"][0])};'
-				info[0]+=f'NORMAL_DP={str(self.local_depths["normal"][0])};'
-			except Exception as e:
-				""" COMMENTING DEPTH
-				print(f' > No DP recorded for "ID_{self.count}" - this is possible when using subsetted BAM/CRAM files')
-				print(f' >> start_chr:{self.start_chr}, end_chr:{self.end_chr} (SVTYPE=INS)')
-				print(self.local_depths)
-				"""
-				# replace None with '0'
-				for label in ['tumour', 'normal']:
-					self.local_depths[label] = ['0' if v is None else v for v in self.local_depths.setdefault(label, [None, None])]
-				info[0]+=f'TUMOUR_DP={self.local_depths["tumour"][0]};'
-				info[0]+=f'NORMAL_DP={self.local_depths["normal"][0]};'
+			for label, depths in self.local_depths.items():
+				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
+					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
 			info[0] = f'SVTYPE=BND;MATEID=ID_{self.count}_2;' + info[0]
-			try:
-				info[0]+=f'TUMOUR_DP={",".join([str(d) for d in self.local_depths["tumour"]])};'
-				info[0]+=f'NORMAL_DP={",".join([str(d) for d in self.local_depths["normal"]])};'
-				info[1]+=f'TUMOUR_DP={",".join([str(d) for d in reversed(self.local_depths["tumour"])])};'
-				info[1]+=f'NORMAL_DP={",".join([str(d) for d in reversed(self.local_depths["normal"])])};'
-			except Exception as e:
-				""" COMMENTING DEPTH
-				print(f' > No DP recorded for "ID_{self.count}" - this is possible when using subsetted BAM/CRAM files')
-				print(f' >> start_chr:{self.start_chr}, end_chr:{self.end_chr}')
-				print(self.local_depths)
-				"""
-				# replace None with '0'
-				for label in ['tumour', 'normal']:
-					self.local_depths[label] = ['0' if v is None else v for v in self.local_depths.setdefault(label, [None, None])]
-				info[0]+=f'TUMOUR_DP={",".join([str(d) for d in self.local_depths["tumour"]])};'
-				info[0]+=f'NORMAL_DP={",".join([str(d) for d in self.local_depths["normal"]])};'
-				info[1]+=f'TUMOUR_DP={",".join([str(d) for d in reversed(self.local_depths["tumour"])])};'
-				info[1]+=f'NORMAL_DP={",".join([str(d) for d in reversed(self.local_depths["normal"])])};'
-
+			for label, depths in self.local_depths.items():
+				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
+					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(d) for d in depths[i]])};'
+					info[1]+=f'{label.upper()}_DP_{bin_label}={",".join([str(d) for d in reversed(depths[i])])};'
 			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
 		# put together vcf line(s)
 		vcf_lines = [[
