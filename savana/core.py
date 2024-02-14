@@ -219,6 +219,7 @@ class ConsensusBreakpoint():
 		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
+            info[0]+=f'SVTYPE=INS;INSSEQ={self.inserted_sequence};'
 			info[0]+=f'TUMOUR_DP={self.local_depths["tumour"][0]};'
 			info[0]+=f'NORMAL_DP={self.local_depths["normal"][0]};'
 		else:
