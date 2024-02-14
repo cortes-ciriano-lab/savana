@@ -145,19 +145,18 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
-	mapq = min((mapq - ceil(mapq/2)), 1) if label == 'normal' else mapq
+	mapq = min((mapq - ceil(mapq/2)), 0) if label == 'normal' else mapq
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary or read.is_unmapped:
 			continue
-		if read.mapping_quality > 0:
+		try:
 			# record start/end in read incrementer
-			try:
-				contig_coverage_array[floor((read.reference_start-1)/coverage_binsize)]+=1
-				contig_coverage_array[floor((read.reference_end-1)/coverage_binsize)]-=1
-			except IndexError as e:
-				print(f'Unable to update coverage for contig {contig}')
-				print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
-				print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
+			contig_coverage_array[floor((read.reference_start-1)/coverage_binsize)]+=1
+			contig_coverage_array[floor((read.reference_end-1)/coverage_binsize)]-=1
+		except IndexError as e:
+			print(f'Unable to update coverage for contig {contig}')
+			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
+			print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
