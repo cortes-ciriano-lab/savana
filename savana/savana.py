@@ -224,7 +224,10 @@ def main():
 	group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 	group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
 	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
-	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='VCF with only PASS somatic variants')
+	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS somatic variants')
+	classify_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS germline variants')
+	classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+	classify_parser.add_argument('--min_support', nargs='?', type=int, default=5, required=False, help='Minimum supporting reads for a PASS variant')
 	classify_parser.set_defaults(func=savana_classify)
 
 	# savana evaluate
@@ -289,7 +292,10 @@ def main():
 		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
 		classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 		classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
-		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output a VCF with only PASS somatic variants')
+		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF with only PASS somatic variants')
+		global_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF with only PASS germline variants')
+		global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+		global_parser.add_argument('--min_support', nargs='?', type=int, default=5, required=False, help='Minimum supporting reads for a PASS variant')
 		# evaluate args
 		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
 		global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')

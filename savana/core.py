@@ -220,18 +220,33 @@ class ConsensusBreakpoint():
 		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
+			allele_fractions = {
+				'tumour': None,
+				'normal': None
+			}
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
 					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
+					if bin_label == 'AT':
+						allele_fractions[label] = round(self.support[label]/depths[i][0], 3) if depths[i][0] != 0 else 0.0
+			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
 			info[0] = f'SVTYPE=BND;MATEID=ID_{self.count}_2;' + info[0]
+			allele_fractions = {
+				'tumour': None,
+				'normal': None
+			}
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(d) for d in depths[i]])};'
 					info[1]+=f'{label.upper()}_DP_{bin_label}={",".join([str(d) for d in reversed(depths[i])])};'
+					if bin_label == 'AT':
+						allele_fractions[label] = round(self.support[label]/(sum(depths[i])/2), 3) if sum(depths[i]) != 0 else 0.0
 			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
+			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
+			info[1] = info[1] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,
@@ -416,11 +431,11 @@ class Cluster():
 				'event_size_median': median(event_sizes),
 				'event_size_mean': mean(event_sizes)
 			}
-			# round to 2 decimal places for stats dict attribute
+			# round to 3 decimal places for stats dict attribute
 			self.stats = {}
 			for key, value in stat_dict.items():
 				try:
-					self_value = round(value, 2)
+					self_value = round(value, 3)
 				except Exception as e:
 					# skip rounding if error thrown
 					self_value = value

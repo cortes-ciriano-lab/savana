@@ -295,6 +295,8 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=NORMAL_DP_BEFORE,Number=.,Type=Float,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
 		'##INFO=<ID=NORMAL_DP_AT,Number=.,Type=Float,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
 		'##INFO=<ID=NORMAL_DP_AFTER,Number=.,Type=Float,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_AF,Number=1,Type=String,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
+		'##INFO=<ID=NORMAL_AF,Number=1,Type=String,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
 	])
 	# add the stat info fields
@@ -331,6 +333,28 @@ def check_outdir(args_outdir):
 		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
 
 	return outdir
+
+# credit to stackoverflow: https://stackoverflow.com/questions/55324449/how-to-specify-a-minimum-or-maximum-float-value-with-argparse
+def float_range(mini,maxi):
+	"""Return function handle of an argument type function for ArgumentParser checking a float range: mini <= arg <= maxi
+		mini - minimum acceptable argument
+		maxi - maximum acceptable argument
+	"""
+
+	# Define the function with default arguments
+	def float_range_checker(arg):
+		"""New Type function for argparse - a float within predefined range."""
+
+		try:
+			f = float(arg)
+		except ValueError:
+			raise argparse.ArgumentTypeError("must be a floating point number")
+		if f < mini or f > maxi:
+			raise argparse.ArgumentTypeError("must be in range [" + str(mini) + " .. " + str(maxi)+"]")
+		return f
+
+	# Return function handle to checking function
+	return float_range_checker
 
 if __name__ == "__main__":
 	print("Helper functions for SAVANA")
