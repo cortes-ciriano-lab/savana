@@ -80,7 +80,11 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	# report missed somatic variants (false negative)
 	fn = [v for v in compare_set if not v['validated'] and v['label'] == 'SOMATIC']
 	validation_str.append(f'\nSTATISTICS FOR SOMATIC VARIANTS')
-	validation_str.append('(Not allowing for two variants to be validated by the same event)')
+	if args.curate:
+		validation_str.append('(Allowing for at most TWO variants to be validated by the same event)')
+	else:
+		validation_str.append('(Not allowing for more than ONE variant to be validated by the same event)')
+
 	validation_str.append(break_str)
 	validation_str.append(f'True Positives: {len(tp)}')
 	validation_str.append(f'False Positives: {len(fp)}')
@@ -151,31 +155,38 @@ def evaluate_vcf(args, checkpoints, time_str):
 						compare_variant['within_buffer'].append((input_variants[-1], distance))
 						input_variants[-1]['within_buffer'].append((compare_variant, distance))
 
-	# assign matched within buffer variants a label
+	# label input variants with matched somatic/germline
+	compare_variants_used = {}
 	input_variant_labels = {}
-	for variant in compare_set:
+	for variant in input_variants:
 		variant['validated'] = False
-		closest_value = None
 		closest_variant = None
-		for input_variant, distance in variant['within_buffer']:
-			if input_variant['id'] in input_variant_labels:
-				continue # only allow each variant to be labelled once
+		closest_value = None
+		for compare_variant, distance in variant['within_buffer']:
+			# check how many times this variant has been used as a label
+			used_count = len(compare_variants_used.get(compare_variant['id'],[]))
+			if args.curate and used_count >= 2:
+				continue
+			elif not args.curate and used_count >= 1:
+				# stricter when not curating a training set
+				continue
 			if args.by_support:
-				# (tie-break using support, don't allow label without support)
+				# tie-break using support - default to zero to prevent no-support match
 				closest_value = 0 if not closest_value else closest_value
-				if variant['label'] == 'SOMATIC' and input_variant['tumour_support'] > closest_value:
-					closest_variant = input_variant['id']
-					closest_value = input_variant['tumour_support']
-				elif variant['label'] == 'GERMLINE' and input_variant['normal_support'] > closest_value:
-					closest_variant = input_variant['id']
-					closest_value = input_variant['normal_support']
+				if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value and variant['normal_support'] == 0:
+					closest_variant = compare_variant
+					closest_value = variant['tumour_support']
+				elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value:
+					closest_variant = compare_variant
+					closest_value = variant['normal_support']
 			elif args.by_distance:
+				# tie-break by closest variant
 				if not closest_value or distance < closest_value:
+					closest_variant = compare_variant
 					closest_value = distance
-					closest_variant = input_variant['id']
 		if closest_variant:
-			# match with the input variant with highest 'label' support
-			input_variant_labels[closest_variant] = variant['label']
+			compare_variants_used.setdefault(closest_variant['id'], []).append(variant['id'])
+			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'])
 
 	# edit input_vcf to include LABEL in header
 	input_vcf = cyvcf2.VCF(args.input)
@@ -187,9 +198,24 @@ def evaluate_vcf(args, checkpoints, time_str):
 		'Number': '1',
 		'Description': desc_string
 	})
+	input_vcf.add_info_to_header({
+		'ID': 'LABEL_VARIANT_ID',
+		'Type': 'String',
+		'Number': '1',
+		'Description': "ID of variant used to provide LABEL"
+	})
 	out_vcf = cyvcf2.Writer(args.output, input_vcf)
 	for variant in input_vcf:
-		variant.INFO['LABEL'] = input_variant_labels.get(variant.ID, 'NOT_IN_COMPARISON')
+		label, match_id = input_variant_labels.get(variant.ID, ('NOT_IN_COMPARISON', None))
+		# if curating, don't allow mates to have incongruous labels
+		if args.curate and not match_id:
+			mate_id = variant.INFO.get('MATEID', None)
+			label, match_id = input_variant_labels.get(mate_id, ('NOT_IN_COMPARISON', None)) if mate_id else (label, match_id)
+			if match_id:
+				match_id = "MATE_"+match_id
+		variant.INFO['LABEL'] = label
+		if match_id:
+			variant.INFO['LABEL_VARIANT_ID'] = match_id
 		out_vcf.write_record(variant)
 	out_vcf.close()
 	input_vcf.close()
