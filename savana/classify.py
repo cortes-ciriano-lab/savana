@@ -48,6 +48,9 @@ def pool_predict(data_matrix, features_to_drop, model, threads):
 def predict(data_matrix, features_to_drop, model):
 	""" given feautres and a model, return the predictions """
 	features = data_matrix.drop(features_to_drop, axis=1, errors='ignore')
+	# ensure features are ordered correctly
+	feature_order = model.feature_names_in_
+	features = features[feature_order]
 	ids = data_matrix['ID']
 	predicted = model.predict(features)
 	prediction_dict = {}
@@ -243,7 +246,7 @@ def classify_by_model(args, checkpoints, time_str):
 		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
 		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
 		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN'
-		]
+	]
 	prediction_dict = pool_predict(data_matrix, features_to_drop, loaded_model, 20)
 	helper.time_function("Performed prediction", checkpoints, time_str)
 	# output vcf using modified input_vcf as template
