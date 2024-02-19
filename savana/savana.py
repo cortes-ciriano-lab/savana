@@ -35,7 +35,7 @@ def savana_run(args):
 		# set sample name to default if req.
 		args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
 	print(f'Running as sample {args.sample}')
-	outdir = helper.check_outdir(args.outdir)
+	outdir = helper.check_outdir(args.outdir, illegal='.vcf')
 	# set number of threads to cpu count if none set
 	if not args.threads:
 		args.threads = cpu_count()
@@ -143,7 +143,7 @@ def savana_evaluate(args):
 
 def savana_train(args):
 	""" main function for savana train """
-	outdir = helper.check_outdir(args.outdir)
+	outdir = helper.check_outdir(args.outdir, illegal='.pkl')
 	data_matrix = None
 	if args.vcfs:
 		# read in and create matrix from VCF files
@@ -201,33 +201,31 @@ def main():
 	run_parser.add_argument('--mapq', nargs='?', type=int, default=0, help='MAPQ filter on reads which are considered (default=0)')
 	run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
 	run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
-	run_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
-	run_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Minumum number of supporting reads from tumour OR normal to consider variant (default=3)')
+	run_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
 	run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
 	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 	run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
 	run_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-	run_parser.add_argument('--maxtasksperchild', nargs='?', type=int, default=1, help='Max number of tasks to run before refreshing child process - used to optimise memory (default=1)')
 	run_parser.set_defaults(func=savana_run)
 
 	# savana classify
 	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
 	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
+	classify_parser.add_argument('--min_support', nargs='?', type=int, default=5, required=False, help='Minimum supporting reads for a PASS variant')
+	classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
 	group = classify_parser.add_mutually_exclusive_group()
 	group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
-	group.add_argument('--ont_noisy', action='store_true', help='Use a model trained on ONT data with relatively more noise')
+	group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
 	# whether to use a germline-trained model
-	classify_parser.add_argument('--predict_germline', action='store_true', help='Use a model that also predicts germline events')
-	group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
+	classify_parser.add_argument('--predict_germline', action='store_true', help='Also predict germline events (reduces accuracy of somatic calls for model)')
+	group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
 	group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 	group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
 	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
 	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS somatic variants')
 	classify_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS germline variants')
-	classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-	classify_parser.add_argument('--min_support', nargs='?', type=int, default=5, required=False, help='Minimum supporting reads for a PASS variant')
 	classify_parser.set_defaults(func=savana_classify)
 
 	# savana evaluate
@@ -275,28 +273,26 @@ def main():
 		global_parser.add_argument('--mapq', nargs='?', type=int, default=0, help='MAPQ filter on reads which are considered (default=0)')
 		global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
 		global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
-		global_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
-		global_parser.add_argument('--depth', nargs='?', type=int, default=3, help='Minumum number of supporting reads from tumour OR normal to consider variant (default=3)')
+		global_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
 		global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
 		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
 		global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
 		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
 		global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
 		global_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-		global_parser.add_argument('--maxtasksperchild', nargs='?', type=int, default=1, help='Max number of tasks to run before refreshing child process - used to optimise memory (default=1)')
 		# classify args
+		global_parser.add_argument('--min_support', nargs='?', type=int, default=5, required=False, help='Minimum supporting reads for a PASS variant')
+		global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
 		classify_group = global_parser.add_mutually_exclusive_group()
 		classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
-		classify_group.add_argument('--ont_noisy', action='store_true', help='Use a model trained on ONT data with relatively more noise')
+		classify_group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
 		# whether to use a germline-trained model
-		global_parser.add_argument('--predict_germline', action='store_true', help='Use a model that also predicts germline events')
-		classify_group.add_argument('--model', nargs='?', type=str, required=False, help='Pickle file of machine-learning model')
+		global_parser.add_argument('--predict_germline', action='store_true', help='Also predict germline events')
+		classify_group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
 		classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
 		classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
 		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF with only PASS somatic variants')
 		global_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF with only PASS germline variants')
-		global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-		global_parser.add_argument('--min_support', nargs='?', type=int, default=5, required=False, help='Minimum supporting reads for a PASS variant')
 		# evaluate args
 		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
 		global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')

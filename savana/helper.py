@@ -323,14 +323,21 @@ def time_function(desc, checkpoints, time_str, final=False):
 	print(formatted_time)
 	return
 
-def check_outdir(args_outdir):
+def check_outdir(args_outdir, illegal=None):
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args_outdir)
 	if not os.path.exists(outdir):
 		print(f'Creating directory {outdir} to store results')
 		os.mkdir(outdir)
-	elif os.listdir(outdir):
-		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	if not illegal:
+		# throw error if ANY files present
+		if os.listdir(outdir):
+			sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	else:
+		# check if illegal files exist in outdir
+		for f in os.listdir(outdir):
+			if f.endswith(illegal):
+				sys.exit(f'Output directory "{outdir}" already exists and contains {illegal} files which may be overwritten. Please remove the files or supply a different directory name.')
 
 	return outdir
 
