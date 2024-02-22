@@ -146,6 +146,11 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	# adjust the thresholds depending on sample source
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
 	mapq = min((mapq - ceil(mapq/2)), 0) if label == 'normal' else mapq
+	#TODO: make these args
+	single_bnd = True
+	single_bnd_min_length = 100
+	single_bnd_max_mapq = 20
+	####
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary or read.is_unmapped:
 			continue
@@ -197,6 +202,15 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 						{'chr': curr_chrom, 'loc': curr_pos['reference']},
 						{'chr': curr_chrom, 'loc': curr_pos['reference']+length}
 					]
+			elif sam_flag == helper.samflag_desc_to_number["BAM_CSOFT_CLIP"] and single_bnd and not chimeric_regions and length > single_bnd_min_length:
+				# start and end location for single breakend are the same (for clustering purposes)
+				location = [
+					{'chr': curr_chrom, 'loc': curr_pos['reference']},
+					{'chr': curr_chrom, 'loc': curr_pos['reference']}
+				]
+				# record the softclipped bases
+				softclipped_sequence = read.query_sequence[curr_pos['query']:(curr_pos['query']+length)]
+				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "SOFTCLIP", read.query_name, read.mapping_quality, label, "<SBND>", softclipped_sequence))
 			elif prev_deletion and length > args_length:
 				# record and clear the previously tracked deletion
 				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
@@ -225,7 +239,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 		for cluster in clusters[bp_type]:
 			if bp_type == "<INS>":
 				# call validated insertions
-				# average out the start/end, keep longest insertion sequence
+				# average out the start/end
 				starts, ends = [], []
 				inserts = []
 				for bp in cluster.breakpoints:
@@ -238,6 +252,20 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 					final_breakpoints.append(ConsensusBreakpoint(
 						[{'chr': cluster.chr, 'loc': median(starts)}, {'chr': cluster.chr, 'loc': median(ends)}],
 						"INS", cluster, None, label_counts, bp_type, inserts))
+					pruned_clusters.setdefault(bp_type, []).append(cluster)
+			elif bp_type == "<SBND>":
+				starts, ends = [], []
+				inserts = []
+				for bp in cluster.breakpoints:
+					starts.append(bp.start_loc)
+					ends.append(bp.end_loc)
+					inserts.append(bp.inserted_sequence)
+				source_breakpoints = cluster.breakpoints
+				label_counts = count_num_labels(source_breakpoints)
+				if max([len(v) for v in label_counts.values()]) >= min_support:
+					final_breakpoints.append(ConsensusBreakpoint(
+						[{'chr': cluster.chr, 'loc': median(starts)}, {'chr': cluster.chr, 'loc': median(ends)}],
+						"SBND", cluster, None, label_counts, bp_type, inserts))
 					pruned_clusters.setdefault(bp_type, []).append(cluster)
 			else:
 				# call all other types

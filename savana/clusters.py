@@ -23,7 +23,8 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer):
 		"++": [],
 		"-+": [],
 		"--": [],
-		"<INS>": []
+		"<INS>": [],
+		"<SBND>": []
 	}
 	breakpoints.sort()
 	for bp in breakpoints:

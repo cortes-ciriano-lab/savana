@@ -6,6 +6,7 @@ Hillary Elrick
 """
 #!/usr/bin/env python3
 
+import sys
 import json
 import uuid
 
@@ -25,7 +26,7 @@ class ConsensusBreakpoint():
 		self.end_chr = locations[1]['chr']
 		self.end_loc = int(locations[1]['loc'])
 		self.source = source
-		if source == 'INS' and not inserts:
+		if (source == 'INS' or source == "SBND") and not inserts:
 			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
 		self.inserted_sequences = inserts
 		self.originating_cluster = originating_cluster
@@ -40,8 +41,8 @@ class ConsensusBreakpoint():
 			self.support[label]+=len(reads)
 		# calculate the length
 		self.sv_length = None
-		if self.breakpoint_notation == "<INS>":
-			self.sv_length = str(mean([len(i) for i in self.inserted_sequences]))
+		if self.breakpoint_notation == "<INS>" or self.breakpoint_notation == "<SBND>":
+			self.sv_length = str(round(mean([len(i) for i in self.inserted_sequences]),2))
 		elif self.start_chr != self.end_chr:
 			self.sv_length = 0
 		else:
@@ -74,7 +75,7 @@ class ConsensusBreakpoint():
 			str(self.uid),
 			'0' # 0th edge
 		]]
-		if self.breakpoint_notation != "<INS>":
+		if self.breakpoint_notation != "<INS>" and self.breakpoint_notation != "<SBND>":
 			bed_lines.append([
 				self.end_chr,
 				str(min(max(self.end_loc, 0), contig_lengths[self.end_chr])),
@@ -97,7 +98,7 @@ class ConsensusBreakpoint():
 			str(self.end_loc),
 			str(self.end_loc)
 		]
-		if self.source == "INS":
+		if self.source == "INS" or self.source == "SBND":
 			# add 1bp to the bedpe location for igv rendering
 			bedpe_line[4] = str(int(bedpe_line[4])+1)
 			bedpe_line[5] = str(int(bedpe_line[5])+1)
@@ -131,7 +132,7 @@ class ConsensusBreakpoint():
 		fasta_lines = []
 		total_inserts = len(self.inserted_sequences)
 		for i, insert in enumerate(self.inserted_sequences, start=1):
-			fasta_lines.append(f'>ID_{count}-INSSEQ_{str(i).zfill(5)} | {i}/{total_inserts} | {len(insert)}bp')
+			fasta_lines.append(f'>ID_{count}-INSSEQ_{str(i).zfill(5)} | {self.breakpoint_notation} | {i}/{total_inserts} | {len(insert)}bp')
 			# split sequence to only have 80 characters per line
 			fasta_lines.extend([insert[i:i+80] for i in range(0, len(insert), 80)])
 		return "\n".join(fasta_lines)+"\n"
@@ -240,6 +241,18 @@ class ConsensusBreakpoint():
 					if bin_label == 'AT':
 						allele_fractions[label] = round(self.support[label]/depths[i][0], 3) if depths[i][0] != 0 else 0.0
 			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
+		elif self.breakpoint_notation == "<SBND>":
+			info[0] = 'SVTYPE=SBND;' + info[0]
+			allele_fractions = {
+				'tumour': None,
+				'normal': None
+			}
+			for label, depths in self.local_depths.items():
+				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
+					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
+					if bin_label == 'AT':
+						allele_fractions[label] = round(self.support[label]/depths[i][0], 3) if depths[i][0] != 0 else 0.0
+			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
@@ -270,7 +283,7 @@ class ConsensusBreakpoint():
 			'GT',
 			gt_tag
 		]]
-		if self.breakpoint_notation != "<INS>":
+		if self.breakpoint_notation != "<INS>" and self.breakpoint_notation != "<SBND>":
 			vcf_lines.append([
 				self.end_chr,
 				str(self.end_loc),
@@ -430,10 +443,12 @@ class Cluster():
 				mapqs.append(bp.mapq)
 				if self.source == "SUPP":
 					event_sizes.append(1)
-				elif self.source == "INS":
+				elif self.source == "INS" or self.source == "SOFTCLIP":
 					event_sizes.append(len(bp.inserted_sequence))
 				elif self.source == "DEL":
 					event_sizes.append(abs(bp.start_loc - bp.end_loc))
+				else:
+					sys.exit(f'Unrecognised source: {self.source}')
 			stat_dict = {
 				'starts_std_dev': pstdev(starts),
 				'mapq_mean': mean(mapqs),

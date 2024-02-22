@@ -529,7 +529,7 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)
-		if bp.breakpoint_notation == "<INS>":
+		if bp.breakpoint_notation == "<INS>" or bp.breakpoint_notation == "<SBND>":
 			insertion_fasta_string += bp.as_insertion_fasta(count)
 		count+=1
 	# write output files
