@@ -18,16 +18,16 @@ def generate_uuid():
 
 class ConsensusBreakpoint():
 	""" class for a second-round called breakpoint (stores originating cluster information """
-	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation=None, insert=None):
+	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation=None, inserts=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
 		self.end_chr = locations[1]['chr']
 		self.end_loc = int(locations[1]['loc'])
 		self.source = source
-		if source == 'INS' and not insert:
+		if source == 'INS' and not inserts:
 			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
-		self.inserted_sequence = insert
+		self.inserted_sequences = inserts
 		self.originating_cluster = originating_cluster
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
 		self.labels = labels
@@ -41,7 +41,7 @@ class ConsensusBreakpoint():
 		# calculate the length
 		self.sv_length = None
 		if self.breakpoint_notation == "<INS>":
-			self.sv_length = str(len(self.inserted_sequence))
+			self.sv_length = str(mean([len(i) for i in self.inserted_sequences]))
 		elif self.start_chr != self.end_chr:
 			self.sv_length = 0
 		else:
@@ -54,7 +54,7 @@ class ConsensusBreakpoint():
 			"start_loc": self.start_loc,
 			"end_chr": self.end_chr,
 			"end_loc": self.end_loc,
-			"inserted_sequence": self.inserted_sequence,
+			"first_inserted_sequence": self.inserted_sequences[0],
 			"source": self.source,
 			"originating_cluster": self.originating_cluster.uid,
 			"end_cluster": self.end_cluster.uid,
@@ -125,6 +125,16 @@ class ConsensusBreakpoint():
 				'"'+",".join(self.labels.get('normal',[]))+'"'
 			]
 		return "\t".join(read_support_line)+"\n"
+
+	def as_insertion_fasta(self, count):
+		""" return fasta line containing inserted sequences for an insertion breakpoint """
+		fasta_lines = []
+		total_inserts = len(self.inserted_sequences)
+		for i, insert in enumerate(self.inserted_sequences, start=1):
+			fasta_lines.append(f'>ID_{count}-INSSEQ_{str(i).zfill(5)} | {i}/{total_inserts} | {len(insert)}bp')
+			# split sequence to only have 80 characters per line
+			fasta_lines.extend([insert[i:i+80] for i in range(0, len(insert), 80)])
+		return "\n".join(fasta_lines)+"\n"
 
 	def as_variant_stats(self, count, stats_column_order):
 		""" return variant line with its stats """

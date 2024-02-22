@@ -216,31 +216,28 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 
 	return potential_breakpoints
 
-def call_breakpoints(clusters, end_buffer, min_length, min_depth, chrom):
+def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
 	pruned_clusters = {}
-	num_insertions = 0
 	for bp_type in clusters.keys():
 		for cluster in clusters[bp_type]:
 			if bp_type == "<INS>":
 				# call validated insertions
 				# average out the start/end, keep longest insertion sequence
 				starts, ends = [], []
-				longest_seq = ''
+				inserts = []
 				for bp in cluster.breakpoints:
 					starts.append(bp.start_loc)
 					ends.append(bp.end_loc)
-					if len(bp.inserted_sequence) > len(longest_seq):
-						longest_seq = bp.inserted_sequence
+					inserts.append(bp.inserted_sequence)
 				source_breakpoints = cluster.breakpoints
 				label_counts = count_num_labels(source_breakpoints)
-				if max([len(v) for v in label_counts.values()]) >= min_depth and len(longest_seq) > min_length:
-					num_insertions += 1
+				if max([len(v) for v in label_counts.values()]) >= min_support:
 					final_breakpoints.append(ConsensusBreakpoint(
 						[{'chr': cluster.chr, 'loc': median(starts)}, {'chr': cluster.chr, 'loc': median(ends)}],
-						"INS", cluster, None, label_counts, bp_type, longest_seq))
+						"INS", cluster, None, label_counts, bp_type, inserts))
 					pruned_clusters.setdefault(bp_type, []).append(cluster)
 			else:
 				# call all other types
@@ -291,7 +288,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_depth, chrom):
 								new_start_cluster = Cluster(reversed(bp))
 							else:
 								new_start_cluster.add(reversed(bp))
-						if max([len(v) for v in label_counts.values()]) >= min_depth:
+						if max([len(v) for v in label_counts.values()]) >= min_support:
 							new_breakpoint = ConsensusBreakpoint(
 								[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
 								bp_type, new_start_cluster, end_cluster, label_counts, bp_type)

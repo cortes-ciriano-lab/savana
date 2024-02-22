@@ -517,16 +517,20 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	vcf_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	bedpe_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe')
 	tsv_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints_read_support.tsv')
+	insertion_fasta_file = os.path.join(outdir, f'{args.sample}.inserted_sequences.fa')
 	# build strings
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
 	vcf_string = helper.generate_vcf_header(args, annotated_breakpoints[0])
 	read_support_string = 'VARIANT_ID\tTUMOUR_SUPPORTING_READS\tNORMAL_SUPPORTING_READS\n'
+	insertion_fasta_string = ''
 	count = 0
 	for bp in annotated_breakpoints:
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)
+		if bp.breakpoint_notation == "<INS>":
+			insertion_fasta_string += bp.as_insertion_fasta(count)
 		count+=1
 	# write output files
 	with open(vcf_file, 'w') as output:
@@ -535,9 +539,10 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 		output.write(bedpe_string)
 	with open(tsv_file, 'w') as output:
 		output.write(read_support_string)
+	with open(insertion_fasta_file, 'w') as output:
+		output.write(insertion_fasta_string)
 	# sort vcf
 	bcftools.sort('-o', vcf_file, vcf_file, catch_stdout=False)
-
 	helper.time_function("Output consensus breakpoints", checkpoints, time_str)
 
 	return checkpoints, time_str
