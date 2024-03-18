@@ -13,8 +13,9 @@ import sys
 
 from time import time
 from datetime import datetime
+import argparse
 
-__version__ = "1.0.12"
+__version__ = "1.0.18"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -192,21 +193,19 @@ def get_clipping(cigar_tuples, is_reverse):
 
 	return clipping
 
-def get_chimeric_regions(read, mapq_filter):
+def get_chimeric_regions(read):
 	""" get info for the chimeric regions of a read and store in a dict """
 	if read.is_supplementary:
 		return None
 	chimeric_regions = []
-	sa_keys = ['chrom', 'pos', 'strand', 'CIGAR', 'mapQ', 'NM']
 	for tag, value in read.get_tags():
 		if tag == "SA":
 			# (chrom, pos, strand, CIGAR, mapQ, NM)
 			supp_alignments = [v.split(",") for v in value[:-1].split(";")]
+			sa_keys = ['chrom', 'pos', 'strand', 'CIGAR', 'mapQ', 'NM']
 			for supp_alignment in supp_alignments:
 				chimeric_region = dict(zip(sa_keys, supp_alignment))
-				if int(chimeric_region['mapQ']) < mapq_filter:
-					# only consider those above quality threshold
-					continue
+				chimeric_region['mapQ'] = int(chimeric_region['mapQ'])
 				cigar_split = re.split('([MIDNSHP=X])', chimeric_region['CIGAR'])[:-1]
 				if chimeric_region['strand'] == "-":
 					# reverse CIGAR if the direction of the supplementary doesn't match the primary
@@ -224,6 +223,7 @@ def get_chimeric_regions(read, mapq_filter):
 				chimeric_region['consumed_reference'] = reference_sum
 				chimeric_region['seen'] = False
 				chimeric_regions.append(chimeric_region)
+			return chimeric_regions
 	return chimeric_regions
 
 def get_contigs(contig_file, ref_index):
@@ -297,7 +297,8 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=NORMAL_DP_AFTER,Number=.,Type=Float,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
 		'##INFO=<ID=TUMOUR_AF,Number=1,Type=String,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
 		'##INFO=<ID=NORMAL_AF,Number=1,Type=String,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
-		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
+		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">',
+		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">'
 	])
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()

@@ -41,7 +41,7 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer):
 			else:
 				# add to cluster on top of stack
 				cluster_stacks[bp_notation_type][-1].add(bp)
-		elif bp_notation_type != "<INS>" and not cluster_stacks[bp_notation_type][-1].overlaps(bp, buffer):
+		elif (bp_notation_type != "<INS>" and bp_notation_type != "<SBND>") and not cluster_stacks[bp_notation_type][-1].overlaps(bp, buffer):
 			# put a new cluster onto the sv stack
 			new_cluster = Cluster(bp)
 			cluster_stacks[bp_notation_type].append(new_cluster)

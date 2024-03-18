@@ -19,22 +19,28 @@ def generate_uuid():
 
 class ConsensusBreakpoint():
 	""" class for a second-round called breakpoint (stores originating cluster information """
-	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation=None, inserts=None):
+	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation, inserts=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
 		self.end_chr = locations[1]['chr']
 		self.end_loc = int(locations[1]['loc'])
-		self.source = source
-		if (source == 'INS' or source == "SBND") and not inserts:
-			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not inserts:
+			raise AttributeError(f'Must provide an insert for {breakpoint_notation} breakpoints')
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_chr == self.end_chr:
+			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_loc == self.end_loc:
+			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
+		self.breakpoint_notation = breakpoint_notation
 		self.inserted_sequences = inserts
+		if source not in ['CIGAR', 'SUPPLEMENTARY', 'CIGAR/SUPPLEMENTARY']:
+			raise AttributeError(f'Invalid ConsensusBreakpoint souce: {source}')
+		self.source = source
 		self.originating_cluster = originating_cluster
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
 		self.labels = labels
 		self.count = None # used later for standardising across output files
 		self.local_depths = {} # add later
-		self.breakpoint_notation = breakpoint_notation
 		# use the labels to calculate support by counting reads
 		self.support = {'normal': 0, 'tumour': 0}
 		for label, reads in self.labels.items():
@@ -42,7 +48,7 @@ class ConsensusBreakpoint():
 		# calculate the length
 		self.sv_length = None
 		if self.breakpoint_notation == "<INS>" or self.breakpoint_notation == "<SBND>":
-			self.sv_length = str(round(mean([len(i) for i in self.inserted_sequences]),2))
+			self.sv_length = str(int(mean([len(i) for i in self.inserted_sequences])))
 		elif self.start_chr != self.end_chr:
 			self.sv_length = 0
 		else:
@@ -98,7 +104,7 @@ class ConsensusBreakpoint():
 			str(self.end_loc),
 			str(self.end_loc)
 		]
-		if self.source == "INS" or self.source == "SBND":
+		if self.start_chr == self.end_chr and self.start_loc == self.end_loc:
 			# add 1bp to the bedpe location for igv rendering
 			bedpe_line[4] = str(int(bedpe_line[4])+1)
 			bedpe_line[5] = str(int(bedpe_line[5])+1)
@@ -177,6 +183,9 @@ class ConsensusBreakpoint():
 		if self.breakpoint_notation == "<INS>":
 			# only one line for insertions
 			return ["<INS>"]
+		elif self.breakpoint_notation == "<SBND>":
+			# only one line for single breakends
+			return [f'.{end_base}']
 		alts = ['', '']
 		if self.breakpoint_notation.startswith("+"):
 			alts[0]+=f'{start_base}' # start: +
@@ -228,7 +237,7 @@ class ConsensusBreakpoint():
 			gt_tag = '0/1'
 		support_str = ';'.join([f'{label.upper()}_SUPPORT={label_count}' for label, label_count in self.support.items()])
 		stats_str = self.get_stats_str()
-		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};{stats_str}']
+		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};SOURCE={self.source};{stats_str}']
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
 			allele_fractions = {
@@ -315,14 +324,21 @@ class PotentialBreakpoint():
 		self.start_loc = int(locations[0]['loc'])
 		self.end_chr = locations[1]['chr']
 		self.end_loc = int(locations[1]['loc'])
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not insert:
+			raise AttributeError(f'Must provide an insert for {breakpoint_notation} breakpoints')
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_chr == self.end_chr:
+			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_loc == self.end_loc:
+			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
+		self.spans_cluster = True if (self.start_chr == self.end_chr and abs(self.start_loc - self.end_loc) <= 150) else False
+		self.breakpoint_notation = breakpoint_notation
 		self.inserted_sequence = insert
-		self.source = source # SUPP, INS, or DEL
-		if source == 'INS' and not insert:
-			raise AttributeError("Must provide an insert for breakpoint type of 'INS")
+		if source not in ['SUPPLEMENTARY', 'CIGAR']:
+			raise AttributeError(f'Invalid PotentialBreakpoint souce: {source}')
+		self.source = source
 		self.read_name = read_name
 		self.mapq = read_quality
 		self.label = label
-		self.breakpoint_notation = breakpoint_notation
 
 	def as_dict(self):
 		""" return dict representation of breakpoint"""
@@ -373,14 +389,11 @@ class Cluster():
 		self.uid = generate_uuid()
 		self.chr = initial_breakpoint.start_chr
 		self.start = initial_breakpoint.start_loc
-		if initial_breakpoint.source == "SUPP":
-			# only cluster supp breakpoints on start
-			self.end = self.start
-		else:
-			self.end = initial_breakpoint.end_loc
+		# use both start and end if initial breakpoint start/end are nearby - separate otherwise
+		self.end = initial_breakpoint.end_loc if initial_breakpoint.spans_cluster else self.start
 		self.source = initial_breakpoint.source
 		self.breakpoints = [initial_breakpoint]
-		self.supporting_reads = {initial_breakpoint.read_name}
+		self.supporting_reads = {initial_breakpoint.read_name} # TODO: do we need this tracked here?
 		self.stats = None
 
 	def overlaps(self, other, buffer):
@@ -391,7 +404,7 @@ class Cluster():
 		self_start_buff = self.start - buffer
 		self_end_buff = self.end + buffer
 		other_start_buff = other.start_loc - buffer
-		other_end_buff = (other.start_loc + buffer) if other.source == "SUPP" else (other.end_loc + buffer)
+		other_end_buff = (other.end_loc + buffer) if other.spans_cluster else (other.start_loc + buffer)
 		if other_start_buff <= self_end_buff and other_start_buff >= self_start_buff:
 			return True
 		if other_end_buff >= self_start_buff and other_end_buff <= self_end_buff:
@@ -406,16 +419,16 @@ class Cluster():
 		else:
 			# it's reverse
 			self.start = new_breakpoint.start_loc if (new_breakpoint.start_loc > self.start) else self.start
-		if new_breakpoint.source == "SUPP":
-			if self.start <= self.end:
-				self.end = 	new_breakpoint.start_loc if (new_breakpoint.start_loc > self.end) else self.end
-			else:
-				self.end = 	new_breakpoint.start_loc if (new_breakpoint.start_loc < self.end) else self.end
-		else:
+		if new_breakpoint.spans_cluster:
 			if self.start <= self.end:
 				self.end = new_breakpoint.end_loc if (new_breakpoint.end_loc > self.end) else self.end
 			else:
 				self.end = new_breakpoint.end_loc if (new_breakpoint.end_loc < self.end) else self.end
+		else:
+			if self.start <= self.end:
+				self.end = 	new_breakpoint.start_loc if (new_breakpoint.start_loc > self.end) else self.end
+			else:
+				self.end = 	new_breakpoint.start_loc if (new_breakpoint.start_loc < self.end) else self.end
 		self.breakpoints.append(new_breakpoint)
 		self.supporting_reads.add(new_breakpoint.read_name)
 		self.stats = None # reset stats when new breakpoint added
@@ -423,6 +436,7 @@ class Cluster():
 	def as_dict(self):
 		""" return dict representation of cluster """
 		self_dict = {
+			"uid": self.uid,
 			"chr": self.chr,
 			"start": self.start,
 			"end": self.end,
@@ -441,14 +455,12 @@ class Cluster():
 			for bp in self.breakpoints:
 				starts.append(bp.start_loc)
 				mapqs.append(bp.mapq)
-				if self.source == "SUPP":
-					event_sizes.append(1)
-				elif self.source == "INS" or self.source == "SOFTCLIP":
+				if (bp.breakpoint_notation == "<INS>" or bp.breakpoint_notation == "<SBND>"):
 					event_sizes.append(len(bp.inserted_sequence))
-				elif self.source == "DEL":
+				elif (bp.start_chr == bp.end_chr):
 					event_sizes.append(abs(bp.start_loc - bp.end_loc))
 				else:
-					sys.exit(f'Unrecognised source: {self.source}')
+					event_sizes.append(0)
 			stat_dict = {
 				'starts_std_dev': pstdev(starts),
 				'mapq_mean': mean(mapqs),

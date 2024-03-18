@@ -176,7 +176,7 @@ def filter_with_comparator(variant_value, filter_value, comparator):
 	return True
 
 def classify_by_params(args, checkpoints, time_str):
-	#read VCF into a dataframe, classify using a parameter JSON
+	# read VCF into a dataframe, classify using a parameter JSON
 	data_matrix = read_vcf(args.vcf)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
@@ -235,61 +235,93 @@ def classify_by_model(args, checkpoints, time_str):
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
-	loaded_model = pickle.load(open(args.model, "rb"))
+	loaded_model = pickle.load(open(args.custom_model, "rb"))
 	helper.time_function("Loaded classification model", checkpoints, time_str)
 
 	features_to_drop = [
-		'ID', 'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
+		'ID', 'LABEL', 'MATEID', 'ORIGINATING_CLUSTER','END_CLUSTER',
+		'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
+		'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
+		'BP_NOTATION', '<INS>',
 		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
-		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN'
-		]
+		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS'
+	]
+
 	prediction_dict = pool_predict(data_matrix, features_to_drop, loaded_model, 20)
+
 	helper.time_function("Performed prediction", checkpoints, time_str)
 	# output vcf using modified input_vcf as template
 	input_vcf = cyvcf2.VCF(args.vcf)
-	desc_string = str(f'Variant class prediction from model {args.model}')
+	desc_string = str(f'Variant class prediction from model {args.custom_model} (after filtering for low AF or support)')
 	input_vcf.add_info_to_header({
 		'ID': 'CLASS',
 		'Type': 'String',
 		'Number': '1',
 		'Description': desc_string
 	})
-	desc_string = str(f'Variant filtered as likely noise by model: {args.model}')
+	desc_string = str(f'Variant filtered as likely noise by model: {args.custom_model}')
 	input_vcf.add_filter_to_header({
 		'ID': 'LIKELY_NOISE',
+		'Description': desc_string
+	})
+	desc_string = str(f'Variant classified by model but removed due to low support (< {args.min_support} supporting reads)')
+	input_vcf.add_filter_to_header({
+		'ID': 'LOW_SUPPORT',
+		'Description': desc_string
+	})
+	desc_string = str(f'Variant classified by model but removed due to AF < {args.min_af}')
+	input_vcf.add_filter_to_header({
+		'ID': 'LOW_AF',
 		'Description': desc_string
 	})
 	out_vcf = cyvcf2.Writer(args.output, input_vcf)
 	if args.somatic_output:
 		somatic_vcf = cyvcf2.Writer(args.somatic_output, input_vcf)
+	if args.germline_output:
+		germline_vcf = cyvcf2.Writer(args.germline_output, input_vcf)
 	for variant in input_vcf:
 		variant_id = variant.ID
 		variant_prediction = prediction_dict.get(variant_id, None)
-		variant_mate_prediction = prediction_dict.get(variant.INFO.get('MATEID', None), None)
-		if variant_prediction == 1 or variant_mate_prediction == 1:
+		# if no mate present, (as in ins, sbnds) set mate prediction to self prediction
+		variant_mate_prediction = prediction_dict.get(variant.INFO.get('MATEID', None), variant_prediction)
+		if variant_prediction == 1 and variant_mate_prediction == 1:
 			# PREDICTED SOMATIC BY MODEL
 			# perform sanity checks
-			if variant.INFO['TUMOUR_SUPPORT'] < 3:
+			if variant.INFO['TUMOUR_SUPPORT'] < args.min_support:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+				variant.FILTER = 'LOW_SUPPORT'
+				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
 			elif variant.INFO['TUMOUR_SUPPORT'] < variant.INFO['NORMAL_SUPPORT']:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
-			elif variant.INFO['NORMAL_SUPPORT']/variant.INFO['TUMOUR_SUPPORT'] > 0.1:
+				variant.FILTER = 'LOW_SUPPORT'
+				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
+			elif float(variant.INFO['TUMOUR_AF']) < args.min_af:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+				variant.FILTER = 'LOW_AF'
+				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
 			else:
 				# update the INFO field if all sanity checks pass
 				variant.INFO['CLASS'] = 'PREDICTED_SOMATIC'
 				if args.somatic_output:
 					# add to the somatic only VCF
 					somatic_vcf.write_record(variant)
-		elif variant_prediction == 2 or variant_mate_prediction == 2:
+		elif variant_prediction == 2 and variant_mate_prediction == 2:
 			# PREDICTED GERMLINE By MODEL
 			# perform sanity checks
-			if (variant.INFO['NORMAL_SUPPORT']+variant.INFO['TUMOUR_SUPPORT']) <= 3:
+			if variant.INFO['NORMAL_SUPPORT'] < args.min_support:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+				variant.FILTER = 'LOW_SUPPORT'
+				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
+			elif float(variant.INFO['NORMAL_AF']) < args.min_af:
+				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+				variant.FILTER = 'LOW_AF'
+				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
 			else:
 				# update the INFO field if sanity check passes
 				variant.INFO['CLASS'] = 'PREDICTED_GERMLINE'
+				if args.germline_output:
+					# add to the somatic only VCF
+					germline_vcf.write_record(variant)
 		else:
 			# update the FILTER column
 			variant.FILTER = 'LIKELY_NOISE'
@@ -297,8 +329,9 @@ def classify_by_model(args, checkpoints, time_str):
 		out_vcf.write_record(variant)
 	out_vcf.close()
 	if args.somatic_output:
-		# add to the somatic only VCF
 		somatic_vcf.close()
+	if args.germline_output:
+		germline_vcf.close()
 	input_vcf.close()
 	helper.time_function("Output classified VCF", checkpoints, time_str)
 

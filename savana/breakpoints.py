@@ -24,15 +24,19 @@ from pympler import muppy, summary, refbrowser
 #helper.conditionally_decorate(profile, True)
 """
 
-def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order):
+#TODO: investigate/test if passing relevant read attributes to this function (rather than entire object), improves speed/mem
+def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order, single_bnd, single_bnd_min_length, single_bnd_max_mapq):
 	""" reconstruct the breakpoints from the supplementary alignments """
-	primary_clipping = helper.get_clipping(cigar_tuples, read.is_reverse)
 	breakpoint_pairs = []
-	# sort the chimeric regions by the left soft clip pos (ascending)
+	primary_clipping = helper.get_clipping(cigar_tuples, read.is_reverse)
+	#	primary_clipping = helper.get_clipping(cigar_tuples, False) sort the chimeric regions by the left soft clip pos (ascending)
 	chimeric_regions = sorted(chimeric_regions, key=lambda d: d['left_softclip'])
 	left_index = 0
-	# in the left softclip
+	# track the position in the read in order to extract sbnd bases
+	curr_pos_query = min(chimeric_regions[left_index]['left_softclip'], primary_clipping['left_softclip'])
 	while left_index < len(chimeric_regions) and chimeric_regions[left_index]['left_softclip'] < primary_clipping['left_softclip']:
+		# in the left softclip
+		region_mapped = False if single_bnd and (chimeric_regions[left_index]['mapQ'] <= single_bnd_max_mapq or chimeric_regions[left_index]['chrom'] not in contig_order) else True
 		if left_index != 0:
 			# for all others except first
 			# add the second edge of the supp. breakpoint
@@ -46,7 +50,9 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			breakpoint_pairs[-1].append({
 				'chr': chimeric_regions[left_index]['chrom'],
 				'loc': bp_end,
-				'bp_notation': bp_notation
+				'bp_notation': bp_notation,
+				'region_mapped': region_mapped,
+				'query_pos': chimeric_regions[left_index]['left_softclip'] + chimeric_regions[left_index-1]['consumed_query']
 			})
 		# create the first edge of each supp. breakpoint in the left softclip
 		bp_start = int(chimeric_regions[left_index]['pos'])
@@ -58,15 +64,21 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 		breakpoint_pairs.append([{
 			'chr': chimeric_regions[left_index]['chrom'],
 			'loc': bp_start,
-			'bp_notation': bp_notation
+			'bp_notation': bp_notation,
+			'region_mapped': region_mapped,
+			'query_pos': chimeric_regions[left_index]['left_softclip'] # curr_pos_query
 		}])
+		# increment position in the query
+		curr_pos_query += chimeric_regions[left_index]['consumed_query']
 		left_index+=1
 	if breakpoint_pairs:
 		# add the primary alignment as the second edge on the last breakpoint
 		breakpoint_pairs[-1].append({
 			'chr': read.reference_name,
 			'loc': read.reference_end if read.is_reverse else read.reference_start,
-			'bp_notation': ("+") if read.is_reverse else ("-")
+			'bp_notation': ("+") if read.is_reverse else ("-"),
+			'region_mapped': False if single_bnd and read.mapq <= single_bnd_max_mapq else True,
+			'query_pos': primary_clipping['left_softclip'] + read.query_alignment_length # curr_pos_query
 		})
 	# if still have chimeric regions, need to place in right softclip
 	if left_index < len(chimeric_regions):
@@ -74,12 +86,19 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 		breakpoint_pairs.append([{
 			'chr': read.reference_name,
 			'loc': read.reference_start if read.is_reverse else read.reference_end,
-			'bp_notation': ("-") if read.is_reverse else ("+")
+			'bp_notation': ("-") if read.is_reverse else ("+"),
+			'region_mapped': False if single_bnd and read.mapq <= single_bnd_max_mapq else True,
+			'query_pos': primary_clipping['left_softclip'] # curr_pos_query
 		}])
+		#curr_pos_query += read.query_alignment_length
+		curr_pos_query += helper.sum_consumed_query(helper.trim_supplementary(read.cigarstring))
 		# sort remaining chimeric regions by the right soft clip (descending)
-		right_chimeric = sorted(chimeric_regions[left_index:], key=lambda d: d['right_softclip'], reverse=True)
+		# TODO: don't need to resort this can just use old one
+		#right_chimeric = sorted(chimeric_regions[left_index:], key=lambda d: d['right_softclip'], reverse=True)
+		right_chimeric = sorted(chimeric_regions[left_index:], key=lambda d: d['left_softclip'])
 		right_index = 0
 		while right_index < len(right_chimeric) and right_chimeric[right_index]['right_softclip'] < primary_clipping['right_softclip']:
+			region_mapped = False if single_bnd and (right_chimeric[right_index]['mapQ'] <= single_bnd_max_mapq or right_chimeric[right_index]['chrom'] not in contig_order) else True
 			# supp as second edge
 			bp_end = int(right_chimeric[right_index]['pos'])
 			if right_chimeric[right_index]['strand'] == '-':
@@ -91,7 +110,9 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			breakpoint_pairs[-1].append({
 				'chr': right_chimeric[right_index]['chrom'],
 				'loc': bp_end,
-				'bp_notation': bp_notation
+				'bp_notation': bp_notation,
+				'region_mapped': region_mapped,
+				'query_pos': right_chimeric[right_index]['left_softclip'] + right_chimeric[right_index]['consumed_query'] # curr_pos_query
 			})
 			if right_index != len(right_chimeric) - 1:
 				# first edge for supp
@@ -105,23 +126,157 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 				breakpoint_pairs.append([{
 					'chr': right_chimeric[right_index]['chrom'],
 					'loc': bp_start,
-					'bp_notation': bp_notation
+					'bp_notation': bp_notation,
+					'region_mapped': region_mapped,
+					'query_pos': right_chimeric[right_index]['left_softclip'] # curr_pos_query
 				}])
+				# increment position in the query
+				curr_pos_query += right_chimeric[right_index]['consumed_query']
 			right_index+=1
+
 	# once all pairs completed, create breakpoints for each edge
+	return create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions)
+
+def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions):
 	supplementary_breakpoints = []
-	for start, end in breakpoint_pairs:
-		if start['chr'] not in contig_order or end['chr'] not in contig_order:
+	index = 0 # track manually to allow skipping/merging
+	while index < len(breakpoint_pairs):
+		curr_start, curr_end = breakpoint_pairs[index]
+		# don't create breakpoints for irrelevant contigs
+		if curr_start['chr'] not in contig_order or curr_end['chr'] not in contig_order:
+			index += 1
 			continue
-		if start['chr'] == end['chr']:
-			if start['loc'] < end['loc']:
-				supplementary_breakpoints.append(PotentialBreakpoint([start, end], "SUPP", read.query_name, read.mapping_quality, label, "".join((start['bp_notation'], end['bp_notation']))))
+		if not curr_end['region_mapped']:
+			# consume until mapped region found (merging if multiple unmapped)
+			found_mapped = False
+			next_index = index + 1
+			while next_index < len(breakpoint_pairs) and not found_mapped:
+				next_start, next_end = breakpoint_pairs[next_index]
+				if next_start['region_mapped']:
+					# segment mapped, create single breakend
+					found_mapped = True
+					# get sequence for query - from curr_start to next_start
+					sbnd_seq = read.query_sequence[curr_start['query_pos']:(next_start['query_pos'])]
+					# only one location - next start since it's mapped
+					location = [{'chr': next_start['chr'], 'loc': next_start['loc']}, {'chr': next_start['chr'], 'loc': next_start['loc']}]
+					if len(sbnd_seq) > 0:
+						supplementary_breakpoints.append(PotentialBreakpoint(
+							location,
+							"SUPPLEMENTARY",
+							read.query_name,
+							0, # TODO: what to set for MAPQ?
+							label,
+							"<SBND>",
+							sbnd_seq
+						))
+					else:
+						print(f'sbnd_seq empty! {read.reference_name}:{read.reference_start} {read.query_name} {len(read.query_sequence)} {curr_start["query_pos"]}:{next_start["query_pos"]} (curr_start - next_start)')
+						print(breakpoint_pairs)
+						print(chimeric_regions)
+				elif next_end['region_mapped']:
+					# segment mapped, create single breakend
+					found_mapped = True
+					# get sequence for query - from curr_start to next_end
+					sbnd_seq = read.query_sequence[curr_start['query_pos']:(next_end['query_pos'])]
+					location = [{'chr': next_end['chr'], 'loc': next_end['loc']}, {'chr': next_end['chr'], 'loc': next_end['loc']}]
+					if len(sbnd_seq) > 0:
+						supplementary_breakpoints.append(PotentialBreakpoint(
+							location,
+							"SUPPLEMENTARY",
+							read.query_name,
+							0, # TODO: what to set for MAPQ?
+							label,
+							"<SBND>",
+							sbnd_seq
+						))
+					else:
+						print(f'sbnd_seq empty! {read.reference_name}:{read.reference_start} {read.query_name} {len(read.query_sequence)} {curr_start["query_pos"]}:{next_end["query_pos"]} (curr_start - next_end)')
+						print(breakpoint_pairs)
+						print(chimeric_regions)
+				next_index += 1
+			index = next_index - 1
+			# got to end and didn't find map, means we should use the curr_start to last end
+			if not found_mapped:
+				_, last_end = breakpoint_pairs[-1]
+				# get sequence for query - from curr_start to next_start
+				sbnd_seq = read.query_sequence[curr_start['query_pos']:(last_end['query_pos'])]
+				# only one location - can't be end since isn't mapped
+				location = [{'chr': curr_start['chr'], 'loc': curr_start['loc']}, {'chr': curr_start['chr'], 'loc': curr_start['loc']}]
+				if len(sbnd_seq) > 0:
+					supplementary_breakpoints.append(PotentialBreakpoint(
+						location,
+						"SUPPLEMENTARY",
+						read.query_name,
+						0, # TODO: what to set for MAPQ?
+						label,
+						"<SBND>",
+						sbnd_seq
+					))
+				else:
+					print(f'sbnd_seq empty! {read.reference_name}:{read.reference_start} {read.query_name} {len(read.query_sequence)} {curr_start["query_pos"]}:{last_end["query_pos"]} (curr_start - last_end)')
+					print(breakpoint_pairs)
+					print(chimeric_regions)
+		elif not curr_start['region_mapped']:
+			# end is mapped, no need to merge/consume next pair
+			sbnd_seq = read.query_sequence[curr_start['query_pos']:(curr_end['query_pos'])]
+			# only one location - the mapped end
+			location = [{'chr': curr_end['chr'], 'loc': curr_end['loc']}, {'chr': curr_end['chr'], 'loc': curr_end['loc']}]
+			if len(sbnd_seq) > 0:
+				supplementary_breakpoints.append(PotentialBreakpoint(
+					location,
+					"SUPPLEMENTARY",
+					read.query_name,
+					0, # TODO: what to set for MAPQ?
+					label,
+					"<SBND>",
+					sbnd_seq
+				))
 			else:
-				supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read.query_name, read.mapping_quality, label, "".join((end['bp_notation'], start['bp_notation']))))
-		elif contig_order.index(start['chr']) <= contig_order.index(end['chr']):
-			supplementary_breakpoints.append(PotentialBreakpoint([start, end], "SUPP", read.query_name, read.mapping_quality, label, "".join((start['bp_notation'], end['bp_notation']))))
-		elif start['loc'] < end['loc']:
-			supplementary_breakpoints.append(PotentialBreakpoint([end, start], "SUPP", read.query_name, read.mapping_quality, label, "".join((end['bp_notation'], start['bp_notation']))))
+				print(f'sbnd_seq empty! {read.reference_name}:{read.reference_start} {read.query_name} {len(read.query_sequence)} {curr_start["query_pos"]}:{curr_end["query_pos"]} (curr_start - curr_end)')
+				print(breakpoint_pairs)
+				print(chimeric_regions)
+		else:
+			# boring region, everything mapped
+			location = [{'chr': curr_start['chr'], 'loc': curr_start['loc']}, {'chr': curr_end['chr'], 'loc': curr_end['loc']}]
+			if curr_start['chr'] == curr_end['chr']:
+				if curr_start['loc'] < curr_end['loc']:
+					supplementary_breakpoints.append(PotentialBreakpoint(
+						location,
+						"SUPPLEMENTARY",
+						read.query_name,
+						read.mapping_quality,
+						label,
+						"".join((curr_start['bp_notation'],curr_end['bp_notation']))
+					))
+				else:
+					supplementary_breakpoints.append(PotentialBreakpoint(
+						list(reversed(location)),
+						"SUPPLEMENTARY",
+						read.query_name,
+						read.mapping_quality,
+						label,
+						"".join((curr_end['bp_notation'], curr_start['bp_notation']))
+					))
+			elif contig_order.index(curr_start['chr']) <= contig_order.index(curr_end['chr']):
+				supplementary_breakpoints.append(PotentialBreakpoint(
+					location,
+					"SUPPLEMENTARY",
+					read.query_name,
+					read.mapping_quality,
+					label,
+					"".join((curr_start['bp_notation'], curr_end['bp_notation']))
+				))
+			elif curr_start['loc'] < curr_end['loc']:
+				supplementary_breakpoints.append(PotentialBreakpoint(
+					list(reversed(location)),
+					"SUPPLEMENTARY",
+					read.query_name,
+					read.mapping_quality,
+					label,
+					"".join((curr_end['bp_notation'], curr_start['bp_notation']))
+				))
+		index += 1
+
 	return supplementary_breakpoints
 
 def count_num_labels(source_breakpoints):
@@ -170,9 +325,9 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 			'query': 0
 		}
 		cigar_tuples = read.cigartuples
-		chimeric_regions = helper.get_chimeric_regions(read, mapq)
+		chimeric_regions = helper.get_chimeric_regions(read)
 		if chimeric_regions:
-			chimeric_breakpoints = get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order)
+			chimeric_breakpoints = get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order, single_bnd, single_bnd_min_length, single_bnd_max_mapq)
 			for bp in chimeric_breakpoints:
 				potential_breakpoints.setdefault(bp.start_chr,[]).append(bp)
 		# look for insertions and deletions in the CIGAR
@@ -187,11 +342,11 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				]
 				if prev_deletion:
 					# record and clear the previously tracked deletion
-					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
+					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-"))
 					prev_deletion = []
 				# record the insertion
 				inserted_sequence = read.query_sequence[curr_pos['query']:(curr_pos['query']+length)]
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "INS", read.query_name, read.mapping_quality, label, "<INS>", inserted_sequence))
+				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "CIGAR", read.query_name, read.mapping_quality, label, "<INS>", inserted_sequence))
 			elif sam_flag == helper.samflag_desc_to_number["BAM_CDEL"] and length > args_length:
 				# deletion has one breakpoint (read->read)
 				if prev_deletion:
@@ -210,10 +365,13 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				]
 				# record the softclipped bases
 				softclipped_sequence = read.query_sequence[curr_pos['query']:(curr_pos['query']+length)]
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "SOFTCLIP", read.query_name, read.mapping_quality, label, "<SBND>", softclipped_sequence))
+				if len(softclipped_sequence) > 0:
+					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "CIGAR", read.query_name, read.mapping_quality, label, "<SBND>", softclipped_sequence))
+				else:
+					print(f'softclipped sequence empty! (from {curr_pos["query"]}-{curr_pos["query"]+length})')
 			elif prev_deletion and length > args_length:
 				# record and clear the previously tracked deletion
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
+				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-"))
 				prev_deletion = []
 			# increment values
 			curr_pos['cigar'] += length
@@ -223,7 +381,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				curr_pos['reference'] += length
 		if prev_deletion:
 			# if reached end of string and no chance to expand deletion, add it
-			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "DEL", read.query_name, read.mapping_quality, label, "+-"))
+			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-"))
 
 	aln_file.close()
 	del aln_file
@@ -234,7 +392,6 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
-	pruned_clusters = {}
 	for bp_type in clusters.keys():
 		for cluster in clusters[bp_type]:
 			if bp_type == "<INS>":
@@ -263,10 +420,18 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 				source_breakpoints = cluster.breakpoints
 				label_counts = count_num_labels(source_breakpoints)
 				if max([len(v) for v in label_counts.values()]) >= min_support:
+					starts, inserts, sources = [], [], []
+					for bp in cluster_breakpoints:
+						starts.append(bp.start_loc)
+						inserts.append(bp.inserted_sequence)
+						sources.append(bp.source)
+					median_start = median(starts)
+					# can be from softclip or supplementary
+					sources = set(sources)
+					consensus_source = "CIGAR/SUPPLEMENTARY" if len(sources) > 1 else sources.pop()
 					final_breakpoints.append(ConsensusBreakpoint(
-						[{'chr': cluster.chr, 'loc': median(starts)}, {'chr': cluster.chr, 'loc': median(ends)}],
-						"SBND", cluster, None, label_counts, bp_type, inserts))
-					pruned_clusters.setdefault(bp_type, []).append(cluster)
+						[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
+						consensus_source, cluster, None, label_counts, bp_type, inserts))
 			else:
 				# call all other types
 				per_end_chrom = {}
@@ -306,26 +471,31 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 						# create ConsensusBreakpoint per end_cluster
 						end_cluster_breakpoints = end_cluster.breakpoints
 						label_counts = count_num_labels(end_cluster_breakpoints)
-						median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
-						median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
-						# need to create a new "originating cluster" with only the used breakpoints
-						# this ensures that the statistics are calculated correctly
-						new_start_cluster = None
-						for bp in end_cluster_breakpoints:
-							if not new_start_cluster:
-								new_start_cluster = Cluster(reversed(bp))
-							else:
-								new_start_cluster.add(reversed(bp))
 						if max([len(v) for v in label_counts.values()]) >= min_support:
+							# need to create a new "originating cluster" with only the used breakpoints
+							# this ensures that the statistics are calculated correctly
+							new_start_cluster = None
+							consensus_source = [] if bp_type == "+-" else end_cluster_breakpoints[0].source
+							for bp in end_cluster_breakpoints:
+								if bp_type == "+-":
+									consensus_source.append(bp.source)
+								if not new_start_cluster:
+									new_start_cluster = Cluster(reversed(bp))
+								else:
+									new_start_cluster.add(reversed(bp))
+							if bp_type == "+-":
+								# can be from CIGAR or SUPPLEMENTARY
+								consensus_source = set(consensus_source)
+								consensus_source = "CIGAR/SUPPLEMENTARY" if len(consensus_source) > 1 else consensus_source.pop()
+							median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
+							median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
 							new_breakpoint = ConsensusBreakpoint(
 								[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-								bp_type, new_start_cluster, end_cluster, label_counts, bp_type)
+								consensus_source, new_start_cluster, end_cluster, label_counts, bp_type)
 							if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
 								final_breakpoints.append(new_breakpoint)
-								pruned_clusters.setdefault(bp_type, []).append(new_start_cluster)
-								pruned_clusters.setdefault(bp_type, []).append(end_cluster)
 
-	return final_breakpoints, pruned_clusters, chrom
+	return final_breakpoints, chrom
 
 def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """

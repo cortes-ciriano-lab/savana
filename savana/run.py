@@ -45,7 +45,7 @@ def execute_annotate_depth(task_arg_dict, contig_coverage_array, task_tracker, c
 
 def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 	""" submit task arguments to the function and send results through pipe """
-	breakpoints, _, contig = call_breakpoints(
+	breakpoints, contig = call_breakpoints(
 		task_arg_dict['clusters'],
 		task_arg_dict['buffer'],
 		task_arg_dict['length'],
@@ -102,7 +102,7 @@ def generate_annotate_depth_tasks(called_breakpoints, args):
 	tasks = []
 	task_id_counter = 0
 	total_breakpoints = sum(len(bps) for bps in called_breakpoints.values())
-	split = floor(total_breakpoints/args.threads)
+	split = max(floor(total_breakpoints/args.threads), 1)
 	spare_breakpoints = []
 	for _, breakpoints in called_breakpoints.items():
 		if len(breakpoints) > split:

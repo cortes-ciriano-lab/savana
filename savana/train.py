@@ -37,27 +37,35 @@ encoded_labels = {v: k for k, v in label_encoding.items()}
 def format_data(data_matrix):
 	""" parse columns, do conversions, one-hot-encoding """
 	# split the DP tuples
-	data_matrix[['TUMOUR_DP_0', 'TUMOUR_DP_1']] = data_matrix['TUMOUR_DP'].apply(pd.Series)
-	data_matrix[['NORMAL_DP_0', 'NORMAL_DP_1']] = data_matrix['NORMAL_DP'].apply(pd.Series)
+	data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	data_matrix[['TUMOUR_DP_AT_0', 'TUMOUR_DP_AT_1']] = data_matrix['TUMOUR_DP_AT'].apply(pd.Series)
+	data_matrix[['TUMOUR_DP_AFTER_0', 'TUMOUR_DP_AFTER_1']] = data_matrix['TUMOUR_DP_AFTER'].apply(pd.Series)
+	data_matrix[['NORMAL_DP_BEFORE_0', 'NORMAL_DP_BEFORE_1']] = data_matrix['NORMAL_DP_BEFORE'].apply(pd.Series)
+	data_matrix[['NORMAL_DP_AT_0', 'NORMAL_DP_AT_1']] = data_matrix['NORMAL_DP_AT'].apply(pd.Series)
+	data_matrix[['NORMAL_DP_AFTER_0', 'NORMAL_DP_AFTER_1']] = data_matrix['NORMAL_DP_AFTER'].apply(pd.Series)
 	# when nothing in second depth column (insertions), replace with value in first
-	data_matrix['TUMOUR_DP_1'] = data_matrix['TUMOUR_DP_1'].fillna(data_matrix['TUMOUR_DP_0'])
-	data_matrix['NORMAL_DP_1'] = data_matrix['NORMAL_DP_1'].fillna(data_matrix['NORMAL_DP_0'])
-	# create support ratio column
-	data_matrix['TUMOUR_SUPPORT_RATIO'] = data_matrix['TUMOUR_SUPPORT']/((data_matrix['TUMOUR_DP_0']+data_matrix['TUMOUR_DP_1'])/2)
-	data_matrix['NORMAL_SUPPORT_RATIO'] = data_matrix['NORMAL_SUPPORT']/((data_matrix['NORMAL_DP_0']+data_matrix['NORMAL_DP_1'])/2)
-	data_matrix['TUMOUR_SUPPORT_RATIO'] = data_matrix['TUMOUR_SUPPORT_RATIO'].fillna(0)
-	data_matrix['NORMAL_SUPPORT_RATIO'] = data_matrix['TUMOUR_SUPPORT_RATIO'].fillna(0)
+	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
+	data_matrix['TUMOUR_DP_AT_1'] = data_matrix['TUMOUR_DP_AT_1'].fillna(data_matrix['TUMOUR_DP_AT_0'])
+	data_matrix['TUMOUR_DP_AFTER_1'] = data_matrix['TUMOUR_DP_AFTER_1'].fillna(data_matrix['TUMOUR_DP_AFTER_0'])
+	data_matrix['NORMAL_DP_BEFORE_1'] = data_matrix['NORMAL_DP_BEFORE_1'].fillna(data_matrix['NORMAL_DP_BEFORE_0'])
+	data_matrix['NORMAL_DP_AT_1'] = data_matrix['NORMAL_DP_AT_1'].fillna(data_matrix['NORMAL_DP_AT_0'])
+	data_matrix['NORMAL_DP_AFTER_1'] = data_matrix['NORMAL_DP_AFTER_1'].fillna(data_matrix['NORMAL_DP_AFTER_0'])
 	data_matrix.replace([np.inf, -np.inf], -1, inplace=True)
 	# create std_dev/mean_size ratio columns
 	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STARTS_STD_DEV']/(data_matrix['ORIGIN_EVENT_SIZE_MEAN']+1.0)
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STARTS_STD_DEV']/(data_matrix['END_EVENT_SIZE_MEAN']+1.0)
 	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STD_MEAN_RATIO'].fillna(0)
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STD_MEAN_RATIO'].fillna(0)
-
-	# convert the SVTYPE to 0/1
-	data_matrix['SVTYPE'] = data_matrix['SVTYPE'].map({'BND':0,'INS':1})
-	# ONE-HOT ENCODING
+	# convert the SVTYPE to 0/1/2
+	data_matrix['SVTYPE'] = data_matrix['SVTYPE'].map({'BND':0,'INS':1, 'SBND': 2})
+	# convert the SOURCE to 0/1/2
+	data_matrix['SOURCE'] = data_matrix['SOURCE'].map({'CIGAR':0,'SUPPLEMENTARY':1, 'CIGAR/SUPPLEMENTARY': 2})
+	# one-hot-encoding of BP_NOTATION
 	sv_type_one_hot = pd.get_dummies(data_matrix['BP_NOTATION'])
+	# check to make sure all bp types are present
+	for bp_type in ["++","+-","-+","--"]:
+		if bp_type not in sv_type_one_hot:
+			sv_type_one_hot[bp_type] = False
 	data_matrix.drop('BP_NOTATION', axis=1)
 	data_matrix = data_matrix.join(sv_type_one_hot)
 
@@ -68,6 +76,7 @@ def prepare_data(data_matrix, germline_class):
 	# reformat/parse columns
 	data_matrix = format_data(data_matrix)
 	# not enough ONT evidence to give these a 'SOMATIC' label
+	# relabelling to avoid confusing the model
 	condition = (data_matrix['LABEL'] == 'SOMATIC') & (data_matrix['TUMOUR_SUPPORT'] < 3)
 	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
 	condition = (data_matrix['LABEL'] == 'SOMATIC') & (data_matrix['TUMOUR_SUPPORT'] < data_matrix['NORMAL_SUPPORT'])
@@ -86,16 +95,19 @@ def prepare_data(data_matrix, germline_class):
 		# encode the labels to 0/1 for FALSE/FOUND
 		label_encoding_reduced = label_encoding
 		label_encoding_reduced['GERMLINE'] = 0
-		label_encoding_reduced['FOUND_IN_BOTH'] = 0 # TODO: legacy - remove in future
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
 			label_encoding_reduced
 		)
-	# drop irrelevant/redundant columns
+
+	# drop irrelevant/redundant columns (some have been encoded in a different format)
 	features = data_matrix.drop([
 		'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
+		'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
+		'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
+		'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID',
 		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
-		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS'
+		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS',
+		'REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE'
 		], axis=1, errors='ignore')
 	target = data_matrix['LABEL']
 
