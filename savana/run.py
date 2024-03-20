@@ -74,7 +74,7 @@ def execute_cluster_breakpoints(task_arg_dict, task_tracker, conn):
 	gc.collect()
 	conn.close()
 
-def execute_get_potential_breakpoint_task(task_arg_dict, contig_coverage_array, task_tracker, conn):
+def execute_get_potential_breakpoint_task(task_arg_dict, task_tracker, conn):
 	""" submit the task arguments to the function and send the results through the pipe conn """
 	potential_breakpoints = get_potential_breakpoints(
 		task_arg_dict['aln_file'],
@@ -88,7 +88,10 @@ def execute_get_potential_breakpoint_task(task_arg_dict, contig_coverage_array, 
 		task_arg_dict['start_pos'],
 		task_arg_dict['end_pos'],
 		task_arg_dict['coverage_binsize'],
-		contig_coverage_array
+		task_arg_dict['contig_coverage_array'],
+		task_arg_dict['single_bnd'],
+		task_arg_dict['single_bnd_min_length'],
+		task_arg_dict['single_bnd_max_mapq']
 		)
 	task_tracker[task_arg_dict['task_id']] = 1
 	conn.send(potential_breakpoints)
@@ -197,6 +200,9 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 						'start_pos': start_pos,
 						'end_pos': end_pos,
 						'coverage_binsize': args.coverage_binsize,
+						'single_bnd': args.single_bnd,
+						'single_bnd_min_length': args.single_bnd_min_length,
+						'single_bnd_max_mapq': args.single_bnd_max_mapq,
 						'task_id': task_id_counter
 					})
 					start_pos = end_pos + 1
@@ -214,6 +220,9 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 					'start_pos': 0,
 					'end_pos': contig_length,
 					'coverage_binsize': args.coverage_binsize,
+					'single_bnd': args.single_bnd,
+					'single_bnd_min_length': args.single_bnd_min_length,
+					'single_bnd_max_mapq': args.single_bnd_max_mapq,
 					'task_id': task_id_counter
 				})
 				task_id_counter += 1
@@ -421,11 +430,11 @@ def run_get_potential_breakpoints(aln_files, args):
 				# pop task off the tasks list
 				task_args = tasks.pop(0)
 				# retrieve reference to the relevant contig's coverage array
-				contig_coverage_array = shared_cov_arrays[task_args['label']][task_args['contig']]
+				task_args['contig_coverage_array'] = shared_cov_arrays[task_args['label']][task_args['contig']]
 				# create a new pipe
 				pipes[i] = Pipe(duplex=False)
 				# create a new process and replace it (matching the pipe with its process)
-				proc = Process(target=execute_get_potential_breakpoint_task, args=(task_args, contig_coverage_array, task_tracker, pipes[i][1]))
+				proc = Process(target=execute_get_potential_breakpoint_task, args=(task_args, task_tracker, pipes[i][1]))
 				processes[i] = (proc, task_args['task_id'])
 				regions_running[i] = (task_args['label'], task_args['contig'], task_args['start_pos'], task_args['end_pos'])
 				proc.start()
@@ -517,7 +526,7 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	vcf_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.vcf')
 	bedpe_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints.bedpe')
 	tsv_file = os.path.join(outdir, f'{args.sample}.sv_breakpoints_read_support.tsv')
-	insertion_fasta_file = os.path.join(outdir, f'{args.sample}.inserted_sequences.fa')
+	inserted_seq_fasta_file = os.path.join(outdir, f'{args.sample}.inserted_sequences.fa')
 	# build strings
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
@@ -539,7 +548,7 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 		output.write(bedpe_string)
 	with open(tsv_file, 'w') as output:
 		output.write(read_support_string)
-	with open(insertion_fasta_file, 'w') as output:
+	with open(inserted_seq_fasta_file, 'w') as output:
 		output.write(insertion_fasta_string)
 	# sort vcf
 	bcftools.sort('-o', vcf_file, vcf_file, catch_stdout=False)

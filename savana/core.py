@@ -393,14 +393,11 @@ class Cluster():
 		self.end = initial_breakpoint.end_loc if initial_breakpoint.spans_cluster else self.start
 		self.source = initial_breakpoint.source
 		self.breakpoints = [initial_breakpoint]
-		self.supporting_reads = {initial_breakpoint.read_name} # TODO: do we need this tracked here?
+		self.supporting_reads = {initial_breakpoint.read_name}
 		self.stats = None
 
 	def overlaps(self, other, buffer):
 		""" determine if a breakpoint should be merged to a cluster """
-		if self.breakpoints[0].breakpoint_notation != other.breakpoint_notation:
-			print(f'Tried to add {other.breakpoint_notaion} breakpoint to {self.breakpoints[0].breakpoint_notation} cluster')
-			return False
 		self_start_buff = self.start - buffer
 		self_end_buff = self.end + buffer
 		other_start_buff = other.start_loc - buffer

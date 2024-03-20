@@ -13,6 +13,7 @@ from math import floor, ceil
 from statistics import median
 
 import savana.helper as helper
+from savana.clusters import cluster_breakpoints
 from savana.core import PotentialBreakpoint, ConsensusBreakpoint, Cluster
 
 """
@@ -25,18 +26,18 @@ from pympler import muppy, summary, refbrowser
 """
 
 #TODO: investigate/test if passing relevant read attributes to this function (rather than entire object), improves speed/mem
-def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order, single_bnd, single_bnd_min_length, single_bnd_max_mapq):
+def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq):
 	""" reconstruct the breakpoints from the supplementary alignments """
 	breakpoint_pairs = []
 	primary_clipping = helper.get_clipping(cigar_tuples, read.is_reverse)
-	#	primary_clipping = helper.get_clipping(cigar_tuples, False) sort the chimeric regions by the left soft clip pos (ascending)
+	# sort the chimeric regions by the left soft clip pos (ascending)
 	chimeric_regions = sorted(chimeric_regions, key=lambda d: d['left_softclip'])
 	left_index = 0
 	# track the position in the read in order to extract sbnd bases
 	curr_pos_query = min(chimeric_regions[left_index]['left_softclip'], primary_clipping['left_softclip'])
 	while left_index < len(chimeric_regions) and chimeric_regions[left_index]['left_softclip'] < primary_clipping['left_softclip']:
 		# in the left softclip
-		region_mapped = False if single_bnd and (chimeric_regions[left_index]['mapQ'] <= single_bnd_max_mapq or chimeric_regions[left_index]['chrom'] not in contig_order) else True
+		region_mapped = False if single_bnd and (chimeric_regions[left_index]['mapQ'] < single_bnd_max_mapq or chimeric_regions[left_index]['chrom'] not in contig_order) else True
 		if left_index != 0:
 			# for all others except first
 			# add the second edge of the supp. breakpoint
@@ -77,7 +78,7 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			'chr': read.reference_name,
 			'loc': read.reference_end if read.is_reverse else read.reference_start,
 			'bp_notation': ("+") if read.is_reverse else ("-"),
-			'region_mapped': False if single_bnd and read.mapq <= single_bnd_max_mapq else True,
+			'region_mapped': False if single_bnd and read.mapq < single_bnd_max_mapq else True,
 			'query_pos': primary_clipping['left_softclip'] + read.query_alignment_length # curr_pos_query
 		})
 	# if still have chimeric regions, need to place in right softclip
@@ -87,7 +88,7 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			'chr': read.reference_name,
 			'loc': read.reference_start if read.is_reverse else read.reference_end,
 			'bp_notation': ("-") if read.is_reverse else ("+"),
-			'region_mapped': False if single_bnd and read.mapq <= single_bnd_max_mapq else True,
+			'region_mapped': False if single_bnd and read.mapq < single_bnd_max_mapq else True,
 			'query_pos': primary_clipping['left_softclip'] # curr_pos_query
 		}])
 		#curr_pos_query += read.query_alignment_length
@@ -98,7 +99,7 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 		right_chimeric = sorted(chimeric_regions[left_index:], key=lambda d: d['left_softclip'])
 		right_index = 0
 		while right_index < len(right_chimeric) and right_chimeric[right_index]['right_softclip'] < primary_clipping['right_softclip']:
-			region_mapped = False if single_bnd and (right_chimeric[right_index]['mapQ'] <= single_bnd_max_mapq or right_chimeric[right_index]['chrom'] not in contig_order) else True
+			region_mapped = False if single_bnd and (right_chimeric[right_index]['mapQ'] < single_bnd_max_mapq or right_chimeric[right_index]['chrom'] not in contig_order) else True
 			# supp as second edge
 			bp_end = int(right_chimeric[right_index]['pos'])
 			if right_chimeric[right_index]['strand'] == '-':
@@ -294,18 +295,13 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
 	mapq = min((mapq - ceil(mapq/2)), 0) if label == 'normal' else mapq
-	#TODO: make these args
-	single_bnd = True
-	single_bnd_min_length = 100
-	single_bnd_max_mapq = 20
-	####
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary or read.is_unmapped:
 			continue
@@ -327,7 +323,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 		cigar_tuples = read.cigartuples
 		chimeric_regions = helper.get_chimeric_regions(read)
 		if chimeric_regions:
-			chimeric_breakpoints = get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order, single_bnd, single_bnd_min_length, single_bnd_max_mapq)
+			chimeric_breakpoints = get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq)
 			for bp in chimeric_breakpoints:
 				potential_breakpoints.setdefault(bp.start_chr,[]).append(bp)
 		# look for insertions and deletions in the CIGAR
@@ -357,7 +353,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 						{'chr': curr_chrom, 'loc': curr_pos['reference']},
 						{'chr': curr_chrom, 'loc': curr_pos['reference']+length}
 					]
-			elif sam_flag == helper.samflag_desc_to_number["BAM_CSOFT_CLIP"] and single_bnd and not chimeric_regions and length > single_bnd_min_length:
+			elif sam_flag == helper.samflag_desc_to_number["BAM_CSOFT_CLIP"] and single_bnd and not chimeric_regions and length >= single_bnd_min_length:
 				# start and end location for single breakend are the same (for clustering purposes)
 				location = [
 					{'chr': curr_chrom, 'loc': curr_pos['reference']},
@@ -392,106 +388,69 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
-	for bp_type in clusters.keys():
-		for cluster in clusters[bp_type]:
-			if bp_type == "<INS>":
-				# call validated insertions
-				# average out the start/end
-				starts, ends = [], []
-				inserts = []
-				for bp in cluster.breakpoints:
-					starts.append(bp.start_loc)
-					ends.append(bp.end_loc)
-					inserts.append(bp.inserted_sequence)
-				source_breakpoints = cluster.breakpoints
-				label_counts = count_num_labels(source_breakpoints)
-				if max([len(v) for v in label_counts.values()]) >= min_support:
-					final_breakpoints.append(ConsensusBreakpoint(
-						[{'chr': cluster.chr, 'loc': median(starts)}, {'chr': cluster.chr, 'loc': median(ends)}],
-						"INS", cluster, None, label_counts, bp_type, inserts))
-					pruned_clusters.setdefault(bp_type, []).append(cluster)
-			elif bp_type == "<SBND>":
-				starts, ends = [], []
-				inserts = []
-				for bp in cluster.breakpoints:
-					starts.append(bp.start_loc)
-					ends.append(bp.end_loc)
-					inserts.append(bp.inserted_sequence)
-				source_breakpoints = cluster.breakpoints
-				label_counts = count_num_labels(source_breakpoints)
-				if max([len(v) for v in label_counts.values()]) >= min_support:
-					starts, inserts, sources = [], [], []
-					for bp in cluster_breakpoints:
-						starts.append(bp.start_loc)
-						inserts.append(bp.inserted_sequence)
-						sources.append(bp.source)
-					median_start = median(starts)
-					# can be from softclip or supplementary
-					sources = set(sources)
-					consensus_source = "CIGAR/SUPPLEMENTARY" if len(sources) > 1 else sources.pop()
-					final_breakpoints.append(ConsensusBreakpoint(
-						[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-						consensus_source, cluster, None, label_counts, bp_type, inserts))
+	for cluster in clusters:
+		# examine what's contained in the clusters
+		sorted_breakpoints = {}
+		for bp in cluster.breakpoints:
+			sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
+		insertion_like_breakpoints = sorted_breakpoints.pop("<INS>", []) + sorted_breakpoints.pop("<SBND>", [])
+		if len(insertion_like_breakpoints) >= min_support:
+			# group sbnd and insertion evidence
+			label_counts = count_num_labels(insertion_like_breakpoints)
+			event_info = {'starts':[], 'inserts': [], 'sources': {}}
+			ins_present = False
+			for bp in insertion_like_breakpoints:
+				event_info['starts'].append(bp.start_loc)
+				event_info['inserts'].append(bp.inserted_sequence)
+				event_info['sources'].setdefault(bp.source, True)
+				if not ins_present and bp.breakpoint_notation == "<INS>":
+					ins_present = True
+			median_start = median(event_info['starts'])
+			consensus_source = "/".join(sorted(event_info['sources'].keys()))
+			if ins_present:
+				# report as insertion
+				final_breakpoints.append(ConsensusBreakpoint(
+					[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
+					consensus_source, cluster, None, label_counts, "<INS>", event_info['inserts']))
 			else:
-				# call all other types
-				per_end_chrom = {}
-				# separate breakpoints by end chrom
-				for bp in cluster.breakpoints:
-					if bp.end_chr not in per_end_chrom:
-						per_end_chrom[bp.end_chr] = {
-							'starts': [bp.start_loc],
-							'ends': [bp.end_loc],
-							'breakpoints': [bp],
-							'originating_cluster': cluster
-						}
-					else:
-						per_end_chrom[bp.end_chr]['starts'].append(bp.start_loc)
-						per_end_chrom[bp.end_chr]['ends'].append(bp.end_loc)
-						per_end_chrom[bp.end_chr]['breakpoints'].append(bp)
-				# cluster by end location
-				for _, end_chrom_info in per_end_chrom.items():
-					# flip original breakpoints
-					source_breakpoints = [reversed(b) for b in end_chrom_info['breakpoints']]
-					if len(source_breakpoints) > 1:
-						# sort by "start" - which is actually end
-						source_breakpoints.sort()
-					# cluster sorted breakpoints
-					cluster_stack = []
-					for bp in source_breakpoints:
-						new_cluster = False
-						if len(cluster_stack) == 0 or not abs(cluster_stack[-1].start - bp.start_loc) < end_buffer:
-							# put a new cluster onto top of stack
-							new_cluster = Cluster(bp)
-							cluster_stack.append(new_cluster)
-							new_cluster = True
-						else:
-							# append to cluster on top of stack
-							cluster_stack[-1].add(bp)
-					for end_cluster in cluster_stack:
-						# create ConsensusBreakpoint per end_cluster
-						end_cluster_breakpoints = end_cluster.breakpoints
-						label_counts = count_num_labels(end_cluster_breakpoints)
-						if max([len(v) for v in label_counts.values()]) >= min_support:
-							# need to create a new "originating cluster" with only the used breakpoints
-							# this ensures that the statistics are calculated correctly
-							new_start_cluster = None
-							consensus_source = [] if bp_type == "+-" else end_cluster_breakpoints[0].source
-							for bp in end_cluster_breakpoints:
-								if bp_type == "+-":
-									consensus_source.append(bp.source)
-								if not new_start_cluster:
-									new_start_cluster = Cluster(reversed(bp))
+				# report as single breakend
+				final_breakpoints.append(ConsensusBreakpoint(
+					[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
+					consensus_source, cluster, None, label_counts, "<SBND>", event_info['inserts'])) 
+		# go through the remaining event types
+		for bp_type, breakpoints in sorted_breakpoints.items():
+			# binned by end chrom
+			breakpoints_by_end_chrom = {}
+			for bp in breakpoints:
+				breakpoints_by_end_chrom.setdefault(bp.end_chr, []).append(bp)
+			for end_chrom, end_chrom_breakpoints in breakpoints_by_end_chrom.items():
+				if len(end_chrom_breakpoints) >= min_support:
+					# reverse start/end in order to re-cluster
+					flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints]
+					# sort by new start
+					flipped_breakpoints.sort()
+					# cheeky reclustering
+					_, cluster_stack = cluster_breakpoints(end_chrom, end_chrom_breakpoints, end_buffer)
+					for end_chrom_cluster in cluster_stack:
+						# create a consensus breakpoint for each end cluster that has enough supporting reads
+						label_counts = count_num_labels(end_chrom_cluster.breakpoints)
+						if max([len(count) for count in label_counts.values()]) >= min_support:
+							# create a new "originating cluster" with only the used breakpoints (re-flipped)
+							# ensures statistics are calculated correctly
+							start_cluster = None
+							source = {}
+							for bp in end_chrom_cluster.breakpoints:
+								if not start_cluster:
+									start_cluster = Cluster(reversed(bp))
 								else:
-									new_start_cluster.add(reversed(bp))
-							if bp_type == "+-":
-								# can be from CIGAR or SUPPLEMENTARY
-								consensus_source = set(consensus_source)
-								consensus_source = "CIGAR/SUPPLEMENTARY" if len(consensus_source) > 1 else consensus_source.pop()
-							median_start = median([bp.end_loc for bp in end_cluster_breakpoints])
-							median_end = median([bp.start_loc for bp in end_cluster_breakpoints])
+									start_cluster.add(reversed(bp))
+								source.setdefault(bp.source, True)
+							median_start = median([bp.start_loc for bp in start_cluster.breakpoints])
+							median_end = median([bp.end_loc for bp in start_cluster.breakpoints])
+							consensus_source = "/".join(sorted(source.keys()))
 							new_breakpoint = ConsensusBreakpoint(
-								[{'chr': cluster.chr, 'loc': median_start}, {'chr': end_cluster.chr, 'loc': median_end}],
-								consensus_source, new_start_cluster, end_cluster, label_counts, bp_type)
+								[{'chr': start_cluster.chr, 'loc': median_start}, {'chr': end_chrom_cluster.chr, 'loc': median_end}],
+								consensus_source, start_cluster, end_chrom_cluster, label_counts, bp_type)
 							if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
 								final_breakpoints.append(new_breakpoint)
 
