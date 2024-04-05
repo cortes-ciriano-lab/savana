@@ -296,9 +296,21 @@ def classify_by_model(args, checkpoints, time_str):
 				variant.FILTER = 'LOW_SUPPORT'
 				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
 			elif float(variant.INFO['TUMOUR_AF']) < args.min_af:
-				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
-				variant.FILTER = 'LOW_AF'
-				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
+				# determine if tumour-amplified
+				from statistics import mean
+				avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
+				avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
+				if avg_tumour_dp <= avg_normal_dp*3:
+					# no tumour amplification, low af holds
+					variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+					variant.FILTER = 'LOW_AF'
+					prediction_dict[variant_id] = 0 # update the dictionary as well for mate
+				else:
+					# tumour appears amplified, disregard that variant has low af
+					variant.INFO['CLASS'] = 'PREDICTED_SOMATIC'
+					if args.somatic_output:
+						# add to the somatic only VCF
+						somatic_vcf.write_record(variant)
 			else:
 				# update the INFO field if all sanity checks pass
 				variant.INFO['CLASS'] = 'PREDICTED_SOMATIC'
