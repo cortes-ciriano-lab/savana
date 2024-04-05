@@ -413,10 +413,12 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 					[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
 					consensus_source, cluster, None, label_counts, "<INS>", event_info['inserts']))
 			else:
-				# report as single breakend
-				final_breakpoints.append(ConsensusBreakpoint(
-					[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-					consensus_source, cluster, None, label_counts, "<SBND>", event_info['inserts'])) 
+				# report as single breakend - but ONLY if there are no other events present at this location
+				# otherwise, sbnd is just overhang or slightly below mapping threshold, so should be ignored
+				if not sorted_breakpoints.keys():
+					final_breakpoints.append(ConsensusBreakpoint(
+						[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
+						consensus_source, cluster, None, label_counts, "<SBND>", event_info['inserts']))
 		# go through the remaining event types
 		for bp_type, breakpoints in sorted_breakpoints.items():
 			# binned by end chrom
@@ -429,8 +431,8 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 					flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints]
 					# sort by new start
 					flipped_breakpoints.sort()
-					# cheeky reclustering
-					_, cluster_stack = cluster_breakpoints(end_chrom, end_chrom_breakpoints, end_buffer)
+					# cheeky reclustering with reversed breakpoints
+					_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer)
 					for end_chrom_cluster in cluster_stack:
 						# create a consensus breakpoint for each end cluster that has enough supporting reads
 						label_counts = count_num_labels(end_chrom_cluster.breakpoints)
