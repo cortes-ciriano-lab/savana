@@ -453,7 +453,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							new_breakpoint = ConsensusBreakpoint(
 								[{'chr': start_cluster.chr, 'loc': median_start}, {'chr': end_chrom_cluster.chr, 'loc': median_end}],
 								consensus_source, start_cluster, end_chrom_cluster, label_counts, bp_type)
-							if new_breakpoint.sv_length >= min_length or new_breakpoint.sv_length == 0:
+							if new_breakpoint.sv_length >= min_length or (new_breakpoint.start_chr == new_breakpoint.end_chr and new_breakpoint.sv_length == 0):
 								final_breakpoints.append(new_breakpoint)
 
 	return final_breakpoints, chrom
