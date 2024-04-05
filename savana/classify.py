@@ -228,6 +228,64 @@ def classify_by_params(args, checkpoints, time_str):
 
 	return
 
+def pacbio_pass_somatic(variant, min_support, min_af):
+	if variant['NORMAL_SUPPORT'] != 0:
+		return False
+	if variant['TUMOUR_SUPPORT'] < min_support:
+		return False
+	if variant['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant['END_STARTS_STD_DEV'] > 50.0:
+		return False
+	if variant['ORIGIN_MAPQ_MEAN'] < 40.0 or variant['END_MAPQ_MEAN'] < 40.0:
+		return False
+	if variant['ORIGIN_EVENT_SIZE_STD_DEV'] > 60.0 or variant['END_EVENT_SIZE_STD_DEV'] > 60.0:
+		return False
+	if float(variant['TUMOUR_AF']) < min_af:
+		return False
+	return True
+
+def classify_pacbio(args, checkpoints, time_str):
+	""" classify using PacBio filters (manually defined) """
+	data_matrix = read_vcf(args.vcf)
+	data_matrix = train.format_data(data_matrix)
+	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
+
+	somatic_ids = {}
+	for _, variant in data_matrix.iterrows():
+		if pacbio_pass_somatic(variant, args.min_support, args.min_af):
+			somatic_ids[variant['ID']] = True
+
+	if args.predict_germline:
+		print('Germline PacBio filters not yet implemented.')
+
+	input_vcf = cyvcf2.VCF(args.vcf)
+	desc_string = str(f'Variant class prediction using PacBio filters')
+	input_vcf.add_info_to_header({
+		'ID': 'CLASS',
+		'Type': 'String',
+		'Number': '1',
+		'Description': desc_string
+	})
+	# create filenames based on output
+	if ".vcf" in args.output:
+		somatic_vcf_filename = args.output.replace(".vcf", ".somatic.vcf")
+	else:
+		somatic_vcf_filename = args.output+".somatic.vcf"
+	somatic_vcf = cyvcf2.Writer(somatic_vcf_filename, input_vcf)
+	for variant in input_vcf:
+		variant_id = variant.ID
+		passed_somatic = somatic_ids.get(variant_id, None)
+		if passed_somatic:
+			# update the INFO field if all sanity checks pass
+			variant.INFO['CLASS'] = 'SOMATIC'
+			# add to the somatic only VCF
+			somatic_vcf.write_record(variant)
+	somatic_vcf.close()
+	input_vcf.close()
+
+	helper.time_function("Output PacBio somatic VCF", checkpoints, time_str)
+
+	return
+
 def classify_by_model(args, checkpoints, time_str):
 	""" read VCF into a dataframe, classify using a model """
 
@@ -285,7 +343,7 @@ def classify_by_model(args, checkpoints, time_str):
 		# if no mate present, (as in ins, sbnds) set mate prediction to self prediction
 		variant_mate_prediction = prediction_dict.get(variant.INFO.get('MATEID', None), variant_prediction)
 		if variant_prediction == 1 and variant_mate_prediction == 1:
-			# PREDICTED SOMATIC BY MODEL
+			# BOTH EDGES PREDICTED SOMATIC BY MODEL
 			# perform sanity checks
 			if variant.INFO['TUMOUR_SUPPORT'] < args.min_support:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'

@@ -12,6 +12,8 @@ import uuid
 
 from copy import copy
 from statistics import mean, median, pstdev
+#TODO: test using numpy instead of statistics since it's apparently slower
+#from numpy import mean, median, std
 
 def generate_uuid():
 	""" hex representation of a multiprocessing-safe unique id """

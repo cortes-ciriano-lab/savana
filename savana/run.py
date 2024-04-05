@@ -238,7 +238,7 @@ def generate_coverage_arrays(aln_files, args):
 		for contig, contig_length in contig_lengths.items():
 			if contig not in contigs_to_consider:
 				continue
-			#TODO sub the binsize for a arg
+			#TODO sub the binsize for an arg
 			coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
 	return coverage_arrays
 

@@ -78,37 +78,47 @@ def savana_classify(args):
 	# initialize timing
 	checkpoints = [time()]
 	time_str = []
+	# perform logic checks and set defaults
+	if not args.ont and not args.pb and not args.custom_model and not args.custom_params and not args.legacy:
+		print(f'Using ONT model to classify variants')
+		args.ont = True
+	if args.predict_germline:
+		if args.custom_model:
+			sys.exit(f'The `predict_germline` flag cannot be used in conjunction with a custom model')
+		elif args.custom_params:
+			sys.exit(f'The `predict_germline` flag cannot be used in conjunction with custom parameters. Please include germline criteria in JSON input')
+		elif args.legacy:
+			sys.exit(f'The `predict_germline` flag cannot be used in conjunction with legacy filtering')
+
 	if args.legacy:
 		classify.classify_legacy(args, checkpoints, time_str)
 	elif args.custom_params:
 		classify.classify_by_params(args, checkpoints, time_str)
-	elif args.model:
+	elif args.custom_model:
 		classify.classify_by_model(args, checkpoints, time_str)
+	elif args.pb:
+		classify.classify_pacbio(args, checkpoints, time_str)
 	else:
 		# using a model - perform logic to determine which one
 		if args.ont and not args.predict_germline:
 			model_base = 'ont-somatic'
-		elif args.ont_noisy and not args.predict_germline:
-			model_base = 'ont-noisy-somatic'
 		elif args.ont and args.predict_germline:
 			model_base = 'ont-germline'
-		elif args.ont_noisy and args.predict_germline:
-			model_base = 'ont-noisy-germline'
 		# check whether the model has been un-tarred
-		models_dir = os.path.join(os.path.dirname(__file__),'models')
+		models_dir = os.path.join(os.path.dirname(__file__), 'models')
 		model_path = os.path.join(models_dir, model_base)
 		model_pkl = model_path+'.pkl'
 		model_tar = model_path+'.tar.gz'
 		if os.path.isfile(model_pkl):
 			print(f'Using untarred {model_pkl}')
-			args.model = model_pkl
+			args.custom_model = model_pkl
 		elif os.path.isfile(model_tar):
 			import tarfile
 			print(f'First time using model - will untar {model_tar}')
 			tar = tarfile.open(model_tar, "r:gz")
 			tar.extractall(models_dir)
 			tar.close()
-			args.model = model_pkl
+			args.custom_model = model_pkl
 		else:
 			print(f'Unable to locate model at {model_path}.* - please check installation')
 			return
@@ -152,35 +162,41 @@ def savana_train(args):
 		# load data matrix from pickle file
 		data_matrix = train.load_matrix(args)
 	features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
-	classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.germline_class)
+	classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.downsample)
+	#classifier = train.cross_conformal_classifier_alt(features, target, outdir, args.test_split, args.downsample)
+	#classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.germline_class)
 	train.save_model(args, classifier, outdir)
 
 def savana_main(args):
 	""" default workflow for savana: savana_run, savana_classify, savana_evaluate """
+
 	# call raw breakpoints
 	savana_run(args)
-	return
-	# set the input VCF for classification
-	args.vcf=os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf')
-	if not args.model and not args.custom_params and not args.legacy and not args.ont_noisy and not args.predict_germline:
-		args.ont = True
-		print(f'Using ONT somatic only model to classify variants')
-	# set the output VCF location
-	args.output = os.path.join(args.outdir, f'{args.sample}.classified.sv_breakpoints.vcf')
-	if not args.somatic_output and not args.custom_params and not args.legacy:
-		# if using a model (even by default) - output a somatic-only classified VCF
+
+	# perform classification by selected method
+	args.vcf = os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf') # previous step's output
+	args.output = os.path.join(args.outdir,f'{args.sample}.classified.vcf')
+	if args.somatic and not args.somatic_output:
 		args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
+	if args.germline and not args.germline_output:
+		args.germline_output = os.path.join(args.outdir,f'{args.sample}.classified.germline.vcf')
 	savana_classify(args)
+
+	# perform evaluation against provided VCFs, if any
 	if args.somatic:
-		# evaluate against somatic/germline VCFs
-		if args.legacy or args.custom_params:
-			# need reset output as the raw sv breakpoints since it's the only one that contains all variants
-			args.output = os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
-		# set the input vcf as previous output
-		args.input = args.output
-		args.output = os.path.join(args.outdir,f'{args.sample}.evaluation.sv_breakpoints.vcf')
-		args.stats = os.path.join(args.outdir,f'{args.sample}.evaluation.stats')
+		# evaluate against somatic "truthset" VCF
+		args.input = args.somatic_output if args.somatic_output else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
+		args.output = os.path.join(args.outdir, f'{args.sample}.somatic.labelled.vcf')
+		args.stats = os.path.join(args.outdir,f'{args.sample}.somatic.evaluation.stats')
 		savana_evaluate(args)
+	if args.germline:
+		# evaluate against germline "truthset" VCF
+		args.input = args.germline_output if args.germline else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
+		args.output = os.path.join(args.outdir, f'{args.sample}.germline.labelled.vcf')
+		args.stats = os.path.join(args.outdir,f'{args.sample}.germline.evaluation.stats')
+		savana_evaluate(args)
+
+	return
 
 def main():
 	""" main function for SAVANA - collects command line arguments and executes algorithm """

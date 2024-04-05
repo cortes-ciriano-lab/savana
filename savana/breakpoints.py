@@ -467,6 +467,10 @@ def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 		}
 		for label in bp.local_depths.keys():
 			for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):
+				if chrom not in shared_cov_arrays[label]:
+					print(f'ERROR: contig {chrom} not in shared_cov_array!')
+					print(bp)
+					continue
 				centre_bin = floor(loc/coverage_binsize)
 				if centre_bin > 0:
 					bp.local_depths[label][0][i] = np.sum(shared_cov_arrays[label][chrom][0:centre_bin-1])

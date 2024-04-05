@@ -105,31 +105,49 @@ savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <re
 ### Mandatory Arguments
 Argument|Description
 --------|-----------
-tumour|Tumour BAM/CRAM file (must have index in .bai/.crai format)
-normal|Normal BAM/CRAM file (must have index in .bai/.crai format)
-outdir|Output directory (can exist but must be empty)
-ref|Full path to reference genome that was used to align the `tumour` and `normal` BAM
+--tumour|Tumour BAM/CRAM file (must have index in .bai/.crai format)
+--normal|Normal BAM/CRAM file (must have index in .bai/.crai format)
+--outdir|Output directory (can exist but must be empty)
+--ref|Full path to reference genome that was used to align the `tumour` and `normal` BAM
 
 ### Optional Arguments
 Argument|Description
 --------|-----------
-ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
-contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
-length| Minimum length SV to consider (default=30)
-mapq| Minimum MAPQ of reads to consider (default=5)
-buffer| Buffer to add when clustering adjacent (non-insertion) potential breakpoints (default=10)
-insertion_buffer| Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
-depth| Minumum number of supporting reads from tumour OR normal to consider variant (default=3)
-threads| Number of threads to use (default is maximum available)
-sample| Name to prepend to output files (default=tumour BAM filename without extension)
+*Basic Arguments*
+--ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
+--contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
+--length| Minimum length SV to consider (default=30)
+--mapq| Minimum MAPQ of reads to consider (default=0)
+--min_support | Minimum supporting reads for a variant (default=5)
+--min_af | Minimum allele-fraction (AF) for a variant (default=0.01)
+--threads| Number of threads to use (default is maximum available)
+--sample| Name to prepend to output files (default=tumour BAM filename without extension)
+*Algorithm Arguments*
+--buffer| Buffer to add when clustering adjacent (non-insertion) potential breakpoints, excepting insertions (default=10)
+--insertion_buffer| Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
+--end_buffer | Buffer to add when clustering the alternate edge of potential breakpoints, excepting insertions (default=100)
+--coverage_binsize | Length used for coverage bins (default=5)
+--chunksize | Chunksize to use when splitting genome for parallel analysis (default=1000000)
+*Advanced Arguments*
+--custom_model | Path to custom model pkl file
+--custom_params | Path to custom paramaters JSON file for filtering
+--somatic_output | Output VCF path for a file containing only PASS somatic variants
+--germline_output | Output VCF path for a file containing only PASS germline variants (`--predict_germline` must be specified)
+--somatic | VCF file containing somatic variants to evaluate PASS somatic variants against
+--germline | VCF file containing germline variants to evaluate PASS germline variants against
+--overlap_buffer | If comparing against a --somatic or --germline VCF file, buffer for considering variants to overlap
+--by_support | When comparing to --somatic or --germline VCF, tie-break by read-support
+--by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default)
+--stats | Output filename for statistics on comparison to somatic/germline VCF
 
 ### Optional Flags
-Argument | Description
--------- | -----------
-debug | Optional flag to output extra debugging info and files
-| ont | Flag to indicate that the Oxford Nanopore (ONT) trained model should be used to classify variants (default) |
-| ont_noisy | Flag to indicate that a model trained on ONT data with relatively more noise should be used |
-| predict_germline | Flag to indicate that a model that also predicts germline events should be used (a note that this reduced the accuracy of the somatic calls)|
+Argument|Description
+--------|-----------
+ --ont  | Use Oxford Nanopore (ONT) trained model to classify variants (default)
+ --pb   | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio))
+ --predict_germline | Also output germline events (a note that this reduces the accuracy of somatic calls when using a model)
+ --legacy | Use legacy filters (strict/lenient) to classify variants
+ --debug| Output extra debugging info and files
 
 ### Output Files
 
@@ -153,6 +171,8 @@ SAVANA also reports information about each structural variant in the INFO field 
 | MATEID | ID of mate breakend |
 | NORMAL_SUPPORT | Number of variant-supporting normal reads |
 | TUMOUR_SUPPORT | Number of variant-supporting tumour reads |
+| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges) | Float |
+| NORMAL_AF | Normal allele-fraction: ratio of normal-supporting reads to DP (averaged over both edges) | Float |
 | SVLEN | Length of the SV (always >= 0) |
 | BP_NOTATION | Notation of breakpoint from table above (_not_ flipped for mate breakpoint) |
 | ORIGINATING_CLUSTER | Originating cluster id supporting variant (for debugging) |
@@ -179,7 +199,20 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 
 ## Alternate Classification Methods
 
-By default, SAVANA uses a model, trained on a range of somatic data. However you may also use alternate classification methods.
+By default, SAVANA uses a model, trained on a range of ONT somatic data. However you may also use alternate classification methods. You may also [train your own model](#train-custom-model).
+
+### Classify for PacBio
+
+Currently, there is no model available in SAVANA which was trained on PacBio data. If the `--pb` flag is used, a set of filters (shown in the table below), will be used. The minimum allele-fraction (AF) and support can be modified with the `--min_support` and `--min_af` flags. By default `--min_support` is set to 5, but we recommend testing different values here - in our PacBio samples, increasing this value to 10 yielded the best results.
+
+| Field | Description | PacBio Somatic Filter |
+| ----- | ----------- | --------------------- |
+| TUMOUR_SUPPORT | Number of variant-supporting tumour reads; modify with `--min_support` | >=5 |
+| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges); modify with `--min_af` | >=0.01 |
+| NORMAL_SUPPORT | Number of variant-supporting tumour reads | ==0 |
+| {ORIGIN\|END}_STARTS_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' starts | <=50.0 |
+| {ORIGIN\|END}_MAPQ_MEAN | Cluster value for the mean mapping quality (MAPQ) of the supporting reads | >=40.0 |
+| {ORIGIN\|END}_EVENT_SIZE_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' lengths | <=60.0 |
 
 ### Classify by Parameters File
 
@@ -203,12 +236,12 @@ Briefly, you can set limits on the minimum and maximum allowable values for diff
 | ----- | ----------- | ---- |
 | TUMOUR_SUPPORT | Number of variant-supporting tumour reads | Int |
 | NORMAL_SUPPORT | Number of variant-supporting normal reads | Int |
+| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges) | Float |
+| NORMAL_AF | Normal allele-fraction: ratio of normal-supporting reads to DP (averaged over both edges) | Float |
 | TUMOUR_DP_0 | Total depth/coverage (number of reads) in the tumour at first breakpoint edge | Int |
 | TUMOUR_DP_1 | Total depth/coverage (number of reads) in the tumour at second breakpoint edge | Int |
 | NORMAL_DP_0 | Total depth/coverage (number of reads) in the normal at first breakpoint edge | Int |
 | NORMAL_DP_1 | Total depth/coverage (number of reads) in the normal at second breakpoint edge |  Int |
-| TUMOUR_SUPPORT_RATIO | Ratio of tumour-supporting reads to DP (averaged over both breakpoints) | Float |
-| NORMAL_SUPPORT_RATIO | Ratio of normal-supporting reads to DP (averaged over both breakpoints) | Float |
 | {ORIGIN\|END}_STARTS_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' starts | Float |
 | {ORIGIN\|END}_MAPQ_MEAN | Cluster value for the mean mapping quality (MAPQ) of the supporting reads | Float |
 | {ORIGIN\|END}_EVENT_SIZE_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' lengths | Float |
@@ -235,14 +268,33 @@ savana evaluate --input ${savana_vcf} --somatic ${known_somatic_variants_vcf} --
 See the table below for a full list of arguments:
 | Argument | Description |
 | -------- | ----------- |
-| input | VCF file to evaluate |
-| somatic | Somatic VCF file to evaluate against |
-| germline | Germline VCF file to evaluate against (optional) |
-| overlap_buffer | Buffer for considering an overlap (default=100) |
-| output | Output VCF with LABEL added to INFO |
-| stats | Output file for statistics on comparison if desired |
-| by_support | Flag for comparison method: tie-break by read support |
-| by_distance | Flag for comparison method: tie-break by min. distance (default) |
+| --input | VCF file to evaluate |
+| --somatic_output | Output VCF path for a file containing only PASS somatic variants |
+| --germline_output | Output VCF path for a file containing only PASS germline variants (`--predict_germline` must be specified) |
+| --somatic | VCF file containing somatic variants to evaluate PASS somatic variants against |
+| --germline | VCF file containing germline variants to evaluate PASS germline variants against |
+| --overlap_buffer | If comparing against a --somatic or --germline VCF file, buffer for considering variants to overlap (default=100) |
+| --by_support | When comparing to --somatic or --germline VCF, tie-break by read-support |
+| --by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default) |
+| --stats | Output filename for statistics on comparison |
+
+### Re-classify Variants
+
+If you'd like to re-classify variants using an alternate method after SAVANA has already been run, you can do so via the `savana classify` sub-command. An example of reclassifying an existing savana output VCF using a custom model would be:
+```
+savana classify --vcf {raw_sv_breakpoints_vcf} --custom_model {custom_trained_model_pkl} --output {output_classified_vcf}
+```
+
+You can also use the `savana classify` sub-command to re-classify using custom parameters (see [Classify by Parameters File](#classify-by-parameters-file)), or legacy methods ([Classify by Legacy Methods](#classify-by-legacy-methods)). See the table below for a full list of arguments:
+| Argument | Description |
+| -------- | ----------- |
+| --input | VCF file to classify |
+| --ont | Flag to indicate that the Oxford Nanopore (ONT) trained model should be used to classify variants (default) |
+| --pb | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio)) |
+| --predict_germline | Flag to indicate that a model that also predicts germline events should be used (a note that this reduced the accuracy of the somatic calls) |
+| --custom_model | Path to custom model pkl file |
+| --custom_params | Path to custom paramaters JSON file for filtering |
+| --legacy | Flag to use legacy lenient/strict filtering |
 
 ### Train Custom Model
 
@@ -269,28 +321,7 @@ See the table below for a full list of options and arguments to the `savana trai
 | hyper | Perform a randomised search on hyper parameters and use best |
 | outdir | Output directory (can exist but must be empty)
 
-
-### Re-classify Variants
-
-If you'd like to re-classify variants using an alternate method after SAVANA has already been run, you can do so via the `savana classify` sub-command. An example of reclassifying an existing savana output VCF using a custom model would be:
-```
-savana classify --vcf {raw_sv_breakpoints_vcf} --model {custom_trained_model_pkl} --output {output_classified_vcf}
-```
-
-You can also use the `savana classify` sub-command to re-classify using custom parameters (see [Classify by Parameters File](#classify-by-parameters-file)), or legacy methods ([Classify by Legacy Methods](#classify-by-legacy-methods)). See the table below for a full list of arguments:
-| Argument | Description |
-| -------- | ----------- |
-| input | VCF file to classify |
-| ont | Flag to indicate that the Oxford Nanopore (ONT) trained model should be used to classify variants (default) |
-| ont_noisy | Flag to indicate that a model trained on ONT data with relatively more noise should be used |
-| predict_germline | Flag to indicate that a model that also predicts germline events should be used (a note that this reduced the accuracy of the somatic calls)|
-| model | Pickle file of machine-learning model |
-| custom_params | JSON file of custom filtering parameters |
-| legacy | Use legacy lenient/strict filtering |
-
-## Output VCF
-
-After SAVANA has completed, you should find the VCF file `{sample}_sv_breakpoints.vcf` which contains all (unfiltered) variants in the output folder. Additionally, there are `strict` and `lenient` VCF files which are informed by a decision-tree classifier (strict) and manually plotting data to determine cutoffs (lenient). The lenient and strict files will be discountinued and replaced by a more rouboust system in future versions of SAVANA.
+## Note on SV Types
 
 The `SV_TYPE` field in the `INFO` column of SAVANA only denotes `BND` and `INS` types. We have elected not call `SV_TYPE` beyond these types as it is not definitively possible to do so without copy number information in VCF v4.2 (GRIDSS has a more in-depth explanation for their decision to do this here: https://github.com/PapenfussLab/gridss#why-are-all-calls-bnd).
 
@@ -305,6 +336,3 @@ For now, SAVANA reports the breakend orientation using brackets in the ALT field
 ## Troubleshooting
 
 Please raise a GitHub issue if you encounter issues installing or using SAVANA.
-
-## License
-**SAVANA is free for academic use only**. If you are not a member of a public funded academic and/or education and/or research institution you must obtain a commercial license from EMBL Enterprise Management GmbH (EMBLEM); please email EMBLEM (info@embl-em.de).
