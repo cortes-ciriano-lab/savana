@@ -177,7 +177,8 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 		contigs = helper.get_contigs(args.contigs, args.ref_index)
 		if not args.is_cram:
 			# if nothing mapped, don't consider contig
-			[contigs.remove(c.contig) for c in aln_file.get_index_statistics() if not c.mapped and (c.contig in contigs)]
+			if not args.contigs:
+				[contigs.remove(c.contig) for c in aln_file.get_index_statistics() if not c.mapped and (c.contig in contigs)]
 		for contig, contig_length in contig_lengths.items():
 			if contig not in contigs:
 				continue

@@ -267,7 +267,7 @@ def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chime
 					label,
 					"".join((curr_start['bp_notation'], curr_end['bp_notation']))
 				))
-			elif curr_start['loc'] < curr_end['loc']:
+			else:
 				supplementary_breakpoints.append(PotentialBreakpoint(
 					list(reversed(location)),
 					"SUPPLEMENTARY",
@@ -338,11 +338,15 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				]
 				if prev_deletion:
 					# record and clear the previously tracked deletion
-					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-"))
+					potential_breakpoints.setdefault(curr_chrom,[]).append(
+						PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-")
+						)
 					prev_deletion = []
 				# record the insertion
 				inserted_sequence = read.query_sequence[curr_pos['query']:(curr_pos['query']+length)]
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "CIGAR", read.query_name, read.mapping_quality, label, "<INS>", inserted_sequence))
+				potential_breakpoints.setdefault(curr_chrom,[]).append(
+					PotentialBreakpoint(location, "CIGAR", read.query_name, read.mapping_quality, label, "<INS>", inserted_sequence)
+					)
 			elif sam_flag == helper.samflag_desc_to_number["BAM_CDEL"] and length > args_length:
 				# deletion has one breakpoint (read->read)
 				if prev_deletion:
@@ -362,12 +366,16 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				# record the softclipped bases
 				softclipped_sequence = read.query_sequence[curr_pos['query']:(curr_pos['query']+length)]
 				if len(softclipped_sequence) > 0:
-					potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(location, "CIGAR", read.query_name, read.mapping_quality, label, "<SBND>", softclipped_sequence))
+					potential_breakpoints.setdefault(curr_chrom,[]).append(
+						PotentialBreakpoint(location, "CIGAR", read.query_name, read.mapping_quality, label, "<SBND>", softclipped_sequence)
+						)
 				else:
 					print(f'softclipped sequence empty! (from {curr_pos["query"]}-{curr_pos["query"]+length})')
 			elif prev_deletion and length > args_length:
 				# record and clear the previously tracked deletion
-				potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-"))
+				potential_breakpoints.setdefault(curr_chrom,[]).append(
+					PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-")
+					)
 				prev_deletion = []
 			# increment values
 			curr_pos['cigar'] += length
@@ -377,7 +385,9 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				curr_pos['reference'] += length
 		if prev_deletion:
 			# if reached end of string and no chance to expand deletion, add it
-			potential_breakpoints.setdefault(curr_chrom,[]).append(PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-"))
+			potential_breakpoints.setdefault(curr_chrom,[]).append(
+				PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-")
+				)
 
 	aln_file.close()
 	del aln_file
@@ -389,71 +399,78 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
 	for cluster in clusters:
-		# examine what's contained in the clusters
-		sorted_breakpoints = {}
+		# re-cluster breakpoints by their end location (ignoring type)
+		breakpoints_by_end_chrom = {}
 		for bp in cluster.breakpoints:
-			sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
-		insertion_like_breakpoints = sorted_breakpoints.pop("<INS>", []) + sorted_breakpoints.pop("<SBND>", [])
-		if len(insertion_like_breakpoints) >= min_support:
-			# group sbnd and insertion evidence
-			label_counts = count_num_labels(insertion_like_breakpoints)
-			event_info = {'starts':[], 'inserts': [], 'sources': {}}
-			ins_present = False
-			for bp in insertion_like_breakpoints:
-				event_info['starts'].append(bp.start_loc)
-				event_info['inserts'].append(bp.inserted_sequence)
-				event_info['sources'].setdefault(bp.source, True)
-				if not ins_present and bp.breakpoint_notation == "<INS>":
-					ins_present = True
-			median_start = median(event_info['starts'])
-			consensus_source = "/".join(sorted(event_info['sources'].keys()))
-			if ins_present:
-				# report as insertion
-				final_breakpoints.append(ConsensusBreakpoint(
-					[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-					consensus_source, cluster, None, label_counts, "<INS>", event_info['inserts']))
-			else:
-				# report as single breakend - but ONLY if there are no other events present at this location
-				# otherwise, sbnd is just overhang or slightly below mapping threshold, so should be ignored
-				if not sorted_breakpoints.keys():
-					final_breakpoints.append(ConsensusBreakpoint(
-						[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-						consensus_source, cluster, None, label_counts, "<SBND>", event_info['inserts']))
-		# go through the remaining event types
-		for bp_type, breakpoints in sorted_breakpoints.items():
-			# binned by end chrom
-			breakpoints_by_end_chrom = {}
-			for bp in breakpoints:
-				breakpoints_by_end_chrom.setdefault(bp.end_chr, []).append(bp)
-			for end_chrom, end_chrom_breakpoints in breakpoints_by_end_chrom.items():
-				if len(end_chrom_breakpoints) >= min_support:
-					# reverse start/end in order to re-cluster
-					flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints]
-					# sort by new start
-					flipped_breakpoints.sort()
-					# cheeky reclustering with reversed breakpoints
-					_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer)
-					for end_chrom_cluster in cluster_stack:
+			breakpoints_by_end_chrom.setdefault(bp.end_chr, []).append(bp)
+		for end_chrom, end_chrom_breakpoints in breakpoints_by_end_chrom.items():
+			if len(end_chrom_breakpoints) >= min_support:
+				# reverse start/end in order to re-cluster
+				flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints]
+				# sort by new start
+				flipped_breakpoints.sort()
+				# cheeky reclustering with reversed breakpoints
+				_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer)
+				for end_chrom_cluster in cluster_stack:
+					# sorted into types while counting co-clustered breakpoints of all types
+					read_counts = {"tumour": 0, "normal": 0}
+					sorted_breakpoints = {}
+					for bp in end_chrom_cluster.breakpoints:
+						sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
+						read_counts[bp.label] += 1
+					insertion_like_breakpoints = sorted_breakpoints.pop("<INS>", []) + sorted_breakpoints.pop("<SBND>", [])
+					if len(insertion_like_breakpoints) >= min_support:
+						# group sbnd and insertion evidence
+						ins_label_counts = count_num_labels(insertion_like_breakpoints)
+						if max(len(count) for count in ins_label_counts.values()) >= min_support:
+							event_info = {'starts':[], 'inserts': [], 'sources': {}}
+							# re-flip the breakpoints
+							insertion_like_breakpoints = [reversed(b) for b in insertion_like_breakpoints]
+							ins_present = False
+							for bp in insertion_like_breakpoints:
+								event_info['starts'].append(bp.start_loc)
+								event_info['inserts'].append(bp.inserted_sequence)
+								event_info['sources'].setdefault(bp.source, True)
+								if not ins_present and bp.breakpoint_notation == "<INS>":
+									ins_present = True
+							median_start = median(event_info['starts'])
+							consensus_source = "/".join(sorted(event_info['sources'].keys()))
+							if ins_present:
+								# report as insertion
+								final_breakpoints.append(ConsensusBreakpoint(
+									[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
+									consensus_source, cluster, None, ins_label_counts, "<INS>", read_counts, event_info['inserts']))
+							else:
+								# report as single breakend - but ONLY if there are no other events present at this location
+								# otherwise, sbnd is just overhang or slightly below mapping threshold, so should be ignored
+								if not sorted_breakpoints.keys():
+									final_breakpoints.append(ConsensusBreakpoint(
+										[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
+										consensus_source, cluster, None, ins_label_counts, "<SBND>", read_counts, event_info['inserts']))
+					# go through the remaining event types
+					for bp_type, breakpoints in sorted_breakpoints.items():
 						# create a consensus breakpoint for each end cluster that has enough supporting reads
-						label_counts = count_num_labels(end_chrom_cluster.breakpoints)
+						label_counts = count_num_labels(breakpoints)
 						if max([len(count) for count in label_counts.values()]) >= min_support:
-							# create a new "originating cluster" with only the used breakpoints (re-flipped)
+							# un-flip the breakpoints
+							unflipped_breakpoints = [reversed(b) for b in breakpoints]
+							# create a new "originating cluster" with only the used breakpoints
 							# ensures statistics are calculated correctly
 							start_cluster = None
 							source = {}
-							for bp in end_chrom_cluster.breakpoints:
+							for bp in unflipped_breakpoints:
 								if not start_cluster:
-									start_cluster = Cluster(reversed(bp))
+									start_cluster = Cluster(bp)
 								else:
-									start_cluster.add(reversed(bp))
+									start_cluster.add(bp)
 								source.setdefault(bp.source, True)
-							median_start = median([bp.start_loc for bp in start_cluster.breakpoints])
-							median_end = median([bp.end_loc for bp in start_cluster.breakpoints])
+							median_start = median([bp.start_loc for bp in unflipped_breakpoints])
+							median_end = median([bp.end_loc for bp in unflipped_breakpoints])
 							consensus_source = "/".join(sorted(source.keys()))
 							new_breakpoint = ConsensusBreakpoint(
 								[{'chr': start_cluster.chr, 'loc': median_start}, {'chr': end_chrom_cluster.chr, 'loc': median_end}],
-								consensus_source, start_cluster, end_chrom_cluster, label_counts, bp_type)
-							if new_breakpoint.sv_length >= min_length or (new_breakpoint.start_chr == new_breakpoint.end_chr and new_breakpoint.sv_length == 0):
+								consensus_source, start_cluster, end_chrom_cluster, label_counts, bp_type, read_counts)
+							if new_breakpoint.sv_length >= min_length or (new_breakpoint.start_chr != new_breakpoint.end_chr and new_breakpoint.sv_length == 0):
 								final_breakpoints.append(new_breakpoint)
 
 	return final_breakpoints, chrom

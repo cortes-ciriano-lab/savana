@@ -298,7 +298,9 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=TUMOUR_AF,Number=1,Type=String,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
 		'##INFO=<ID=NORMAL_AF,Number=1,Type=String,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">',
-		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">'
+		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">',
+		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=String,Description="Total number of tumour reads clustered at this location of any SV type">',
+		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=String,Description="Total number of normal reads clustered at this location of any SV type">'
 	])
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()

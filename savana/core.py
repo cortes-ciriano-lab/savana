@@ -21,7 +21,7 @@ def generate_uuid():
 
 class ConsensusBreakpoint():
 	""" class for a second-round called breakpoint (stores originating cluster information """
-	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation, inserts=None):
+	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation, read_counts, inserts=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
@@ -41,6 +41,7 @@ class ConsensusBreakpoint():
 		self.originating_cluster = originating_cluster
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
 		self.labels = labels
+		self.read_counts = read_counts
 		self.count = None # used later for standardising across output files
 		self.local_depths = {} # add later
 		# use the labels to calculate support by counting reads
@@ -63,7 +64,7 @@ class ConsensusBreakpoint():
 			"start_loc": self.start_loc,
 			"end_chr": self.end_chr,
 			"end_loc": self.end_loc,
-			"first_inserted_sequence": self.inserted_sequences[0],
+			"first_inserted_sequence": None if not self.inserted_sequences else self.inserted_sequences[0],
 			"source": self.source,
 			"originating_cluster": self.originating_cluster.uid,
 			"end_cluster": self.end_cluster.uid,
@@ -231,15 +232,21 @@ class ConsensusBreakpoint():
 		except Exception as e:
 			end_base = 'N'
 		alts = self.get_alts(start_base, end_base)
-		# construct info column
 		gt_tag = ''
 		if self.support['normal'] >= 1:
 			gt_tag = '0/0'
 		else:
 			gt_tag = '0/1'
+		# construct info column
 		support_str = ';'.join([f'{label.upper()}_SUPPORT={label_count}' for label, label_count in self.support.items()])
 		stats_str = self.get_stats_str()
-		info = [f'{support_str};SVLEN={self.sv_length};BP_NOTATION={self.breakpoint_notation};SOURCE={self.source};{stats_str}']
+		info = [f'{support_str};']
+		info[0] += f'SVLEN={self.sv_length};'
+		info[0] += f'BP_NOTATION={self.breakpoint_notation};'
+		info[0] += f'SOURCE={self.source};'
+		info[0] += f'CLUSTERED_READS_TUMOUR={self.read_counts["tumour"]};'
+		info[0] += f'CLUSTERED_READS_NORMAL={self.read_counts["normal"]};'
+		info[0] += stats_str
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
 			allele_fractions = {
