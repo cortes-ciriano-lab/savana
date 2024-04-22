@@ -11,8 +11,7 @@ import os
 import gc
 
 from math import ceil, floor
-from multiprocessing import Pool
-from multiprocessing import Array, Pipe, Process
+from multiprocessing import Pool, Array, Pipe, Process, sharedctypes
 
 import numpy as np
 import pysam
@@ -231,7 +230,6 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 
 def generate_coverage_arrays(aln_files, args):
 	""" generate empty numpy arrays """
-	from multiprocessing import sharedctypes
 	coverage_arrays = {}
 	contig_lengths = helper.get_contig_lengths(args.ref_index)
 	contigs_to_consider = helper.get_contigs(args.contigs, args.ref_index)
@@ -239,7 +237,6 @@ def generate_coverage_arrays(aln_files, args):
 		for contig, contig_length in contig_lengths.items():
 			if contig not in contigs_to_consider:
 				continue
-			#TODO sub the binsize for an arg
 			coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
 	return coverage_arrays
 

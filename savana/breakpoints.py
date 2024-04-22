@@ -307,8 +307,8 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 			continue
 		try:
 			# record start/end in read incrementer
-			contig_coverage_array[floor((read.reference_start-1)/coverage_binsize)]+=1
-			contig_coverage_array[floor((read.reference_end-1)/coverage_binsize)]-=1
+			contig_coverage_array[floor((read.reference_start)/coverage_binsize)]+=1
+			contig_coverage_array[floor((read.reference_end)/coverage_binsize)]-=1
 		except IndexError as e:
 			print(f'Unable to update coverage for contig {contig}')
 			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
@@ -485,21 +485,26 @@ def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 		for label in bp.local_depths.keys():
 			for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):
 				if chrom not in shared_cov_arrays[label]:
-					print(f'ERROR: contig {chrom} not in shared_cov_array!')
-					print(bp)
+					print(f'WARNING: contig {chrom} not in shared_cov_array!')
 					continue
-				centre_bin = floor(loc/coverage_binsize)
-				if centre_bin > 0:
-					bp.local_depths[label][0][i] = np.sum(shared_cov_arrays[label][chrom][0:centre_bin-1])
-				else:
-					# unlikely case it's the first bin
+				# calculate centre bin (zero-based array, subtract 1)
+				centre_bin = floor((loc)/coverage_binsize) - 1
+				# ensure is bound by 0 and last element of contig coverage array
+				centre_bin = min(max(centre_bin, 0), (len(shared_cov_arrays[label][chrom]) - 1))
+				# before
+				if centre_bin == 0:
+					# no coverage since out of range
 					bp.local_depths[label][0][i] = 0
+				else:
+					bp.local_depths[label][0][i] = np.sum(shared_cov_arrays[label][chrom][0:centre_bin-1])
+				# at
 				bp.local_depths[label][1][i] = bp.local_depths[label][0][i] + shared_cov_arrays[label][chrom][centre_bin]
-				try:
-					# handle extremely unlikely case that there's no next bin
-					bp.local_depths[label][2][i] = bp.local_depths[label][1][i] + shared_cov_arrays[label][chrom][centre_bin+1]
-				except IndexError as e:
+				# after
+				if centre_bin == (len(shared_cov_arrays[label][chrom]) - 1):
+					# no coverage since out of range for contig
 					bp.local_depths[label][2][i] = 0
+				else:
+					bp.local_depths[label][2][i] = bp.local_depths[label][1][i] + shared_cov_arrays[label][chrom][centre_bin+1]
 
 	return breakpoints
 
