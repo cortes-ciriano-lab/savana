@@ -30,312 +30,318 @@ logo = """
 """
 
 def savana_run(args):
-	""" main function for SAVANA """
-	if not args.sample:
-		# set sample name to default if req.
-		args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
-	print(f'Running as sample {args.sample}')
-	outdir = helper.check_outdir(args.outdir, illegal='.vcf')
-	# set number of threads to cpu count if none set
-	if not args.threads:
-		args.threads = cpu_count()
-	# check if files are bam or cram (must have indices)
-	if args.tumour.endswith('bam') and args.normal.endswith('bam'):
-		args.is_cram = False
-		aln_files = {
-			'tumour': pysam.AlignmentFile(args.tumour, "rb"),
-			'normal': pysam.AlignmentFile(args.normal, "rb")
-		}
-	elif args.tumour.endswith('cram') and args.normal.endswith('cram'):
-		args.is_cram = True
-		aln_files = {
-			'tumour': pysam.AlignmentFile(args.tumour, "rc"),
-			'normal': pysam.AlignmentFile(args.normal, "rc")
-		}
-	else:
-		sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
+    """ main function for SAVANA """
+    if not args.sample:
+        # set sample name to default if req.
+        args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
+    print(f'Running as sample {args.sample}')
+    outdir = helper.check_outdir(args.outdir, illegal='.vcf')
+    # set number of threads to cpu count if none set
+    if not args.threads:
+        args.threads = cpu_count()
+    # check if files are bam or cram (must have indices)
+    if args.tumour.endswith('bam') and args.normal.endswith('bam'):
+        args.is_cram = False
+        aln_files = {
+            'tumour': pysam.AlignmentFile(args.tumour, "rb"),
+            'normal': pysam.AlignmentFile(args.normal, "rb")
+        }
+    elif args.tumour.endswith('cram') and args.normal.endswith('cram'):
+        args.is_cram = True
+        aln_files = {
+            'tumour': pysam.AlignmentFile(args.tumour, "rc"),
+            'normal': pysam.AlignmentFile(args.normal, "rc")
+        }
+    else:
+        sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
 
-	# confirm ref and ref fasta index exist
-	if not os.path.exists(args.ref):
-		sys.exit(f'Provided reference: "{args.ref}" does not exist. Please provide full path')
-	elif args.ref_index and not os.path.exists(args.ref_index):
-		sys.exit(f'Provided reference fasta index: "{args.ref_index}" does not exist. Please provide full path')
-	elif not os.path.exists(f'{args.ref}.fai'):
-		sys.exit(f'Default reference fasta index: "{args.ref}.fai" does not exist. Please provide full path')
-	else:
-		args.ref_index = f'{args.ref}.fai' if not args.ref_index else args.ref_index
-		print(f'Found {args.ref_index} to use as reference fasta index')
-	# initialize timing
-	checkpoints = [time()]
-	time_str = []
-	# run SAVANA processes
-	checkpoints, time_str = run.spawn_processes(args, aln_files, checkpoints, time_str, outdir)
-	# finish timing
-	helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
+    # confirm ref and ref fasta index exist
+    if not os.path.exists(args.ref):
+        sys.exit(f'Provided reference: "{args.ref}" does not exist. Please provide full path')
+    elif args.ref_index and not os.path.exists(args.ref_index):
+        sys.exit(f'Provided reference fasta index: "{args.ref_index}" does not exist. Please provide full path')
+    elif not os.path.exists(f'{args.ref}.fai'):
+        sys.exit(f'Default reference fasta index: "{args.ref}.fai" does not exist. Please provide full path')
+    else:
+        args.ref_index = f'{args.ref}.fai' if not args.ref_index else args.ref_index
+        print(f'Found {args.ref_index} to use as reference fasta index')
+    # initialize timing
+    checkpoints = [time()]
+    time_str = []
+    # run SAVANA processes
+    checkpoints, time_str = run.spawn_processes(args, aln_files, checkpoints, time_str, outdir)
+    # finish timing
+    helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
 
 def savana_classify(args):
-	""" main function for savana classify """
-	# initialize timing
-	checkpoints = [time()]
-	time_str = []
-	# perform logic checks and set defaults
-	if not args.ont and not args.pb and not args.custom_model and not args.custom_params and not args.legacy:
-		print(f'Using ONT model to classify variants')
-		args.ont = True
-	if args.predict_germline:
-		if args.custom_model:
-			sys.exit(f'The `predict_germline` flag cannot be used in conjunction with a custom model')
-		elif args.custom_params:
-			sys.exit(f'The `predict_germline` flag cannot be used in conjunction with custom parameters. Please include germline criteria in JSON input')
-		elif args.legacy:
-			sys.exit(f'The `predict_germline` flag cannot be used in conjunction with legacy filtering')
+    """ main function for savana classify """
+    # initialize timing
+    checkpoints = [time()]
+    time_str = []
+    # perform logic checks and set defaults
+    if not args.ont and not args.pb and not args.custom_model and not args.custom_params and not args.legacy:
+        print(f'Using ONT model to classify variants')
+        args.ont = True
+    if args.predict_germline:
+        if args.custom_model:
+            sys.exit(f'The `predict_germline` flag cannot be used in conjunction with a custom model')
+        elif args.custom_params:
+            sys.exit(f'The `predict_germline` flag cannot be used in conjunction with custom parameters. Please include germline criteria in JSON input')
+        elif args.legacy:
+            sys.exit(f'The `predict_germline` flag cannot be used in conjunction with legacy filtering')
 
-	if args.legacy:
-		classify.classify_legacy(args, checkpoints, time_str)
-	elif args.custom_params:
-		classify.classify_by_params(args, checkpoints, time_str)
-	elif args.custom_model:
-		classify.classify_by_model(args, checkpoints, time_str)
-	elif args.pb:
-		classify.classify_pacbio(args, checkpoints, time_str)
-	else:
-		# using a model - perform logic to determine which one
-		if args.ont and not args.predict_germline:
-			model_base = 'ont-somatic'
-		elif args.ont and args.predict_germline:
-			model_base = 'ont-germline'
-		# check whether the model has been un-tarred
-		models_dir = os.path.join(os.path.dirname(__file__), 'models')
-		model_path = os.path.join(models_dir, model_base)
-		model_pkl = model_path+'.pkl'
-		model_tar = model_path+'.tar.gz'
-		if os.path.isfile(model_pkl):
-			print(f'Using untarred {model_pkl}')
-			args.custom_model = model_pkl
-		elif os.path.isfile(model_tar):
-			import tarfile
-			print(f'First time using model - will untar {model_tar}')
-			tar = tarfile.open(model_tar, "r:gz")
-			tar.extractall(models_dir)
-			tar.close()
-			args.custom_model = model_pkl
-		else:
-			print(f'Unable to locate model at {model_path}.* - please check installation')
-			return
-		classify.classify_by_model(args, checkpoints, time_str)
+    if args.legacy:
+        classify.classify_legacy(args, checkpoints, time_str)
+    elif args.custom_params:
+        classify.classify_by_params(args, checkpoints, time_str)
+    elif args.custom_model:
+        classify.classify_by_model(args, checkpoints, time_str)
+    elif args.pb:
+        classify.classify_pacbio(args, checkpoints, time_str)
+    else:
+        # using a model - perform logic to determine which one
+        if args.ont and not args.predict_germline:
+            model_base = 'ont-somatic'
+        elif args.ont and args.predict_germline:
+            model_base = 'ont-germline'
+        # check whether the model has been un-tarred
+        models_dir = os.path.join(os.path.dirname(__file__), 'models')
+        model_path = os.path.join(models_dir, model_base)
+        model_pkl = model_path+'.pkl'
+        model_tar = model_path+'.tar.gz'
+        if os.path.isfile(model_pkl):
+            print(f'Using untarred {model_pkl}')
+            args.custom_model = model_pkl
+        elif os.path.isfile(model_tar):
+            import tarfile
+            print(f'First time using model - will untar {model_tar}')
+            tar = tarfile.open(model_tar, "r:gz")
+            tar.extractall(models_dir)
+            tar.close()
+            args.custom_model = model_pkl
+        else:
+            print(f'Unable to locate model at {model_path}.* - please check installation')
+            return
+        classify.classify_by_model(args, checkpoints, time_str)
 
-	# finish timing
-	helper.time_function("Total time to classify variants", checkpoints, time_str, final=True)
+    # finish timing
+    helper.time_function("Total time to classify variants", checkpoints, time_str, final=True)
 
 def savana_evaluate(args):
-	""" main function for savana evaluate """
-	# check input VCFs
-	vcf_string = ''
-	if not os.path.exists(args.input):
-		sys.exit(f'Provided input vcf: "{args.input}" does not exist. Please provide full path')
-	if not os.path.exists(args.somatic):
-		sys.exit(f'Provided somatic VCF: "{args.somatic}" does not exist. Please provide full path')
-	else:
-		vcf_string += f'somatic vcf: "{args.somatic}"'
-	if args.germline:
-		if not os.path.exists(args.germline):
-			sys.exit(f'Provided germline VCF: "{args.germline}" does not exist. Please provide full path')
-		else:
-			vcf_string += f' and germline vcf: "{args.germline}"'
+    """ main function for savana evaluate """
+    # check input VCFs
+    vcf_string = ''
+    if not os.path.exists(args.input):
+        sys.exit(f'Provided input vcf: "{args.input}" does not exist. Please provide full path')
+    if not os.path.exists(args.somatic):
+        sys.exit(f'Provided somatic VCF: "{args.somatic}" does not exist. Please provide full path')
+    else:
+        vcf_string += f'somatic vcf: "{args.somatic}"'
+    if args.germline:
+        if not os.path.exists(args.germline):
+            sys.exit(f'Provided germline VCF: "{args.germline}" does not exist. Please provide full path')
+        else:
+            vcf_string += f' and germline vcf: "{args.germline}"'
 
-	# initialize timing
-	checkpoints = [time()]
-	time_str = []
-	# perform validation
-	evaluate.evaluate_vcf(args, checkpoints, time_str)
-	# finish timing
-	helper.time_function("Total time to evaluate variants", checkpoints, time_str, final=True)
+    # initialize timing
+    checkpoints = [time()]
+    time_str = []
+    # perform validation
+    evaluate.evaluate_vcf(args, checkpoints, time_str)
+    # finish timing
+    helper.time_function("Total time to evaluate variants", checkpoints, time_str, final=True)
 
 def savana_train(args):
-	""" main function for savana train """
-	outdir = helper.check_outdir(args.outdir, illegal='.pkl')
-	data_matrix = None
-	if args.vcfs:
-		# read in and create matrix from VCF files
-		data_matrix = train.read_vcfs(args)
-	elif args.load_matrix:
-		# load data matrix from pickle file
-		data_matrix = train.load_matrix(args)
-	features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
-	classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.downsample)
-	#classifier = train.cross_conformal_classifier_alt(features, target, outdir, args.test_split, args.downsample)
-	#classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.germline_class)
-	train.save_model(args, classifier, outdir)
+    """ main function for savana train """
+    outdir = helper.check_outdir(args.outdir, illegal='.pkl')
+    data_matrix = None
+    if args.vcfs:
+        # read in and create matrix from VCF files
+        data_matrix = train.read_vcfs(args)
+    elif args.load_matrix:
+        # load data matrix from pickle file
+        data_matrix = train.load_matrix(args)
+    features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
+    classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.downsample)
+    #classifier = train.cross_conformal_classifier_alt(features, target, outdir, args.test_split, args.downsample)
+    #classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.germline_class)
+    train.save_model(args, classifier, outdir)
 
 def savana_main(args):
-	""" default workflow for savana: savana_run, savana_classify, savana_evaluate """
+    """ default workflow for savana: savana_run, savana_classify, savana_evaluate """
 
-	# call raw breakpoints
-	savana_run(args)
+    # call raw breakpoints
+    savana_run(args)
 
-	# perform classification by selected method
-	args.vcf = os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf') # previous step's output
-	args.output = os.path.join(args.outdir,f'{args.sample}.classified.vcf')
-	if args.somatic and not args.somatic_output:
-		args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
-	if args.germline and not args.germline_output:
-		args.germline_output = os.path.join(args.outdir,f'{args.sample}.classified.germline.vcf')
-	savana_classify(args)
+    # set inputs and outputs
+    args.vcf = os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf') # previous step's output
+    args.output = os.path.join(args.outdir,f'{args.sample}.classified.vcf')
+    if args.somatic and not args.somatic_output:
+        args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
+    if args.germline and not args.germline_output:
+        args.germline_output = os.path.join(args.outdir,f'{args.sample}.classified.germline.vcf')
 
-	# perform evaluation against provided VCFs, if any
-	if args.somatic:
-		# evaluate against somatic "truthset" VCF
-		args.input = args.somatic_output if args.somatic_output else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
-		args.output = os.path.join(args.outdir, f'{args.sample}.somatic.labelled.vcf')
-		args.stats = os.path.join(args.outdir,f'{args.sample}.somatic.evaluation.stats')
-		savana_evaluate(args)
-	if args.germline:
-		# evaluate against germline "truthset" VCF
-		args.input = args.germline_output if args.germline else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
-		args.output = os.path.join(args.outdir, f'{args.sample}.germline.labelled.vcf')
-		args.stats = os.path.join(args.outdir,f'{args.sample}.germline.evaluation.stats')
-		savana_evaluate(args)
+    # perform classification by selected method
+    savana_classify(args)
 
-	return
+    # perform evaluation against provided VCFs, if any
+    if args.somatic:
+        # evaluate against somatic "truthset" VCF
+        args.input = args.somatic_output if args.somatic_output else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
+        args.output = os.path.join(args.outdir, f'{args.sample}.somatic.labelled.vcf')
+        args.stats = os.path.join(args.outdir,f'{args.sample}.somatic.evaluation.stats')
+        savana_evaluate(args)
+    if args.germline:
+        # evaluate against germline "truthset" VCF
+        args.input = args.germline_output if args.germline else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
+        args.output = os.path.join(args.outdir, f'{args.sample}.germline.labelled.vcf')
+        args.stats = os.path.join(args.outdir,f'{args.sample}.germline.evaluation.stats')
+        savana_evaluate(args)
 
-def main():
-	""" main function for SAVANA - collects command line arguments and executes algorithm """
+    return
 
-	# parse arguments - separated into subcommands
-	global_parser = argparse.ArgumentParser(prog="savana", description="SAVANA - somatic SV caller")
-	global_parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
-	subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands', dest='command')
+def parse_args(args):
+    """ parse arguments - separated into subcommands """
+    global_parser = argparse.ArgumentParser(prog="savana", description="SAVANA - somatic SV caller")
+    global_parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
+    subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands', dest='command')
 
-	# savana run
-	run_parser = subparsers.add_parser("run", help="identify and cluster breakpoints - output raw variants without classification")
-	run_parser.add_argument('-t','--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-	run_parser.add_argument('-n', '--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
-	run_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
-	run_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
-	run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider. See example at example/contigs.chr.hg38.txt (optional, default=All)")
-	run_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
-	run_parser.add_argument('--mapq', nargs='?', type=int, default=1, help='Minimum MAPQ to consider a read mapped (default=1)')
-	run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
-	run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
-	run_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
-	run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
-	run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-	run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
-	run_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
-	run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=100, help='Minimum length of single breakend to consider (default=100)')
-	run_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=1, help='Convert supplementary alignments below this threshold to single breakend (default=1, must not exceed --mapq argument)')
-	run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
-	run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
-	run_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-	run_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
-	run_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-	run_parser.set_defaults(func=savana_run)
+    # savana run
+    run_parser = subparsers.add_parser("run", help="identify and cluster breakpoints - output raw variants without classification")
+    run_parser.add_argument('-t','--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+    run_parser.add_argument('-n', '--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+    run_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
+    run_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
+    run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider. See example at example/contigs.chr.hg38.txt (optional, default=All)")
+    run_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
+    run_parser.add_argument('--mapq', nargs='?', type=int, default=1, help='Minimum MAPQ to consider a read mapped (default=1)')
+    run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
+    run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
+    run_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
+    run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
+    run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
+    run_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
+    run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=100, help='Minimum length of single breakend to consider (default=100)')
+    run_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=1, help='Convert supplementary alignments below this threshold to single breakend (default=1, must not exceed --mapq argument)')
+    run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+    run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+    run_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
+    run_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
+    run_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+    run_parser.set_defaults(func=savana_run)
 
-	# savana classify
-	classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
-	classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
-	classify_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
-	classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-	group = classify_parser.add_mutually_exclusive_group()
-	group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
-	group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
-	# whether to use a germline-trained model
-	classify_parser.add_argument('--predict_germline', action='store_true', help='Also predict germline events (reduces accuracy of somatic calls for model)')
-	group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
-	group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
-	group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
-	classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
-	classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS somatic variants')
-	classify_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS germline variants')
-	classify_parser.set_defaults(func=savana_classify)
+    # savana classify
+    classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
+    classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
+    classify_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
+    classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+    group = classify_parser.add_mutually_exclusive_group()
+    group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
+    group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
+    # whether to use a germline-trained model
+    classify_parser.add_argument('--predict_germline', action='store_true', help='Also predict germline events (reduces accuracy of somatic calls for model)')
+    group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
+    group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+    group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
+    classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
+    classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS somatic variants')
+    classify_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS germline variants')
+    classify_parser.set_defaults(func=savana_classify)
 
-	# savana evaluate
-	evaluate_parser = subparsers.add_parser("evaluate", help="label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against")
-	evaluate_parser.add_argument('--input', nargs='?', type=str, required=True, help='VCF file to evaluate')
-	evaluate_parser.add_argument('--somatic', nargs='?', type=str, required=True, help='Somatic VCF file to evaluate against')
-	evaluate_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
-	evaluate_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
-	evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
-	evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired')
-	evaluate_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
-	group = evaluate_parser.add_mutually_exclusive_group()
-	group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
-	group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
-	evaluate_parser.set_defaults(func=savana_evaluate)
+    # savana evaluate
+    evaluate_parser = subparsers.add_parser("evaluate", help="label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against")
+    evaluate_parser.add_argument('--input', nargs='?', type=str, required=True, help='VCF file to evaluate')
+    evaluate_parser.add_argument('--somatic', nargs='?', type=str, required=True, help='Somatic VCF file to evaluate against')
+    evaluate_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
+    evaluate_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, help='Buffer for considering an overlap (default=100)')
+    evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
+    evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired')
+    evaluate_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
+    group = evaluate_parser.add_mutually_exclusive_group()
+    group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
+    group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
+    evaluate_parser.set_defaults(func=savana_evaluate)
 
-	# savana train
-	train_parser = subparsers.add_parser("train", help="train model on folder of input VCFs")
-	group = train_parser.add_mutually_exclusive_group()
-	group.add_argument('--vcfs', nargs='?', type=str, required=False, help='Folder of labelled VCF files to read in')
-	train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs (default only one-level deep)')
-	group.add_argument('--load_matrix', nargs='?', type=str, required=False, help='Pre-loaded pickle file of VCFs')
-	train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
-	train_parser.add_argument('--downsample', nargs='?', type=float, default=0.1, help='Fraction to downsample majority class by (default=0.1)')
-	train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
-	train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
-	train_parser.add_argument('--hyper', action='store_true', help='Perform a randomised search on hyper parameters and use best')
-	train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-	train_parser.set_defaults(func=savana_train)
+    # savana train
+    train_parser = subparsers.add_parser("train", help="train model on folder of input VCFs")
+    group = train_parser.add_mutually_exclusive_group()
+    group.add_argument('--vcfs', nargs='?', type=str, required=False, help='Folder of labelled VCF files to read in')
+    train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs (default only one-level deep)')
+    group.add_argument('--load_matrix', nargs='?', type=str, required=False, help='Pre-loaded pickle file of VCFs')
+    train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
+    train_parser.add_argument('--downsample', nargs='?', type=float, default=0.1, help='Fraction to downsample majority class by (default=0.1)')
+    train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
+    train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
+    train_parser.add_argument('--hyper', action='store_true', help='Perform a randomised search on hyper parameters and use best')
+    train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    train_parser.set_defaults(func=savana_train)
 
-	try:
-		global_parser.exit_on_error = False
-		subparser = global_parser.parse_args().command
-	except argparse.ArgumentError as e:
-		# unable to parse args, set args to None
-		subparser = None
-	if not subparser:
-		# arguments for default, main savana process: run, classify, evaluate
-		global_parser.add_argument('-t', '--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-		global_parser.add_argument('-n','--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
-		global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
-		global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
-		global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
-		global_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
-		global_parser.add_argument('--mapq', nargs='?', type=int, default=1, help='Minimum MAPQ to consider a read mapped (default=1)')
-		global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
-		global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
-		global_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
-		global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
-		global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
-		global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
-		global_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
-		global_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=100, help='Minimum length of single breakend to consider (default=100)')
-		global_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=1, help='Convert supplementary alignments below this threshold to single breakend (default=1, must not exceed --mapq argument)')
-		global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
-		global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
-		global_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-		# classify args
-		global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
-		global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-		classify_group = global_parser.add_mutually_exclusive_group()
-		classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
-		classify_group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
-		# whether to use a germline-trained model
-		global_parser.add_argument('--predict_germline', action='store_true', help='Also predict germline events')
-		classify_group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
-		classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
-		classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
-		global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF with only PASS somatic variants')
-		global_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF with only PASS germline variants')
-		# evaluate args
-		global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
-		global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
-		global_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, required=False, help='Buffer for considering an overlap (default=100)')
-		global_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
-		evaluate_group = global_parser.add_mutually_exclusive_group()
-		evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
-		evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
-		global_parser.set_defaults(func=savana_main)
-		args = global_parser.parse_args()
-	else:
-		global_parser.exit_on_error = True
-		args = global_parser.parse_args()
+    try:
+        global_parser.exit_on_error = False
+        subparser = global_parser.parse_args().command if not args else global_parser.parse_args(args).command
+    except argparse.ArgumentError as e:
+        # unable to parse args, set args to None
+        subparser = None
 
-	print(logo)
-	print(f'Version {helper.__version__}')
-	src_location = __file__
-	print(f'Source: {src_location}\n')
-	args.func(args)
+    if not subparser:
+        # arguments for default, main savana process: run, classify, evaluate
+        global_parser.add_argument('-t', '--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+        global_parser.add_argument('-n','--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+        global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
+        global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
+        global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
+        global_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
+        global_parser.add_argument('--mapq', nargs='?', type=int, default=1, help='Minimum MAPQ to consider a read mapped (default=1)')
+        global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
+        global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=100, help='Buffer when clustering adjacent potential insertion breakpoints (default=100)')
+        global_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
+        global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
+        global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+        global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
+        global_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
+        global_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=100, help='Minimum length of single breakend to consider (default=100)')
+        global_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=1, help='Convert supplementary alignments below this threshold to single breakend (default=1, must not exceed --mapq argument)')
+        global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+        global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+        global_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
+        # classify args
+        global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
+        global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+        classify_group = global_parser.add_mutually_exclusive_group()
+        classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
+        classify_group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
+        # whether to use a germline-trained model
+        global_parser.add_argument('--predict_germline', action='store_true', help='Also predict germline events')
+        classify_group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
+        classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+        classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
+        global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF with only PASS somatic variants')
+        global_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF with only PASS germline variants')
+        # evaluate args
+        global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
+        global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
+        global_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, required=False, help='Buffer for considering an overlap (default=100)')
+        global_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
+        evaluate_group = global_parser.add_mutually_exclusive_group()
+        evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
+        evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
+        global_parser.set_defaults(func=savana_main)
+        parsed_args = global_parser.parse_args() if not args else global_parser.parse_args(args)
+    else:
+        global_parser.exit_on_error = True
+        parsed_args = global_parser.parse_args() if not args else global_parser.parse_args(args)
+
+    return parsed_args
+
+def main(args=None):
+    """ main function for SAVANA - collects command line arguments and executes algorithm """
+    print(logo)
+    print(f'Version {helper.__version__}')
+    src_location = __file__
+    print(f'Source: {src_location}\n')
+    args = parse_args(args)
+    args.func(args)
 
 if __name__ == "__main__":
-	main()
+    main()

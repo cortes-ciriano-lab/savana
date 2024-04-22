@@ -29,9 +29,9 @@ class ConsensusBreakpoint():
 		self.end_loc = int(locations[1]['loc'])
 		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not inserts:
 			raise AttributeError(f'Must provide an insert for {breakpoint_notation} breakpoints')
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_chr == self.end_chr:
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and self.start_chr != self.end_chr:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_loc == self.end_loc:
+		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and self.start_loc != self.end_loc:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
 		self.breakpoint_notation = breakpoint_notation
 		self.inserted_sequences = inserts
