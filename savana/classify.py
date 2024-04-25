@@ -6,17 +6,16 @@ Hillary Elrick
 """
 #!/usr/bin/env python3
 
-import os
-
-import pandas as pd
-import numpy as np
-import cyvcf2
-import pickle
-import json
-
 from multiprocessing import Pool
 from functools import partial
 from collections import ChainMap
+from statistics import mean
+
+import pickle
+import json
+import pandas as pd
+import numpy as np
+import cyvcf2
 
 import savana.train as train
 from savana.breakpoints import *
@@ -32,7 +31,7 @@ def get_info_fields(vcf):
 	return fields
 
 def pool_predict(data_matrix, features_to_drop, model, threads):
-	""" """
+	""" split the prediction across multiprocessing Pool """
 	data_matrices = np.array_split(data_matrix, threads)
 	pool = Pool(threads)
 	results = pool.map(partial(
@@ -83,7 +82,7 @@ def legacy_pass_strict(variant, event_heuristic):
 				return True
 			elif end_uncertainty <= 10:
 				return True
-		except Exception as e:
+		except Exception as _:
 			# in case of None
 			return False
 
@@ -98,7 +97,7 @@ def legacy_pass_lenient(variant, event_heuristic):
 					return True
 				elif variant['BP_NOTATION'] != "<INS>" and variant['TUMOUR_SUPPORT'] > 5:
 					return True
-		except Exception as e:
+		except Exception as _:
 			# in case of None for any stat
 			return False
 
@@ -229,6 +228,7 @@ def classify_by_params(args, checkpoints, time_str):
 	return
 
 def pacbio_pass_somatic(variant, min_support, min_af):
+	""" custom manual filters for PacBio """
 	if variant['NORMAL_SUPPORT'] != 0:
 		return False
 	if variant['TUMOUR_SUPPORT'] < min_support:
@@ -239,7 +239,7 @@ def pacbio_pass_somatic(variant, min_support, min_af):
 		return False
 	if variant['ORIGIN_EVENT_SIZE_STD_DEV'] > 60.0 or variant['END_EVENT_SIZE_STD_DEV'] > 60.0:
 		return False
-	if float(variant['TUMOUR_AF']) < min_af:
+	if float(variant['TUMOUR_AF'].split(',')[0]) < min_af:
 		return False
 	return True
 
@@ -258,7 +258,7 @@ def classify_pacbio(args, checkpoints, time_str):
 		print('Germline PacBio filters not yet implemented.')
 
 	input_vcf = cyvcf2.VCF(args.vcf)
-	desc_string = str(f'Variant class prediction using PacBio filters')
+	desc_string = str('Variant class prediction using PacBio filters')
 	input_vcf.add_info_to_header({
 		'ID': 'CLASS',
 		'Type': 'String',
@@ -296,16 +296,7 @@ def classify_by_model(args, checkpoints, time_str):
 	loaded_model = pickle.load(open(args.custom_model, "rb"))
 	helper.time_function("Loaded classification model", checkpoints, time_str)
 
-	features_to_drop = [
-		'ID', 'LABEL', 'MATEID', 'ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
-		'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
-		'BP_NOTATION', '<INS>',
-		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
-		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS'
-	]
-
-	prediction_dict = pool_predict(data_matrix, features_to_drop, loaded_model, 20)
+	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], loaded_model, 20)
 
 	helper.time_function("Performed prediction", checkpoints, time_str)
 	# output vcf using modified input_vcf as template
@@ -353,9 +344,8 @@ def classify_by_model(args, checkpoints, time_str):
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 				variant.FILTER = 'LOW_SUPPORT'
 				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
-			elif float(variant.INFO['TUMOUR_AF']) < args.min_af:
+			elif float(variant.INFO['TUMOUR_AF'].split(',')[0]) < args.min_af:
 				# determine if tumour-amplified
-				from statistics import mean
 				avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
 				avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
 				if avg_tumour_dp <= avg_normal_dp*3:

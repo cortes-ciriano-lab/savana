@@ -162,9 +162,7 @@ def savana_train(args):
         # load data matrix from pickle file
         data_matrix = train.load_matrix(args)
     features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
-    classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.downsample)
-    #classifier = train.cross_conformal_classifier_alt(features, target, outdir, args.test_split, args.downsample)
-    #classifier = train.fit_classifier(features, target, outdir, args.test_split, args.downsample, args.hyper, args.germline_class)
+    classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split)
     train.save_model(args, classifier, outdir)
 
 def savana_main(args):
@@ -222,7 +220,7 @@ def parse_args(args):
     run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     run_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
-    run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=100, help='Minimum length of single breakend to consider (default=100)')
+    run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
     run_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=1, help='Convert supplementary alignments below this threshold to single breakend (default=1, must not exceed --mapq argument)')
     run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
     run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
@@ -258,6 +256,7 @@ def parse_args(args):
     evaluate_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with LABEL added to INFO')
     evaluate_parser.add_argument('--stats', nargs='?', type=str, required=False, help='Output file for statistics on comparison if desired')
     evaluate_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
+    evaluate_parser.add_argument('--qual_filter', nargs='?', type=int, default=None, help='Impose a quality filter on comparator variants (default=None)')
     group = evaluate_parser.add_mutually_exclusive_group()
     group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
     group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
@@ -273,14 +272,13 @@ def parse_args(args):
     train_parser.add_argument('--downsample', nargs='?', type=float, default=0.1, help='Fraction to downsample majority class by (default=0.1)')
     train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
     train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
-    train_parser.add_argument('--hyper', action='store_true', help='Perform a randomised search on hyper parameters and use best')
     train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     train_parser.set_defaults(func=savana_train)
 
     try:
         global_parser.exit_on_error = False
         subparser = global_parser.parse_args().command if not args else global_parser.parse_args(args).command
-    except argparse.ArgumentError as e:
+    except argparse.ArgumentError as _:
         # unable to parse args, set args to None
         subparser = None
 
@@ -300,7 +298,7 @@ def parse_args(args):
         global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
         global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
         global_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
-        global_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=100, help='Minimum length of single breakend to consider (default=100)')
+        global_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
         global_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=1, help='Convert supplementary alignments below this threshold to single breakend (default=1, must not exceed --mapq argument)')
         global_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
         global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
@@ -323,6 +321,7 @@ def parse_args(args):
         global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
         global_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, required=False, help='Buffer for considering an overlap (default=100)')
         global_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
+        global_parser.add_argument('--qual_filter', nargs='?', type=int, default=None, help='Impose a quality filter on comparator variants (default=None)')
         evaluate_group = global_parser.add_mutually_exclusive_group()
         evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
         evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')

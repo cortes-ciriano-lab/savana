@@ -33,6 +33,16 @@ label_encoding = {
 # inverted label_encoding
 encoded_labels = {v: k for k, v in label_encoding.items()}
 
+FEATURES_TO_DROP = [
+	'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
+	'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
+	'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
+	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID','CLASS',
+	'REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
+	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN',
+	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN'
+]
+
 def format_data(data_matrix):
 	""" parse columns, do conversions, one-hot-encoding """
 	# split the DP tuples
@@ -42,6 +52,9 @@ def format_data(data_matrix):
 	data_matrix[['NORMAL_DP_BEFORE_0', 'NORMAL_DP_BEFORE_1']] = data_matrix['NORMAL_DP_BEFORE'].apply(pd.Series)
 	data_matrix[['NORMAL_DP_AT_0', 'NORMAL_DP_AT_1']] = data_matrix['NORMAL_DP_AT'].apply(pd.Series)
 	data_matrix[['NORMAL_DP_AFTER_0', 'NORMAL_DP_AFTER_1']] = data_matrix['NORMAL_DP_AFTER'].apply(pd.Series)
+	# split the AF tuples
+	data_matrix[['TUMOUR_AF_0', 'TUMOUR_AF_1']] = data_matrix['TUMOUR_AF'].str.split(',', expand=True)
+	data_matrix[['NORMAL_AF_0', 'NORMAL_AF_1']] = data_matrix['NORMAL_AF'].str.split(',', expand=True)
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
 	data_matrix['TUMOUR_DP_AT_1'] = data_matrix['TUMOUR_DP_AT_1'].fillna(data_matrix['TUMOUR_DP_AT_0'])
@@ -49,7 +62,14 @@ def format_data(data_matrix):
 	data_matrix['NORMAL_DP_BEFORE_1'] = data_matrix['NORMAL_DP_BEFORE_1'].fillna(data_matrix['NORMAL_DP_BEFORE_0'])
 	data_matrix['NORMAL_DP_AT_1'] = data_matrix['NORMAL_DP_AT_1'].fillna(data_matrix['NORMAL_DP_AT_0'])
 	data_matrix['NORMAL_DP_AFTER_1'] = data_matrix['NORMAL_DP_AFTER_1'].fillna(data_matrix['NORMAL_DP_AFTER_0'])
+	data_matrix['TUMOUR_AF_1'] = data_matrix['TUMOUR_AF_1'].fillna(data_matrix['TUMOUR_AF_0'])
+	data_matrix['NORMAL_AF_1'] = data_matrix['NORMAL_AF_1'].fillna(data_matrix['NORMAL_AF_0'])
 	data_matrix.replace([np.inf, -np.inf], -1, inplace=True)
+	# convert AF to numeric
+	data_matrix['TUMOUR_AF_0'] = pd.to_numeric(data_matrix['TUMOUR_AF_0'])
+	data_matrix['TUMOUR_AF_1'] = pd.to_numeric(data_matrix['TUMOUR_AF_1'])
+	data_matrix['NORMAL_AF_0'] = pd.to_numeric(data_matrix['NORMAL_AF_0'])
+	data_matrix['NORMAL_AF_1'] = pd.to_numeric(data_matrix['NORMAL_AF_1'])
 	# create std_dev/mean_size ratio columns
 	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STARTS_STD_DEV']/(data_matrix['ORIGIN_EVENT_SIZE_MEAN']+1.0)
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STARTS_STD_DEV']/(data_matrix['END_EVENT_SIZE_MEAN']+1.0)
@@ -99,15 +119,7 @@ def prepare_data(data_matrix, germline_class):
 		)
 
 	# drop irrelevant/redundant columns (some have been encoded in a different format)
-	features = data_matrix.drop([
-		'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
-		'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
-		'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID',
-		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
-		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'CLASS',
-		'REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE'
-		], axis=1, errors='ignore')
+	features = data_matrix.drop(FEATURES_TO_DROP, axis=1, errors='ignore')
 	target = data_matrix['LABEL']
 
 	return features, target
@@ -119,7 +131,7 @@ def format_value_counts(value_counts):
 	for i in range(0,len(values)):
 		print(f'{round(counts[i], 4)} - {encoded_labels[values[i]]}')
 
-def cross_conformal_classifier(X, y, outdir, split, downsample):
+def cross_conformal_classifier(X, y, outdir, split):
 	""" """
 	# perform 80/20 split
 	X_train_with_ids, X_reserved_test_with_ids, y_train, y_reserved_test = train_test_split(X, y, test_size=split)
@@ -128,8 +140,6 @@ def cross_conformal_classifier(X, y, outdir, split, downsample):
 	X_train = X_train_with_ids.iloc[: , 2:]
 	X_reserved_test = X_reserved_test_with_ids.copy(deep=True) # prevent ids from being dropped
 	X_reserved_test = X_reserved_test.iloc[: , 2:]
-
-	#TODO try downsampling?
 
 	print(f'\nDistributions of Training Data:')
 	format_value_counts(y_train.value_counts(normalize=False))
@@ -514,30 +524,6 @@ def random_forest_training(hyperparameter, X_train, y_train):
 
 	return random_forest
 
-def gradient_boost_training(hyperparameter, X_train, y_train):
-	""" train and return a gradient boosting classifier """
-	if hyperparameter:
-		param_dist = {'n_estimators': randint(100,1000), 'learning_rate': uniform(0.01, 1.0), 'max_depth': randint(10,25)}
-		gb = GradientBoostingClassifier()
-		rand_search = RandomizedSearchCV(
-			gb,
-			param_distributions=param_dist,
-			n_iter=5,
-			cv=3,
-			scoring='average_precision',
-			verbose=3
-		)
-		rand_search.fit(X_train, y_train)
-		print('Using Best Hyperparameters:')
-		print(', '.join(f'{key}: {round(value,2)}' for key, value in rand_search.best_params_.items()))
-		# store the best model
-		gboostm = rand_search.best_estimator_
-	else:
-		gboostm = GradientBoostingClassifier()
-		gboostm.fit(X_train, y_train)
-
-	return gboostm
-
 def evaluate_model(model, X_train, X_test, y_test, y_pred, outdir, model_type, germline_class):
 	""" calculate performance stats of model """
 	print(f'\nStatistics for model: {model_type}')
@@ -595,59 +581,6 @@ def evaluate_model(model, X_train, X_test, y_test, y_pred, outdir, model_type, g
 	# only interested in the TP/TN
 	test_matrix_found = test_matrix[test_matrix['TRUE_LABEL'] == test_matrix['PREDICTED_LABEL']]
 	test_matrix_found.to_csv(os.path.join(outdir, f'test_set_correct_{model_type}.tsv'), sep="\t", index=False)
-
-
-def fit_classifier(X, y, outdir, split, downsample, hyperparameter, germline_class):
-	""" given the features (X) and target (y), split into test/train and fit the model """
-	# split into train/test
-	X_train_with_ids, X_test_with_ids, y_train, y_test = train_test_split(X, y, test_size=split)
-
-	# TODO: is downsampling needed if stratify arg is used for train/test?
-	#X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.6, stratify=y)
-
-	# in train, randomly downsample the 'NOT_IN_COMPARISON'/0 by 'downsample' %
-	train_matrix = pd.concat([X_train_with_ids, y_train], axis=1)
-	print(f'\nCOUNTS PRE-DOWNSAMPLING:')
-	format_value_counts(train_matrix['LABEL'].value_counts(normalize=False))
-	print(f'PROPORTIONS PRE-DOWNSAMPLING:')
-	format_value_counts(train_matrix['LABEL'].value_counts(normalize=True))
-	# perform downsampling
-	print(f'\n>DOWNSAMPLING MAJORITY CLASS BY {downsample}')
-	mask = train_matrix['LABEL'] == 0
-	train_matrix = pd.concat([train_matrix[mask].sample(frac=(1.0-downsample)), train_matrix[~mask]])
-	print(f'\nCOUNTS POST-DOWNSAMPLING:')
-	format_value_counts(train_matrix['LABEL'].value_counts(normalize=False))
-	print(f'PROPORTIONS POST-DOWNSAMPLING:')
-	format_value_counts(train_matrix['LABEL'].value_counts(normalize=True))
-	# put back into X_train and y_train
-	X_train_with_ids = train_matrix.drop('LABEL', axis=1)
-	y_train = train_matrix['LABEL']
-	# remove IDs from both downsampled train and untouched test
-	X_train = X_train_with_ids.iloc[: , 2:]
-	X_test = X_test_with_ids.iloc[: , 2:]
-
-	# train Random Forest
-	random_forest_model = random_forest_training(hyperparameter, X_train, y_train)
-	# use and evaluate
-	y_pred_rf = random_forest_model.predict(X_test)
-	evaluate_model(random_forest_model, X_train_with_ids, X_test_with_ids, y_test, y_pred_rf, outdir, "random_forest", germline_class)
-	if False:
-		# option to test randomforestclassifier at different cutoffs
-		test_cutoffs(random_forest_model, X_test, y_test, outdir, "random_forest")
-	# try with custom cutoff
-	#custom_cutoff = 0.64
-	custom_cutoff = None
-	if custom_cutoff:
-		y_pred_rf = (random_forest_model.predict_proba(X_test)[:,1] >= custom_cutoff).astype(bool)
-		evaluate_model(random_forest_model, X_train, X_test, y_test, y_pred_rf, outdir, f'random_forest_cutoff-{custom_cutoff}', germline_class)
-
-	"""
-	gboost_model = gradient_boost_training(hyperparameter, X_train, y_train)
-	y_pred_gb = gboost_model.predict(X_test)
-	evaluate_model(gboost_model, X_train, X_test, y_test, y_pred_gb, outdir, "gradient_boosting", germline_class)
-	"""
-
-	return random_forest_model
 
 def save_model(args, model, outdir):
 	""" save model and its info to pickle file """

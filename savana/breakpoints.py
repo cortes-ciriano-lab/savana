@@ -307,8 +307,8 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 			continue
 		try:
 			# record start/end in read incrementer
-			contig_coverage_array[floor((read.reference_start)/coverage_binsize)]+=1
-			contig_coverage_array[floor((read.reference_end)/coverage_binsize)]-=1
+			contig_coverage_array[floor((read.reference_start-1)/coverage_binsize)]+=1
+			contig_coverage_array[floor((read.reference_end-1)/coverage_binsize)]-=1
 		except IndexError as e:
 			print(f'Unable to update coverage for contig {contig}')
 			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
@@ -506,6 +506,13 @@ def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 				else:
 					bp.local_depths[label][2][i] = bp.local_depths[label][1][i] + shared_cov_arrays[label][chrom][centre_bin+1]
 
+		# now calculate the allele fractions
+		for label, [_, dp_at, _] in bp.local_depths.items():
+			af = [None, None]
+			for i in [0,1]:
+				af[i] = round(bp.support[label]/dp_at[i], 3) if dp_at[i] != 0 else 0.0
+			#TODO: add assertion/check that af is not greater than 1.0
+			bp.allele_fractions[label] = af
 	return breakpoints
 
 if __name__ == "__main__":

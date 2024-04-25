@@ -43,11 +43,13 @@ class ConsensusBreakpoint():
 		self.labels = labels
 		self.read_counts = read_counts
 		self.count = None # used later for standardising across output files
-		self.local_depths = {} # add later
 		# use the labels to calculate support by counting reads
 		self.support = {'normal': 0, 'tumour': 0}
 		for label, reads in self.labels.items():
 			self.support[label]+=len(reads)
+		# add these both later
+		self.local_depths = {}
+		self.allele_fractions = {}
 		# calculate the length
 		self.sv_length = None
 		if self.breakpoint_notation == "<INS>" or self.breakpoint_notation == "<SBND>":
@@ -223,14 +225,16 @@ class ConsensusBreakpoint():
 	def as_vcf(self, ref_fasta):
 		""" return vcf line(s) representation of the breakpoint """
 		#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT
+		#TODO: does this return '.' ever?
 		try:
 			start_base = ref_fasta.fetch(self.start_chr, self.start_loc - 1, self.start_loc)
-		except Exception as e:
+		except ValueError as _:
 			start_base = 'N'
 		try:
 			end_base = ref_fasta.fetch(self.end_chr, self.end_loc - 1, self.end_loc)
-		except Exception as e:
+		except ValueError as _:
 			end_base = 'N'
+
 		alts = self.get_alts(start_base, end_base)
 		gt_tag = ''
 		if self.support['normal'] >= 1:
@@ -249,45 +253,31 @@ class ConsensusBreakpoint():
 		info[0] += stats_str
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
-			allele_fractions = {
-				'tumour': None,
-				'normal': None
-			}
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
 					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
-					if bin_label == 'AT':
-						allele_fractions[label] = round(self.support[label]/depths[i][0], 3) if depths[i][0] != 0 else 0.0
-			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
+			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
+			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 		elif self.breakpoint_notation == "<SBND>":
 			info[0] = 'SVTYPE=SBND;' + info[0]
-			allele_fractions = {
-				'tumour': None,
-				'normal': None
-			}
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
 					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
-					if bin_label == 'AT':
-						allele_fractions[label] = round(self.support[label]/depths[i][0], 3) if depths[i][0] != 0 else 0.0
-			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
+			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
+			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
 			info[0] = f'SVTYPE=BND;MATEID=ID_{self.count}_2;' + info[0]
-			allele_fractions = {
-				'tumour': None,
-				'normal': None
-			}
+			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(d) for d in depths[i]])};'
 					info[1]+=f'{label.upper()}_DP_{bin_label}={",".join([str(d) for d in reversed(depths[i])])};'
-					if bin_label == 'AT':
-						allele_fractions[label] = round(self.support[label]/(sum(depths[i])/2), 3) if sum(depths[i]) != 0 else 0.0
-			info[1] = f'SVTYPE=BND;MATEID=ID_{self.count}_1;' + info[1]
-			info[0] = info[0] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
-			info[1] = info[1] + f'TUMOUR_AF={allele_fractions["tumour"]};NORMAL_AF={allele_fractions["normal"]}'
+			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
+			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
+			info[1] = info[1] + f'TUMOUR_AF={",".join([str(af) for af in reversed(self.allele_fractions["tumour"])])};'
+			info[1] = info[1] + f'NORMAL_AF={",".join([str(af) for af in reversed(self.allele_fractions["normal"])])}'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,

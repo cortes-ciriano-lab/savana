@@ -16,23 +16,26 @@ import savana.helper as helper
 from savana.breakpoints import *
 from savana.clusters import *
 
-def create_variant_dicts(vcf_file, label):
+def create_variant_dicts(vcf_file, label, qual_filter):
 	""" given a vcf file, create a dict representation of relevant attributes for each variant """
 	variant_dicts = []
 	id_count = 0
 	for variant in cyvcf2.VCF(vcf_file):
-		variant_dict = {
-			'label': label,
-			'id': label+"_"+str(id_count),
-			'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
-			'start_loc': variant.start,
-			'length': variant.INFO.get('SVLEN'),
-			'type': variant.INFO.get('SVTYPE'),
-			'within_buffer': [],
-			'external_id': variant.ID
-		}
-		variant_dicts.append(variant_dict)
-		id_count += 1
+		if (qual_filter and variant.QUAL >= qual_filter) or not qual_filter:
+			variant_dict = {
+				'label': label,
+				'id': label+"_"+str(id_count),
+				'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
+				'start_loc': variant.start,
+				'length': variant.INFO.get('SVLEN'),
+				'type': variant.INFO.get('SVTYPE'),
+				'within_buffer': [],
+				'external_id': variant.ID,
+				'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
+				'validated': None
+			}
+			variant_dicts.append(variant_dict)
+			id_count += 1
 
 	return variant_dicts
 
@@ -45,9 +48,31 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	if args.germline:
 		validation_str.append(f'Number of "GERMLINE" variants found in INPUT {len([x for x in compare_set if (x["label"] == "GERMLINE" and x["within_buffer"])])}/{len([x for x in compare_set if x["label"] == "GERMLINE"])}')
 
+	# match variants with each other
 	used_compare_set_ids = []
-	used_input_set_ids = []
+	for in_variant in input_set:
+		# sort compare set variants within the buffer
+		within_buffer_sorted = sorted(in_variant['within_buffer'], key=lambda x: x[1])
+		for within_buffer_compare_variant, distance in within_buffer_sorted:
+			if within_buffer_compare_variant['id'] not in used_compare_set_ids:
+				in_variant['validated'] = {
+					'matched_id': within_buffer_compare_variant['id'],
+					'distance': distance,
+					'label': within_buffer_compare_variant['label']
+				}
+				# reciprocally label the compare variant
+				for compare_variant in compare_set:
+					if compare_variant['id'] == within_buffer_compare_variant['id']:
+						compare_variant['validated'] = {
+							'matched_id': in_variant['id'],
+							'distance': distance,
+							'label': in_variant['label']
+						}
+						break
+				used_compare_set_ids.append(within_buffer_compare_variant['id'])
+				break
 
+	"""
 	# mark input set
 	for variant in input_set:
 		variant['validated'] = None
@@ -56,7 +81,9 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 		while not variant['validated'] and i < len(within_buffer_sorted):
 			compare_variant, distance = within_buffer_sorted[i]
 			if compare_variant['id'] not in used_compare_set_ids:
-				variant['validated'] = (compare_variant, distance)
+				variant['validated'] = (compare_variant['id'], distance)
+				# now go validate this variant
+
 				used_compare_set_ids.append(compare_variant['id'])
 			i+=1
 
@@ -64,22 +91,32 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	for variant in compare_set:
 		variant['validated'] = None
 		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
+		if variant['external_id'] == 'gridss45fb_2672h':
+			print(within_buffer_sorted)
 		i = 0
 		while not variant['validated'] and i < len(within_buffer_sorted):
 			input_variant, distance = within_buffer_sorted[i]
+			if variant['external_id'] == 'gridss45fb_2672h':
+				print(input_variant)
+				print(distance)
+				print(input_variant['id'] not in used_input_set_ids)
 			if input_variant['id'] not in used_input_set_ids:
 				variant['validated'] = (input_variant, distance)
 				used_input_set_ids.append(input_variant['id'])
+				if input_variant['id'] == "ID_118102_2":
+					print("validated:")
+					print(variant)
 			i+=1
+	"""
 
 	# SOMATIC CALCULATIONS
 	# validated somatic variants (true positives)
-	tp = [v for v in input_set if v['validated'] and v['validated'][0]['label'] == "SOMATIC"]
+	tp = [v for v in input_set if v['validated'] and v['validated']['label'] == "SOMATIC"]
 	# unvalidated variants (false positives)
 	fp = [v for v in input_set if not v['validated']]
 	# report missed somatic variants (false negative)
 	fn = [v for v in compare_set if not v['validated'] and v['label'] == 'SOMATIC']
-	validation_str.append(f'\nSTATISTICS FOR SOMATIC VARIANTS')
+	validation_str.append('\nSTATISTICS FOR SOMATIC VARIANTS')
 	if args.curate:
 		validation_str.append('(Allowing for at most TWO variants to be validated by the same event)')
 	else:
@@ -99,19 +136,17 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 		validation_str.append(f'Recall: {round(recall, 3)}')
 		validation_str.append(f'F-measure: {round(f_measure, 3)}')
 		validation_str.append(break_str)
-	except ZeroDivisionError as e:
+	except ZeroDivisionError as _:
 		print("WARNING: Unable to calculate validation statistics due to divide by zero exception")
-	except Exception as e:
-		print(f'WARNING: Unable to calculate validation statistics due to "{str(e)}"')
 
-	validation_str.append(f'\nMISSED VARIANTS')
+	validation_str.append('\nMISSED VARIANTS')
 	for v in fn:
-		if v["length"]:
-			validation_str.append(f'{v["external_id"]}\t{v["type"]}\t{int(v["length"])}')
-		else:
-			validation_str.append(f'{v["external_id"]}\t{v["type"]}')
+		missed_variant_row = ''
+		for key in ['external_id', 'type', 'length', 'qual']:
+			missed_variant_row+= f'{v[key]}\t' if key in v and v[key] else ''
+		validation_str.append(missed_variant_row)
 
-	with open(args.stats, "w") as stats_file:
+	with open(args.stats, "w", encoding="utf-8") as stats_file:
 		for line in validation_str:
 			stats_file.write(line+"\n")
 
@@ -120,11 +155,11 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 def evaluate_vcf(args, checkpoints, time_str):
 	""" given the input, somatic, and germline VCFs, label the input VCF"""
 	# create the comparison set from somatic & germline VCFs
-	compare_set = create_variant_dicts(args.somatic, 'SOMATIC')
+	compare_set = create_variant_dicts(args.somatic, 'SOMATIC', args.qual_filter)
 	vcfs_string=f'{args.somatic}'
 	if args.germline:
 		vcfs_string+=f' and {args.germline}'
-		compare_set.extend(create_variant_dicts(args.germline, 'GERMLINE'))
+		compare_set.extend(create_variant_dicts(args.germline, 'GERMLINE', args.qual_filter))
 
 	# read in input vcf, iterate through compare variants, store those that are within buffer
 	input_vcf = cyvcf2.VCF(args.input)
