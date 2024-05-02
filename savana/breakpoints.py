@@ -394,55 +394,72 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 
 	return potential_breakpoints
 
-def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
+def cluster_by_insert_length(insertion_like_breakpoints, ins_fraction, sbnd_fraction):
+	""" given breakpoints with inserts, separate into clusters by their insert size """
+	# sort by insert length
+	insertion_like_breakpoints.sort(key=lambda bp: len(bp.inserted_sequence))
+	stack = []
+	for bp in insertion_like_breakpoints:
+		# more permissive on fraction when singlebreakend source of current or prev
+		fraction = sbnd_fraction if (bp.breakpoint_notation == "<SBND>" or (stack and stack[-1][-1].breakpoint_notation == "<SBND>")) else ins_fraction
+		if len(stack) == 0:
+			new_cluster = [bp]
+			stack.append(new_cluster)
+		elif ceil(len(stack[-1][-1].inserted_sequence)*(2-fraction)) >= len(bp.inserted_sequence):
+			stack[-1].append(bp)
+		else:
+			new_cluster = [bp]
+			stack.append(new_cluster)
+
+	return stack
+
+def call_breakpoints(clusters, end_buffer, ins_buffer, min_length, min_support, chrom):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same chromosome!
 	final_breakpoints = []
 	for cluster in clusters:
+		if cluster.chr == "chr9" and str(cluster.start).startswith("131223"):
+			print(f'ID16 cluster {len(cluster.breakpoints)}')
+			for bp in cluster.breakpoints:
+				insert_length = len(bp.inserted_sequence) if bp.inserted_sequence else 0
+				print(f'{bp.read_name} - {bp.source} ({insert_length}) @ {bp.start_chr}:{bp.start_loc}')
 		# re-cluster breakpoints by their end location (ignoring type)
 		breakpoints_by_end_chrom = {}
 		for bp in cluster.breakpoints:
 			breakpoints_by_end_chrom.setdefault(bp.end_chr, []).append(bp)
 		for end_chrom, end_chrom_breakpoints in breakpoints_by_end_chrom.items():
 			if len(end_chrom_breakpoints) >= min_support:
-				# reverse start/end in order to re-cluster
-				flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints]
-				# sort by new start
-				flipped_breakpoints.sort()
-				# cheeky reclustering with reversed breakpoints
-				_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer)
-				for end_chrom_cluster in cluster_stack:
-					# sorted into types while counting co-clustered breakpoints of all types
-					read_counts = {"tumour": 0, "normal": 0}
-					sorted_breakpoints = {}
-					for bp in end_chrom_cluster.breakpoints:
-						sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
-						read_counts[bp.label] += 1
-					insertion_like_breakpoints = sorted_breakpoints.pop("<INS>", []) + sorted_breakpoints.pop("<SBND>", [])
-					if len(insertion_like_breakpoints) >= min_support:
+				# sort into types while counting co-clustered breakpoints of all types
+				# TODO: this might not be necessary if we decide to scrap in model
+				read_counts = {"tumour": 0, "normal": 0}
+				for bp in end_chrom_breakpoints:
+					read_counts[bp.label] += 1
+				# first deal with insertion/single-breakends
+				# IN HERE NEED TO CHANGE:
+				# - only report as insertion if ratio is > half insertion support
+				insertion_like_breakpoints = [b for b in end_chrom_breakpoints if b.breakpoint_notation in ["<INS>", "<SBND>"]]
+				insertion_like_clusters = cluster_by_insert_length(insertion_like_breakpoints, 0.75, 0.50)
+				for ins_cluster in insertion_like_clusters:
+					if len(ins_cluster) >= min_support:
 						# group sbnd and insertion evidence
-						ins_label_counts = count_num_labels(insertion_like_breakpoints)
+						ins_label_counts = count_num_labels(ins_cluster)
 						if max(len(count) for count in ins_label_counts.values()) >= min_support:
-							event_info = {'starts':[], 'inserts': [], 'sources': {}}
-							# re-flip the breakpoints
-							insertion_like_breakpoints = [reversed(b) for b in insertion_like_breakpoints]
-							ins_present = False
+							event_info = {'starts':[], 'inserts': [], 'sources': {}, 'ins_present': False}
 							# create new "originating cluster" with only used breakpoints
 							# (ensures statistics are calculated correctly)
 							start_cluster = None
-							for bp in insertion_like_breakpoints:
+							for bp in ins_cluster:
 								event_info['starts'].append(bp.start_loc)
 								event_info['inserts'].append(bp.inserted_sequence)
 								event_info['sources'].setdefault(bp.source, True)
-								if not ins_present and bp.breakpoint_notation == "<INS>":
-									ins_present = True
+								event_info['ins_present'] = True if bp.breakpoint_notation == "<INS>" else event_info['ins_present']
 								if not start_cluster:
 									start_cluster = Cluster(bp)
 								else:
 									start_cluster.add(bp)
 							median_start = median(event_info['starts'])
 							consensus_source = "/".join(sorted(event_info['sources'].keys()))
-							if ins_present:
+							if event_info['ins_present']:
 								# report as insertion
 								final_breakpoints.append(ConsensusBreakpoint(
 									[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
@@ -450,11 +467,25 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							else:
 								# report as single breakend - but ONLY if there are no other events present at this location
 								# otherwise, sbnd is just overhang or slightly below mapping threshold, so should be ignored
-								if not sorted_breakpoints.keys():
+								#TODO: experiment with removing this filter. might cause hard-to-track-down bugs
+								# could also update to only report single-breakends if no other breakpoints found
+								if (len(end_chrom_breakpoints) - len(insertion_like_breakpoints)) < min_support:
 									final_breakpoints.append(ConsensusBreakpoint(
 										[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
 										consensus_source, start_cluster, None, ins_label_counts, "<SBND>", read_counts, event_info['inserts']))
-					# go through the remaining event types
+				# now deal with other breakpoint notation types
+				# reverse start/end in order to re-cluster
+				flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints if b.breakpoint_notation not in ["<INS>", "<SBND>"]]
+				# sort by new start
+				flipped_breakpoints.sort()
+				# cheeky reclustering with reversed breakpoints
+				_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer, ins_buffer)
+				for end_chrom_cluster in cluster_stack:
+					# sort breakpoints by their breakpoint_notation
+					sorted_breakpoints = {}
+					for bp in end_chrom_cluster.breakpoints:
+						sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
+					# go through the breakpoints by notation type
 					for bp_type, breakpoints in sorted_breakpoints.items():
 						# create a consensus breakpoint for each end cluster that has enough supporting reads
 						label_counts = count_num_labels(breakpoints)

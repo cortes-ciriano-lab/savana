@@ -397,13 +397,9 @@ class Cluster():
 
 	def overlaps(self, other, buffer):
 		""" determine if a breakpoint should be merged to a cluster """
-		self_start_buff = self.start - buffer
-		self_end_buff = self.end + buffer
-		other_start_buff = other.start_loc - buffer
-		other_end_buff = (other.end_loc + buffer) if other.spans_cluster else (other.start_loc + buffer)
-		if other_start_buff <= self_end_buff and other_start_buff >= self_start_buff:
-			return True
-		if other_end_buff >= self_start_buff and other_end_buff <= self_end_buff:
+		assert self.start <= other.start_loc,"Overlap check requires breakpoints to be sorted."
+		cluster_end_buffered = self.end + buffer
+		if cluster_end_buffered >= other.start_loc:
 			return True
 		return False
 

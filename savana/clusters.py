@@ -22,7 +22,7 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
 	breakpoints.sort()
 	for bp in breakpoints:
 		bp_notation_type = str(bp.breakpoint_notation)
-		bp_buffer = ins_buffer if ins_buffer and (bp_notation_type == "<INS>") else buffer
+		bp_buffer = ins_buffer if (ins_buffer and bp_notation_type == "<INS>") else buffer
 		if len(stack) == 0:
 			# put a new cluster on the stack
 			new_cluster = Cluster(bp)
