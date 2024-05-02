@@ -262,14 +262,14 @@ class ConsensusBreakpoint():
 			info[0] = 'SVTYPE=INS;' + info[0]
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
-					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
+					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 		elif self.breakpoint_notation == "<SBND>":
 			info[0] = 'SVTYPE=SBND;' + info[0]
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
-					info[0]+=f'{label.upper()}_DP_{bin_label}={str(depths[i][0])};'
+					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 		else:

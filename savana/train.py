@@ -37,10 +37,11 @@ FEATURES_TO_DROP = [
 	'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
 	'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
 	'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
-	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID','CLASS',
-	'REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
+	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID', 'DISTANCE_TO_MATCH',
+	'CLASS','REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
 	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN',
-	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN'
+	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN',
+	'CLUSTERED_READS_TUMOUR', 'CLUSTERED_READS_NORMAL'
 ]
 
 def format_data(data_matrix):
@@ -53,8 +54,8 @@ def format_data(data_matrix):
 	data_matrix[['NORMAL_DP_AT_0', 'NORMAL_DP_AT_1']] = data_matrix['NORMAL_DP_AT'].apply(pd.Series)
 	data_matrix[['NORMAL_DP_AFTER_0', 'NORMAL_DP_AFTER_1']] = data_matrix['NORMAL_DP_AFTER'].apply(pd.Series)
 	# split the AF tuples
-	data_matrix[['TUMOUR_AF_0', 'TUMOUR_AF_1']] = data_matrix['TUMOUR_AF'].str.split(',', expand=True)
-	data_matrix[['NORMAL_AF_0', 'NORMAL_AF_1']] = data_matrix['NORMAL_AF'].str.split(',', expand=True)
+	data_matrix[['TUMOUR_AF_0', 'TUMOUR_AF_1']] = data_matrix['TUMOUR_AF'].apply(pd.Series)
+	data_matrix[['NORMAL_AF_0', 'NORMAL_AF_1']] = data_matrix['NORMAL_AF'].apply(pd.Series)
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
 	data_matrix['TUMOUR_DP_AT_1'] = data_matrix['TUMOUR_DP_AT_1'].fillna(data_matrix['TUMOUR_DP_AT_0'])
@@ -65,11 +66,6 @@ def format_data(data_matrix):
 	data_matrix['TUMOUR_AF_1'] = data_matrix['TUMOUR_AF_1'].fillna(data_matrix['TUMOUR_AF_0'])
 	data_matrix['NORMAL_AF_1'] = data_matrix['NORMAL_AF_1'].fillna(data_matrix['NORMAL_AF_0'])
 	data_matrix.replace([np.inf, -np.inf], -1, inplace=True)
-	# convert AF to numeric
-	data_matrix['TUMOUR_AF_0'] = pd.to_numeric(data_matrix['TUMOUR_AF_0'])
-	data_matrix['TUMOUR_AF_1'] = pd.to_numeric(data_matrix['TUMOUR_AF_1'])
-	data_matrix['NORMAL_AF_0'] = pd.to_numeric(data_matrix['NORMAL_AF_0'])
-	data_matrix['NORMAL_AF_1'] = pd.to_numeric(data_matrix['NORMAL_AF_1'])
 	# create std_dev/mean_size ratio columns
 	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STARTS_STD_DEV']/(data_matrix['ORIGIN_EVENT_SIZE_MEAN']+1.0)
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STARTS_STD_DEV']/(data_matrix['END_EVENT_SIZE_MEAN']+1.0)
