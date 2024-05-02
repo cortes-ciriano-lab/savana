@@ -213,8 +213,8 @@ class ConsensusBreakpoint():
 
 	def get_stats_str(self):
 		""" return the stats of the originating cluster """
-		stats_str = f'ORIGINATING_CLUSTER={self.originating_cluster.uid};END_CLUSTER={self.end_cluster.uid};'
 		stats_originating = self.originating_cluster.get_stats()
+		stats_str = ''
 		for key, value in stats_originating.items():
 			stats_str+=f'ORIGIN_{key.upper()}={value};'
 		stats_end = self.end_cluster.get_stats()
@@ -225,13 +225,20 @@ class ConsensusBreakpoint():
 	def as_vcf(self, ref_fasta):
 		""" return vcf line(s) representation of the breakpoint """
 		#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT
-		#TODO: does this return '.' ever?
 		try:
 			start_base = ref_fasta.fetch(self.start_chr, self.start_loc - 1, self.start_loc)
+			start_base = "N" if start_base == "" else start_base
+			if start_base not in ['N', 'A', 'T', 'C', 'G']:
+				print(f'"{start_base}"')
+				start_base = "N"
 		except ValueError as _:
 			start_base = 'N'
 		try:
 			end_base = ref_fasta.fetch(self.end_chr, self.end_loc - 1, self.end_loc)
+			end_base = "N" if start_base == "" else end_base
+			if end_base not in ['N', 'A', 'T', 'C', 'G']:
+				print(f'"{end_base}"')
+				end_base = "N"
 		except ValueError as _:
 			end_base = 'N'
 
@@ -465,7 +472,7 @@ class Cluster():
 			for key, value in stat_dict.items():
 				try:
 					self_value = round(value, 3)
-				except Exception as e:
+				except Exception as _:
 					# skip rounding if error thrown
 					self_value = value
 				self.stats[key] = self_value

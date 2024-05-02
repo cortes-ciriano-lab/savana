@@ -225,8 +225,8 @@ def parse_args(args):
     run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
     run_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
     run_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-    run_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
-    run_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+    run_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
+    run_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
     run_parser.set_defaults(func=savana_run)
 
     # savana classify
@@ -304,8 +304,8 @@ def parse_args(args):
         global_parser.add_argument('--chunksize', nargs='?', type=int, default=1000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
         global_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
         # classify args
-        global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
-        global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+        global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
+        global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
         classify_group = global_parser.add_mutually_exclusive_group()
         classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
         classify_group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')

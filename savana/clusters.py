@@ -50,22 +50,6 @@ def output_clusters(refined_clusters, outdir):
 		json.dump(cluster.as_dict(), output_json, sort_keys=False, indent=2)
 		output_json.close()
 
-def wrap_subprocess(command, outfile=None, wait=False):
-	""" error handling for subprocess commands """
-	if wait and outfile:
-		try:
-			with open(outfile, 'w') as out:
-				p = subprocess.Popen(command, stdout=out, stderr=subprocess.DEVNULL)
-				p.wait()
-		except Exception as e:
-			print(f'Command {command} failed with error (code {e.returncode}): {e.output}')
-	if outfile:
-		try:
-			with open(outfile, 'w') as out:
-				subprocess.run(command, stdout=out, stderr=subprocess.DEVNULL)
-		except Exception as e:
-			print(f'Command {command} failed with error (code {e.returncode}): {e.output}')
-
 def write_cluster_bed(clusters, outdir):
 	""" store clusters in bed file"""
 	cluster_file = os.path.join(outdir, 'cluster.bed')

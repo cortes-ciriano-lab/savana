@@ -21,7 +21,7 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 	variant_dicts = []
 	id_count = 0
 	for variant in cyvcf2.VCF(vcf_file):
-		if (qual_filter and variant.QUAL >= qual_filter) or not qual_filter:
+		if (qual_filter and helper.is_int(variant.QUAL) and variant.QUAL >= qual_filter) or not qual_filter or not helper.is_int(variant.QUAL):
 			variant_dict = {
 				'label': label,
 				'id': label+"_"+str(id_count),
@@ -171,7 +171,7 @@ def evaluate_vcf(args, checkpoints, time_str):
 			'id': variant.ID,
 			'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
 			'start_loc': variant.start,
-			'end_loc': variant.INFO.get('END'), #only for cuteSV
+			'end_loc': variant.INFO.get('END'), # for non-breakend callers
 			'length': variant.INFO.get('SVLEN'),
 			'type': variant.INFO.get('SVTYPE'),
 			'within_buffer': []})
@@ -185,6 +185,7 @@ def evaluate_vcf(args, checkpoints, time_str):
 					compare_variant['within_buffer'].append((input_variants[-1], distance))
 					input_variants[-1]['within_buffer'].append((compare_variant, distance))
 				if input_variants[-1]['end_loc']:
+					# only applies to non-breakend callers with END in INFO
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['end_loc'])
 					if distance <= args.overlap_buffer:
 						compare_variant['within_buffer'].append((input_variants[-1], distance))

@@ -108,9 +108,11 @@ breakend_type = {
 def is_int(string):
 	""" return true if string can be converted to int, False otherwise """
 	try:
-		_ = int(string)
+		__ = int(string)
 		return True
-	except ValueError as e:
+	except ValueError as _:
+		return False
+	except TypeError as _:
 		return False
 
 def flatten(list_of_lists):
