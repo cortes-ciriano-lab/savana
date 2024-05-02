@@ -79,7 +79,7 @@ def get_supplementary_breakpoints(read, cigar_tuples, chimeric_regions, label, c
 			'loc': read.reference_end if read.is_reverse else read.reference_start,
 			'bp_notation': ("+") if read.is_reverse else ("-"),
 			'region_mapped': False if single_bnd and read.mapq < single_bnd_max_mapq else True,
-			'query_pos': primary_clipping['left_softclip'] + read.query_alignment_length # curr_pos_query
+			'query_pos': primary_clipping['left_softclip'] # + read.query_alignment_length # curr_pos_query
 		})
 	# if still have chimeric regions, need to place in right softclip
 	if left_index < len(chimeric_regions):
@@ -427,26 +427,33 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							# re-flip the breakpoints
 							insertion_like_breakpoints = [reversed(b) for b in insertion_like_breakpoints]
 							ins_present = False
+							# create new "originating cluster" with only used breakpoints
+							# (ensures statistics are calculated correctly)
+							start_cluster = None
 							for bp in insertion_like_breakpoints:
 								event_info['starts'].append(bp.start_loc)
 								event_info['inserts'].append(bp.inserted_sequence)
 								event_info['sources'].setdefault(bp.source, True)
 								if not ins_present and bp.breakpoint_notation == "<INS>":
 									ins_present = True
+								if not start_cluster:
+									start_cluster = Cluster(bp)
+								else:
+									start_cluster.add(bp)
 							median_start = median(event_info['starts'])
 							consensus_source = "/".join(sorted(event_info['sources'].keys()))
 							if ins_present:
 								# report as insertion
 								final_breakpoints.append(ConsensusBreakpoint(
 									[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-									consensus_source, cluster, None, ins_label_counts, "<INS>", read_counts, event_info['inserts']))
+									consensus_source, start_cluster, None, ins_label_counts, "<INS>", read_counts, event_info['inserts']))
 							else:
 								# report as single breakend - but ONLY if there are no other events present at this location
 								# otherwise, sbnd is just overhang or slightly below mapping threshold, so should be ignored
 								if not sorted_breakpoints.keys():
 									final_breakpoints.append(ConsensusBreakpoint(
 										[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-										consensus_source, cluster, None, ins_label_counts, "<SBND>", read_counts, event_info['inserts']))
+										consensus_source, start_cluster, None, ins_label_counts, "<SBND>", read_counts, event_info['inserts']))
 					# go through the remaining event types
 					for bp_type, breakpoints in sorted_breakpoints.items():
 						# create a consensus breakpoint for each end cluster that has enough supporting reads
@@ -455,7 +462,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							# un-flip the breakpoints
 							unflipped_breakpoints = [reversed(b) for b in breakpoints]
 							# create a new "originating cluster" with only the used breakpoints
-							# ensures statistics are calculated correctly
+							# (ensures statistics are calculated correctly)
 							start_cluster = None
 							source = {}
 							for bp in unflipped_breakpoints:

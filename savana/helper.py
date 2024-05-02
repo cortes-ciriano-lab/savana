@@ -15,7 +15,7 @@ from time import time
 from datetime import datetime
 import argparse
 
-__version__ = "1.0.23"
+__version__ = "1.0.24"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
