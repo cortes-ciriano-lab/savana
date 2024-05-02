@@ -194,6 +194,7 @@ def evaluate_vcf(args, checkpoints, time_str):
 	# label input variants with matched somatic/germline
 	compare_variants_used = {}
 	input_variant_labels = {}
+	input_variants = sorted(input_variants, key=lambda x: min(d[1] for d in x['within_buffer']) if x['within_buffer'] else (args.overlap_buffer + 1))
 	for variant in input_variants:
 		variant['validated'] = False
 		closest_variant = None
@@ -217,12 +218,12 @@ def evaluate_vcf(args, checkpoints, time_str):
 					closest_value = variant['normal_support']
 			elif args.by_distance:
 				# tie-break by closest variant
-				if not closest_value or distance < closest_value:
+				if closest_value is None or distance < closest_value:
 					closest_variant = compare_variant
 					closest_value = distance
 		if closest_variant:
 			compare_variants_used.setdefault(closest_variant['id'], []).append(variant['id'])
-			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'])
+			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'], closest_value)
 
 	# edit input_vcf to include LABEL in header
 	input_vcf = cyvcf2.VCF(args.input)
@@ -240,18 +241,25 @@ def evaluate_vcf(args, checkpoints, time_str):
 		'Number': '1',
 		'Description': "ID of variant used to provide LABEL"
 	})
+	input_vcf.add_info_to_header({
+		'ID': 'DISTANCE_TO_MATCH',
+		'Type': 'Integer',
+		'Number': '1',
+		'Description': "Distance to matched variant in LABEL_VARIANT_ID"
+	})
 	out_vcf = cyvcf2.Writer(args.output, input_vcf)
 	for variant in input_vcf:
-		label, match_id = input_variant_labels.get(variant.ID, ('NOT_IN_COMPARISON', None))
+		label, match_id, distance = input_variant_labels.get(variant.ID, ('NOT_IN_COMPARISON', None, None))
 		# if curating, don't allow mates to have incongruous labels
 		if args.curate and not match_id:
 			mate_id = variant.INFO.get('MATEID', None)
-			label, match_id = input_variant_labels.get(mate_id, ('NOT_IN_COMPARISON', None)) if mate_id else (label, match_id)
+			label, match_id, distance = input_variant_labels.get(mate_id, ('NOT_IN_COMPARISON', None, None)) if mate_id else (label, match_id)
 			if match_id:
 				match_id = "MATE_"+match_id
 		variant.INFO['LABEL'] = label
 		if match_id:
 			variant.INFO['LABEL_VARIANT_ID'] = match_id
+			variant.INFO['DISTANCE_TO_MATCH'] = distance
 		out_vcf.write_record(variant)
 	out_vcf.close()
 	input_vcf.close()
