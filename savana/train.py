@@ -127,13 +127,14 @@ def format_value_counts(value_counts):
 	for i in range(0,len(values)):
 		print(f'{round(counts[i], 4)} - {encoded_labels[values[i]]}')
 
-def cross_conformal_classifier(X, y, outdir, split):
+def cross_conformal_classifier(X, y, outdir, split, threads):
 	""" """
 	# perform 80/20 split
 	X_train_with_ids, X_reserved_test_with_ids, y_train, y_reserved_test = train_test_split(X, y, test_size=split)
 
 	# remove IDs
 	X_train = X_train_with_ids.iloc[: , 2:]
+
 	X_reserved_test = X_reserved_test_with_ids.copy(deep=True) # prevent ids from being dropped
 	X_reserved_test = X_reserved_test.iloc[: , 2:]
 
@@ -154,7 +155,7 @@ def cross_conformal_classifier(X, y, outdir, split):
 		X_k_train, X_k_test = X_train.iloc[train_index], X_train.iloc[test_index]
 		y_k_train, y_k_test = y_train.iloc[train_index], y_train.iloc[test_index]
 		# train on k-fold split
-		random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=16)
+		random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=threads)
 		random_forest.fit(X_k_train, y_k_train)
 		# test on k-fold split
 		probabilities = random_forest.predict_proba(X_k_test)
@@ -190,7 +191,7 @@ def cross_conformal_classifier(X, y, outdir, split):
 			class_nconform_scores[key][fold] = np.sort(class_nconform_scores[key][fold])
 
 	# now fit random forest on full training set
-	random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=16)
+	random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=threads)
 	random_forest.fit(X_train, y_train)
 	# test on reserved test set
 	test_probabilities = random_forest.predict_proba(X_reserved_test)
@@ -584,7 +585,7 @@ def save_model(args, model, outdir):
 	print(f'\nSaving classifier to {model_path}')
 	try:
 		model.set_params(n_jobs=1) # reset jobs before saving
-	except AttributeError as e:
+	except AttributeError as _:
 		# model doesn't have parallelisation option
 		pass
 	pickle.dump(model, open(model_path, "wb"))

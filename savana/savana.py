@@ -157,12 +157,13 @@ def savana_train(args):
     data_matrix = None
     if args.vcfs:
         # read in and create matrix from VCF files
-        data_matrix = train.read_vcfs(args)
+        data_matrix = train.create_dataframe(args)
     elif args.load_matrix:
         # load data matrix from pickle file
         data_matrix = train.load_matrix(args)
     features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
-    classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split)
+    print('Done preparing data.')
+    classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.threads)
     train.save_model(args, classifier, outdir)
 
 def savana_main(args):
@@ -215,7 +216,7 @@ def parse_args(args):
     run_parser.add_argument('--mapq', nargs='?', type=int, default=1, help='Minimum MAPQ to consider a read mapped (default=1)')
     run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
     run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
-    run_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
+    run_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
     run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
     run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     run_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
@@ -245,6 +246,7 @@ def parse_args(args):
     classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
     classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS somatic variants')
     classify_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS germline variants')
+    classify_parser.add_argument('--threads', nargs='?', type=int, default=16, const=0, help='Number of threads to use')
     classify_parser.set_defaults(func=savana_classify)
 
     # savana evaluate
@@ -273,6 +275,7 @@ def parse_args(args):
     train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
     train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
     train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    train_parser.add_argument('--threads', nargs='?', type=int, default=16, const=0, help='Number of threads to use')
     train_parser.set_defaults(func=savana_train)
 
     try:
@@ -293,7 +296,7 @@ def parse_args(args):
         global_parser.add_argument('--mapq', nargs='?', type=int, default=1, help='Minimum MAPQ to consider a read mapped (default=1)')
         global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
         global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
-        global_parser.add_argument('--end_buffer', nargs='?', type=int, default=100, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=100)')
+        global_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
         global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
         global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
         global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')

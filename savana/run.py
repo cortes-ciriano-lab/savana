@@ -47,7 +47,6 @@ def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 	breakpoints, contig = call_breakpoints(
 		task_arg_dict['clusters'],
 		task_arg_dict['buffer'],
-		task_arg_dict['ins_buffer'],
 		task_arg_dict['length'],
 		task_arg_dict['depth'],
 		task_arg_dict['contig']
@@ -146,7 +145,6 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 			'contig': contig,
 			'clusters': clusters,
 			'buffer': args.end_buffer,
-			'ins_buffer': args.insertion_buffer,
 			'length': args.length,
 			'depth': args.min_support,
 			'task_id': task_id_counter
@@ -538,7 +536,7 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)
-		if bp.breakpoint_notation == "<INS>" or bp.breakpoint_notation == "<SBND>":
+		if bp.breakpoint_notation in ["<INS>", "+", "-"]:
 			insertion_fasta_string += bp.as_insertion_fasta(count)
 		count+=1
 	# write output files

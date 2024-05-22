@@ -21,15 +21,6 @@ import savana.train as train
 from savana.breakpoints import *
 from savana.clusters import *
 
-def get_info_fields(vcf):
-	""" initialize the data header from INFO fields of sample VCF """
-	fields = []
-	for rec in vcf.header_iter():
-		if rec['HeaderType'] == "INFO":
-			fields.append(rec.info()['ID'])
-
-	return fields
-
 def pool_predict(data_matrix, features_to_drop, model, threads):
 	""" split the prediction across multiprocessing Pool """
 	data_matrices = np.array_split(data_matrix, threads)
@@ -45,27 +36,19 @@ def pool_predict(data_matrix, features_to_drop, model, threads):
 	return dict(ChainMap(*results))
 
 def predict(data_matrix, features_to_drop, model):
-	""" given feautres and a model, return the predictions """
-	features = data_matrix.drop(features_to_drop, axis=1, errors='ignore')
+	""" given features and a model, return the predictions """
 	ids = data_matrix['ID']
+	features = data_matrix.drop(features_to_drop, axis=1, errors='ignore')
+	# reorder the columns based on model order
+	feature_order = model.feature_names_in_
+	features = features[feature_order]
+	# perform prediction using model
 	predicted = model.predict(features)
 	prediction_dict = {}
 	for i, value in enumerate(predicted):
 		prediction_dict[ids.iloc[i]] = value
 
 	return prediction_dict
-
-def read_vcf(vcf_path):
-	""" read VCF into a dataframe """
-	data = []
-	input_vcf = cyvcf2.VCF(vcf_path)
-	header = ['ID'] + get_info_fields(input_vcf)
-	for variant in input_vcf:
-		row = [variant.ID]
-		for field in header[1:]:
-			row.append(variant.INFO.get(field))
-		data.append(row)
-	return pd.DataFrame(data, columns = header)
 
 def legacy_pass_strict(variant, event_heuristic):
 	""" apply legacy filter for strict thresholds """
@@ -103,7 +86,8 @@ def legacy_pass_lenient(variant, event_heuristic):
 
 def classify_legacy(args, checkpoints, time_str):
 	""" classify using legacy lenient/strict filters """
-	data_matrix = read_vcf(args.vcf)
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
@@ -176,7 +160,8 @@ def filter_with_comparator(variant_value, filter_value, comparator):
 
 def classify_by_params(args, checkpoints, time_str):
 	# read VCF into a dataframe, classify using a parameter JSON
-	data_matrix = read_vcf(args.vcf)
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
@@ -239,13 +224,14 @@ def pacbio_pass_somatic(variant, min_support, min_af):
 		return False
 	if variant['ORIGIN_EVENT_SIZE_STD_DEV'] > 60.0 or variant['END_EVENT_SIZE_STD_DEV'] > 60.0:
 		return False
-	if float(variant['TUMOUR_AF'].split(',')[0]) < min_af:
+	if variant.INFO['TUMOUR_AF'][0] < min_af:
 		return False
 	return True
 
 def classify_pacbio(args, checkpoints, time_str):
 	""" classify using PacBio filters (manually defined) """
-	data_matrix = read_vcf(args.vcf)
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
@@ -286,17 +272,32 @@ def classify_pacbio(args, checkpoints, time_str):
 
 	return
 
+def pass_rescue(variant):
+	""" rescue variants predicted noise by model if they pass set of filters """
+	if variant.INFO['NORMAL_SUPPORT'] != 0:
+		return False
+	if variant.INFO['TUMOUR_SUPPORT'] <= 6:
+		return False
+	if variant.INFO['TUMOUR_AF'][0] <= 0.10:
+		return False
+	if variant.INFO['CLUSTERED_READS_NORMAL'] > 1:
+		return False
+	if variant.INFO['ORIGIN_MAPQ_MEAN'] < 15.0:
+		return False
+	return True
+
 def classify_by_model(args, checkpoints, time_str):
 	""" read VCF into a dataframe, classify using a model """
 
-	data_matrix = read_vcf(args.vcf)
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
 	loaded_model = pickle.load(open(args.custom_model, "rb"))
 	helper.time_function("Loaded classification model", checkpoints, time_str)
 
-	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], loaded_model, 20)
+	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], loaded_model, args.threads)
 
 	helper.time_function("Performed prediction", checkpoints, time_str)
 	# output vcf using modified input_vcf as template
@@ -333,8 +334,8 @@ def classify_by_model(args, checkpoints, time_str):
 		variant_prediction = prediction_dict.get(variant_id, None)
 		# if no mate present, (as in ins, sbnds) set mate prediction to self prediction
 		variant_mate_prediction = prediction_dict.get(variant.INFO.get('MATEID', None), variant_prediction)
-		if variant_prediction == 1 and variant_mate_prediction == 1:
-			# BOTH EDGES PREDICTED SOMATIC BY MODEL
+		if variant_prediction == 1 or variant_mate_prediction == 1:
+			# AT LEAST ONE EDGE PREDICTED SOMATIC BY MODEL
 			# perform sanity checks
 			if variant.INFO['TUMOUR_SUPPORT'] < args.min_support:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
@@ -344,11 +345,11 @@ def classify_by_model(args, checkpoints, time_str):
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 				variant.FILTER = 'LOW_SUPPORT'
 				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
-			elif float(variant.INFO['TUMOUR_AF'].split(',')[0]) < args.min_af:
+			elif variant.INFO['TUMOUR_AF'][0] < args.min_af and variant.INFO['TUMOUR_AF'][1] < args.min_af:
 				# determine if tumour-amplified
 				avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
 				avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
-				if avg_tumour_dp <= avg_normal_dp*3:
+				if avg_tumour_dp <= avg_normal_dp*5:
 					# no tumour amplification, low af holds
 					variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 					variant.FILTER = 'LOW_AF'

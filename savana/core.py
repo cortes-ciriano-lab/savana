@@ -27,16 +27,14 @@ class ConsensusBreakpoint():
 		self.start_loc = int(locations[0]['loc'])
 		self.end_chr = locations[1]['chr']
 		self.end_loc = int(locations[1]['loc'])
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not inserts:
+		if (breakpoint_notation in ["<INS>", "-", "+"]) and not inserts:
 			raise AttributeError(f'Must provide an insert for {breakpoint_notation} breakpoints')
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and self.start_chr != self.end_chr:
+		if (breakpoint_notation in ["<INS>", "-", "+"]) and self.start_chr != self.end_chr:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and self.start_loc != self.end_loc:
+		if (breakpoint_notation in ["<INS>", "-", "+"]) and self.start_loc != self.end_loc:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
 		self.breakpoint_notation = breakpoint_notation
 		self.inserted_sequences = inserts
-		if source not in ['CIGAR', 'SUPPLEMENTARY', 'CIGAR/SUPPLEMENTARY']:
-			raise AttributeError(f'Invalid ConsensusBreakpoint souce: {source}')
 		self.source = source
 		self.originating_cluster = originating_cluster
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
@@ -52,8 +50,11 @@ class ConsensusBreakpoint():
 		self.allele_fractions = {}
 		# calculate the length
 		self.sv_length = None
-		if self.breakpoint_notation == "<INS>" or self.breakpoint_notation == "<SBND>":
-			self.sv_length = str(int(mean([len(i) for i in self.inserted_sequences])))
+		if breakpoint_notation == "<INS>":
+			# only use the length of CIGAR insertions
+			self.sv_length = str(int(mean([len(bp.inserted_sequence) for bp in self.originating_cluster.breakpoints if bp.breakpoint_notation == "<INS>"])))
+		elif breakpoint_notation in ["-", "+"]:
+			self.sv_length = 0
 		elif self.start_chr != self.end_chr:
 			self.sv_length = 0
 		else:
@@ -86,7 +87,7 @@ class ConsensusBreakpoint():
 			str(self.uid),
 			'0' # 0th edge
 		]]
-		if self.breakpoint_notation != "<INS>" and self.breakpoint_notation != "<SBND>":
+		if (self.breakpoint_notation not in ["<INS>", "-", "+"]):
 			bed_lines.append([
 				self.end_chr,
 				str(min(max(self.end_loc, 0), contig_lengths[self.end_chr])),
@@ -166,7 +167,7 @@ class ConsensusBreakpoint():
 			f'{self.support["normal"]}'
 		]+[str(s) for s in start_cluster_stats]+[str(s) for s in end_cluster_stats])
 
-		if self.breakpoint_notation != "<INS>":
+		if self.breakpoint_notation not in ["<INS>", "+", "-"]:
 			variant_stats_lines.append([
 				f'{self.end_chr}:{self.end_loc}',
 				f'ID_{count}_2',
@@ -188,7 +189,7 @@ class ConsensusBreakpoint():
 		if self.breakpoint_notation == "<INS>":
 			# only one line for insertions
 			return ["<INS>"]
-		elif self.breakpoint_notation == "<SBND>":
+		elif self.breakpoint_notation in ["-","+"]:
 			# only one line for single breakends
 			return [f'.{end_base}']
 		alts = ['', '']
@@ -228,16 +229,19 @@ class ConsensusBreakpoint():
 		try:
 			start_base = ref_fasta.fetch(self.start_chr, self.start_loc - 1, self.start_loc)
 			start_base = "N" if start_base == "" else start_base
-			if start_base not in ['N', 'A', 'T', 'C', 'G']:
-				print(f'"{start_base}"')
+			if start_base.upper() not in ['N', 'A', 'T', 'C', 'G']:
+				if start_base != "":
+					print(f'unrecognised base: "{start_base}"')
 				start_base = "N"
 		except ValueError as _:
 			start_base = 'N'
 		try:
 			end_base = ref_fasta.fetch(self.end_chr, self.end_loc - 1, self.end_loc)
 			end_base = "N" if start_base == "" else end_base
-			if end_base not in ['N', 'A', 'T', 'C', 'G']:
-				print(f'"{end_base}"')
+			if end_base.upper() not in ['N', 'A', 'T', 'C', 'G']:
+				if end_base != "":
+					print(f'unrecognised base: "{end_base}"')
+					print(f'"{end_base}"')
 				end_base = "N"
 		except ValueError as _:
 			end_base = 'N'
@@ -265,7 +269,7 @@ class ConsensusBreakpoint():
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
-		elif self.breakpoint_notation == "<SBND>":
+		elif self.breakpoint_notation in ["+","-"]:
 			info[0] = 'SVTYPE=SBND;' + info[0]
 			for label, depths in self.local_depths.items():
 				for i, bin_label  in enumerate(["BEFORE","AT","AFTER"]):
@@ -298,7 +302,7 @@ class ConsensusBreakpoint():
 			'GT',
 			gt_tag
 		]]
-		if self.breakpoint_notation != "<INS>" and self.breakpoint_notation != "<SBND>":
+		if self.breakpoint_notation not in ["<INS>", "+", "-"]:
 			vcf_lines.append([
 				self.end_chr,
 				str(self.end_loc),
@@ -330,16 +334,16 @@ class PotentialBreakpoint():
 		self.start_loc = int(locations[0]['loc'])
 		self.end_chr = locations[1]['chr']
 		self.end_loc = int(locations[1]['loc'])
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not insert:
+		if (breakpoint_notation in ["<INS>", "-", "+"]) and not insert:
 			raise AttributeError(f'Must provide an insert for {breakpoint_notation} breakpoints')
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_chr == self.end_chr:
+		if (breakpoint_notation in ["<INS>", "-", "+"]) and self.start_chr != self.end_chr:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
-		if (breakpoint_notation == "<INS>" or breakpoint_notation == "<SBND>") and not self.start_loc == self.end_loc:
+		if (breakpoint_notation in ["<INS>", "-", "+"]) and self.start_loc != self.end_loc:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
 		self.spans_cluster = True if (self.start_chr == self.end_chr and abs(self.start_loc - self.end_loc) <= 150) else False
 		self.breakpoint_notation = breakpoint_notation
 		self.inserted_sequence = insert
-		if source not in ['SUPPLEMENTARY', 'CIGAR']:
+		if source not in ['SUPPLEMENTARY', 'CIGAR', 'SOFTCLIP']:
 			raise AttributeError(f'Invalid PotentialBreakpoint souce: {source}')
 		self.source = source
 		self.read_name = read_name
@@ -353,7 +357,7 @@ class PotentialBreakpoint():
 			"start_loc": self.start_loc,
 			"end_chr": self.end_chr,
 			"end_loc": self.end_loc,
-			"inserted_sequence": self.inserted_sequence,
+			"inserted_sequence": self.inserted_sequence if len(self.inserted_sequence) < 50 else (self.inserted_sequence[0:10]+"..."+self.inserted_sequence[-10:]),
 			"source": self.source,
 			"read_name": self.read_name,
 			"mapq": self.mapq,
@@ -454,7 +458,7 @@ class Cluster():
 			for bp in self.breakpoints:
 				starts.append(bp.start_loc)
 				mapqs.append(bp.mapq)
-				if (bp.breakpoint_notation == "<INS>" or bp.breakpoint_notation == "<SBND>"):
+				if bp.breakpoint_notation in ["<INS>", "+", "-"]:
 					event_sizes.append(len(bp.inserted_sequence))
 				elif (bp.start_chr == bp.end_chr):
 					event_sizes.append(abs(bp.start_loc - bp.end_loc))
