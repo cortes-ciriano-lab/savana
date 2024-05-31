@@ -36,6 +36,38 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 			}
 			variant_dicts.append(variant_dict)
 			id_count += 1
+			if variant.INFO.get("END"):
+				# create another breakpoint object for alternate edge
+				variant_dict = {
+					'label': label,
+					'id': label+"_"+str(id_count),
+					'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
+					'start_loc': variant.END,
+					'length': variant.INFO.get('SVLEN'),
+					'type': variant.INFO.get('SVTYPE'),
+					'within_buffer': [],
+					'external_id': variant.ID,
+					'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
+					'validated': None
+				}
+				variant_dicts.append(variant_dict)
+				id_count += 1
+			elif variant.INFO.get("END2"):
+				# create another breakpoint object for alternate edge
+				variant_dict = {
+					'label': label,
+					'id': label+"_"+str(id_count),
+					'start_chr': variant.CHROM2[3:] if variant.CHROM2.startswith('chr') else variant.CHROM2,
+					'start_loc': variant.END2,
+					'length': variant.INFO.get('SVLEN'),
+					'type': variant.INFO.get('SVTYPE'),
+					'within_buffer': [],
+					'external_id': variant.ID,
+					'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
+					'validated': None
+				}
+				variant_dicts.append(variant_dict)
+				id_count += 1
 
 	return variant_dicts
 
@@ -175,6 +207,26 @@ def evaluate_vcf(args, checkpoints, time_str):
 			'length': variant.INFO.get('SVLEN'),
 			'type': variant.INFO.get('SVTYPE'),
 			'within_buffer': []})
+		if variant.INFO.get("END"):
+			# create another breakpoint object for alternate edge
+			input_variants.append({
+				'label': 'INPUT',
+				'id': variant.ID,
+				'start_chr': variant.CHROM[3:] if variant.CHROM.startswith('chr') else variant.CHROM,
+				'start_loc': variant.END,
+				'length': variant.INFO.get('SVLEN'),
+				'type': variant.INFO.get('SVTYPE'),
+				'within_buffer': []})
+		elif variant.INFO.get("END2"):
+			# create another breakpoint object for alternate edge
+			input_variants.append({
+				'label': 'INPUT',
+				'id': variant.ID,
+				'start_chr': variant.CHROM2[3:] if variant.CHROM2.startswith('chr') else variant.CHROM2,
+				'start_loc': variant.END2,
+				'length': variant.INFO.get('SVLEN'),
+				'type': variant.INFO.get('SVTYPE'),
+				'within_buffer': []})
 		if args.by_support:
 			input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_SUPPORT'))
 			input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_SUPPORT'))
@@ -190,6 +242,26 @@ def evaluate_vcf(args, checkpoints, time_str):
 					if distance <= args.overlap_buffer:
 						compare_variant['within_buffer'].append((input_variants[-1], distance))
 						input_variants[-1]['within_buffer'].append((compare_variant, distance))
+					if compare_variant['end_loc']:
+						# both are non-breakend
+						# only applies to non-breakend callers with END in INFO
+						distance = abs(compare_variant['end_loc'] - input_variants[-1]['start_loc'])
+						if distance <= args.overlap_buffer:
+							compare_variant['within_buffer'].append((input_variants[-1], distance))
+							input_variants[-1]['within_buffer'].append((compare_variant, distance))
+						# only applies to non-breakend callers with END in INFO
+						distance = abs(compare_variant['end_loc'] - input_variants[-1]['end_loc'])
+						if distance <= args.overlap_buffer:
+							compare_variant['within_buffer'].append((input_variants[-1], distance))
+							input_variants[-1]['within_buffer'].append((compare_variant, distance))
+				elif compare_variant['end_loc']:
+					# compare is non-breakend, input is not
+					# only applies to non-breakend callers with END in INFO
+					distance = abs(compare_variant['end_loc'] - input_variants[-1]['start_loc'])
+					if distance <= args.overlap_buffer:
+						compare_variant['within_buffer'].append((input_variants[-1], distance))
+						input_variants[-1]['within_buffer'].append((compare_variant, distance))
+
 
 	# label input variants with matched somatic/germline
 	compare_variants_used = {}
@@ -253,7 +325,7 @@ def evaluate_vcf(args, checkpoints, time_str):
 		# if curating, don't allow mates to have incongruous labels
 		if args.curate and not match_id:
 			mate_id = variant.INFO.get('MATEID', None)
-			label, match_id, distance = input_variant_labels.get(mate_id, ('NOT_IN_COMPARISON', None, None)) if mate_id else (label, match_id)
+			label, match_id, distance = input_variant_labels.get(mate_id, ('NOT_IN_COMPARISON', None, None)) if mate_id else (label, match_id, distance)
 			if match_id:
 				match_id = "MATE_"+match_id
 		variant.INFO['LABEL'] = label
