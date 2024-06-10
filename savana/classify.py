@@ -214,31 +214,29 @@ def classify_by_params(args, checkpoints, time_str):
 
 def pacbio_pass_somatic(variant, min_support, min_af):
 	""" custom manual filters for PacBio """
-	if variant['NORMAL_SUPPORT'] != 0:
+	if variant.INFO['NORMAL_SUPPORT'] != 0:
 		return False
-	if variant['TUMOUR_SUPPORT'] < min_support:
+	if variant.INFO['TUMOUR_SUPPORT'] < min_support:
 		return False
-	if variant['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant['END_STARTS_STD_DEV'] > 50.0:
+	if variant.INFO['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant.INFO['END_STARTS_STD_DEV'] > 50.0:
 		return False
-	if variant['ORIGIN_MAPQ_MEAN'] < 40.0 or variant['END_MAPQ_MEAN'] < 40.0:
+	if variant.INFO['ORIGIN_MAPQ_MEAN'] < 40.0 or variant.INFO['END_MAPQ_MEAN'] < 40.0:
 		return False
-	if variant['ORIGIN_EVENT_SIZE_STD_DEV'] > 60.0 or variant['END_EVENT_SIZE_STD_DEV'] > 60.0:
+	if variant.INFO['ORIGIN_EVENT_SIZE_STD_DEV'] > 60.0 or variant.INFO['END_EVENT_SIZE_STD_DEV'] > 60.0:
 		return False
 	if variant.INFO['TUMOUR_AF'][0] < min_af:
+		return False
+	if variant.INFO['CLUSTERED_READS_NORMAL'] > 3:
 		return False
 	return True
 
 def classify_pacbio(args, checkpoints, time_str):
 	""" classify using PacBio filters (manually defined) """
-	header, data = train.read_vcf(args.vcf)
-	data_matrix = pd.DataFrame(data, columns=header)
-	data_matrix = train.format_data(data_matrix)
-	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
-	somatic_ids = {}
-	for _, variant in data_matrix.iterrows():
-		if pacbio_pass_somatic(variant, args.min_support, args.min_af):
-			somatic_ids[variant['ID']] = True
+	# increase min support and AF for PacBio (not below supplied mins)
+	pacbio_min_support = max(7, args.min_support)
+	pacbio_min_af = max(0.15, args.min_af)
+	print(f'Using PacBio minimum support filters of {pacbio_min_support} reads and {pacbio_min_af} allele-fracion')
 
 	if args.predict_germline:
 		print('Germline PacBio filters not yet implemented.')
@@ -251,21 +249,37 @@ def classify_pacbio(args, checkpoints, time_str):
 		'Number': '1',
 		'Description': desc_string
 	})
-	# create filenames based on output
-	if ".vcf" in args.output:
-		somatic_vcf_filename = args.output.replace(".vcf", ".somatic.vcf")
-	else:
-		somatic_vcf_filename = args.output+".somatic.vcf"
-	somatic_vcf = cyvcf2.Writer(somatic_vcf_filename, input_vcf)
+	desc_string = str('Variant did not pass PacBio filters')
+	input_vcf.add_filter_to_header({
+		'ID': 'FAIL',
+		'Description': desc_string
+	})
+	out_vcf = cyvcf2.Writer(args.output, input_vcf)
+	if args.somatic_output:
+		somatic_vcf = cyvcf2.Writer(args.somatic_output, input_vcf)
+	if args.germline_output:
+		print('Germline PacBio filters not yet implemented.')
+		#germline_vcf = cyvcf2.Writer(args.germline_output, input_vcf)
+	pass_dict = {}
 	for variant in input_vcf:
 		variant_id = variant.ID
-		passed_somatic = somatic_ids.get(variant_id, None)
-		if passed_somatic:
-			# update the INFO field if all sanity checks pass
+		passed_somatic = pacbio_pass_somatic(variant, pacbio_min_support, pacbio_min_af)
+		mate_passed_somatic = pass_dict.get(variant.INFO.get('MATEID', None), False)
+		# update the pass dictionary
+		pass_dict[variant_id] = passed_somatic
+		if passed_somatic or mate_passed_somatic:
+			# update the INFO field
 			variant.INFO['CLASS'] = 'SOMATIC'
-			# add to the somatic only VCF
-			somatic_vcf.write_record(variant)
-	somatic_vcf.close()
+			if args.somatic_output:
+				# add to somatic-only vcf
+				somatic_vcf.write_record(variant)
+		else:
+			variant.FILTER = 'FAIL'
+		out_vcf.write_record(variant)
+
+	out_vcf.close()
+	if args.somatic_output:
+		somatic_vcf.close()
 	input_vcf.close()
 
 	helper.time_function("Output PacBio somatic VCF", checkpoints, time_str)

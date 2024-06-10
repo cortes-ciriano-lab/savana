@@ -340,6 +340,7 @@ def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chime
 
 	return supplementary_breakpoints
 
+
 def count_num_labels(source_breakpoints):
 	""" given a list of unique breakpoints, return the counts for each label """
 	label_counts = {}

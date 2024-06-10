@@ -7,13 +7,14 @@ Hillary Elrick
 #!/usr/bin/env python3
 
 import os
+import ast
 
+from random import random
+from multiprocessing import Pool
 import pandas as pd
 import numpy as np
 import cyvcf2
 import pickle
-
-from random import random
 
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import StratifiedKFold
@@ -616,28 +617,83 @@ def get_info_fields(vcf):
 
 	return fields
 
-def read_vcfs(args):
-	""" given the folder of labelled input VCFs, return an output dataframe """
-	header = []
+def read_vcf(vcf_file):
+	""" read a vcf into a data matrix and header """
+	header, data = [], []
+	print(f'Reading {vcf_file}')
+	input_vcf = cyvcf2.VCF(vcf_file)
+	samples = input_vcf.samples
+	if len(samples) != 1:
+		raise ValueError(f'One sample per VCF permitted: {len(samples)} samples found in {vcf_file} ({",".join(samples)})')
+	if not header:
+		header = ['SAMPLE', 'ID']
+		header.extend(get_info_fields(input_vcf))
+	for variant in input_vcf:
+		row = [samples[0], variant.ID]
+		for field in header[2:]:
+			row.append(variant.INFO.get(field))
+		data.append(row)
+	print(f'Done reading {vcf_file}')
+
+	return header, data
+
+def pool_read_vcfs(vcf_files, threads):
+	""" submit reading of vcfs to pool """
+	header = None
 	data = []
+	if len(vcf_files) > 1:
+		pool_read_vcf = Pool(processes=threads)
+		print(f'Submitting {len(vcf_files)} "read_vcf" tasks to {threads} workers')
+		read_vcf_results = pool_read_vcf.starmap(read_vcf, [[v] for v in vcf_files])
+		pool_read_vcf.close()
+		pool_read_vcf.join()
+		for result in read_vcf_results:
+			result_header, result_data = result
+			header = result_header if not header else header
+			data.extend(result_data)
+	else:
+		header, data = read_vcf(vcf_files[0])
+
+	return header, data
+
+def create_dataframe(args):
+	""" given the folder of labelled input VCFs, return a dataframe """
+
+	vcf_files = []
 	for root, _, file_names in os.walk(args.vcfs):
 		for file in file_names:
 			f = os.path.join(root, file)
 			if os.path.isfile(f) and file.endswith('.vcf'):
-				print(f'Loading {f} into matrix')
-				input_vcf = cyvcf2.VCF(f)
-				samples = input_vcf.samples
-				if len(samples) != 1:
-					raise ValueError(f'One sample per VCF permitted: {len(samples)} samples found in {f} ({",".join(samples)})')
-				if not header:
-					header = ['SAMPLE', 'ID']
-					header.extend(get_info_fields(input_vcf))
-				for variant in input_vcf:
-					row = [samples[0], variant.ID]
-					for field in header[2:]:
-						row.append(variant.INFO.get(field))
-					data.append(row)
+				vcf_files.append(f)
+
+	header, data = pool_read_vcfs(vcf_files, args.threads)
 	df = pd.DataFrame(data, columns = header)
+	print(f'Loaded data from {len(vcf_files)} VCF file(s) into matrix')
+	"""
+	with open(f'{args.outdir}/tmp.csv', 'w') as outfile:
+		outfile.write("\t".join(header)+"\n")
+		for line in data:
+			outfile.write("\t".join([str(c) for c in line])+"\n")
+	dask_df = dd.read_csv(f'{args.outdir}/tmp.csv', delimiter="\t",
+		converters={
+			'TUMOUR_DP_BEFORE': ast.literal_eval,
+			'TUMOUR_DP_AT': ast.literal_eval,
+			'TUMOUR_DP_AFTER': ast.literal_eval,
+			'NORMAL_DP_BEFORE': ast.literal_eval,
+			'NORMAL_DP_AT': ast.literal_eval,
+			'NORMAL_DP_AFTER': ast.literal_eval,
+			'TUMOUR_AF': ast.literal_eval,
+			'NORMAL_AF': ast.literal_eval
+		},
+		dtype={
+			'SVLEN': 'int32',
+			'MATEID': 'str',
+			'LABEL_VARIANT_ID': 'str',
+			'DISTANCE_TO_MATCH': 'float64'
+		}
+	)
+	df = dask_df.compute()
+	"""
 	if args.save_matrix:
 		print(f'Saving data matrix to pickle file {args.save_matrix}')
 		df.to_pickle(args.save_matrix)
