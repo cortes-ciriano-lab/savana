@@ -175,7 +175,7 @@ def savana_main(args):
     # set inputs and outputs
     args.vcf = os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf') # previous step's output
     args.output = os.path.join(args.outdir,f'{args.sample}.classified.vcf')
-    if args.somatic and not args.somatic_output:
+    if not args.somatic_output:
         args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
     if args.germline and not args.germline_output:
         args.germline_output = os.path.join(args.outdir,f'{args.sample}.classified.germline.vcf')

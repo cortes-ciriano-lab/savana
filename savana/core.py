@@ -45,9 +45,10 @@ class ConsensusBreakpoint():
 		self.support = {'normal': 0, 'tumour': 0}
 		for label, reads in self.labels.items():
 			self.support[label]+=len(reads)
-		# add these both later
+		# add these all later
 		self.local_depths = {}
 		self.allele_fractions = {}
+		self.phase = {}
 		# calculate the length
 		self.sv_length = None
 		if breakpoint_notation == "<INS>":
@@ -261,6 +262,10 @@ class ConsensusBreakpoint():
 		info[0] += f'SOURCE={self.source};'
 		info[0] += f'CLUSTERED_READS_TUMOUR={self.read_counts["tumour"]};'
 		info[0] += f'CLUSTERED_READS_NORMAL={self.read_counts["normal"]};'
+		if self.phase:
+			info[0] += f'HP={self.phase["HP"]["1"]},{self.phase["HP"]["2"]},{self.phase["HP"]["NA"]};'
+			if self.phase["PS"]:
+				info[0] += f'PS={",".join(self.phase["PS"])};'
 		info[0] += stats_str
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]

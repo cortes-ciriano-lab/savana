@@ -34,20 +34,23 @@ label_encoding = {
 encoded_labels = {v: k for k, v in label_encoding.items()}
 
 FEATURES_TO_DROP = [
-	'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
+	'LABEL', 'SAMPLE', 'MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
 	'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
 	'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
 	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID', 'DISTANCE_TO_MATCH',
 	'CLASS','REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
 	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN',
-	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN',
-	'CLUSTERED_READS_TUMOUR', 'CLUSTERED_READS_NORMAL'
+	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN', 'HP', 'PS'
 ]
 
 def format_data(data_matrix):
 	""" parse columns, do conversions, one-hot-encoding """
 	# split the DP tuples
-	data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	# this was solution to strange pandas error if comes up again:
+	tumour_dp_before = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	tumour_dp_before.columns = ['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']
+	data_matrix = pd.concat([data_matrix, tumour_dp_before], axis=1)
+	#data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
 	data_matrix[['TUMOUR_DP_AT_0', 'TUMOUR_DP_AT_1']] = data_matrix['TUMOUR_DP_AT'].apply(pd.Series)
 	data_matrix[['TUMOUR_DP_AFTER_0', 'TUMOUR_DP_AFTER_1']] = data_matrix['TUMOUR_DP_AFTER'].apply(pd.Series)
 	data_matrix[['NORMAL_DP_BEFORE_0', 'NORMAL_DP_BEFORE_1']] = data_matrix['NORMAL_DP_BEFORE'].apply(pd.Series)

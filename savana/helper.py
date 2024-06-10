@@ -15,7 +15,7 @@ from time import time
 from datetime import datetime
 import argparse
 
-__version__ = "1.0.24"
+__version__ = "1.0.27"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -200,33 +200,35 @@ def get_chimeric_regions(read):
 	if read.is_supplementary:
 		return None
 	chimeric_regions = []
-	for tag, value in read.get_tags():
-		if tag == "SA":
-			# (chrom, pos, strand, CIGAR, mapQ, NM)
-			supp_alignments = [v.split(",") for v in value[:-1].split(";")]
-			sa_keys = ['chrom', 'pos', 'strand', 'CIGAR', 'mapQ', 'NM']
-			for supp_alignment in supp_alignments:
-				chimeric_region = dict(zip(sa_keys, supp_alignment))
-				chimeric_region['mapQ'] = int(chimeric_region['mapQ'])
-				cigar_split = re.split('([MIDNSHP=X])', chimeric_region['CIGAR'])[:-1]
-				if chimeric_region['strand'] == "-":
-					# reverse CIGAR if the direction of the supplementary doesn't match the primary
-					cigar_split.reverse()
-					cigar_split = [cigar_split[f(x)] for x in range(0,len(cigar_split),2) for f in (lambda x: x+1, lambda x: x)]
-				# calculate the number of bases from the SA CIGAR string that are consuming the query and reference
-				alignment_sum = sum_consumed_query(trim_supplementary(chimeric_region['CIGAR']))
-				reference_sum = sum_consumed_reference(trim_supplementary(chimeric_region['CIGAR']))
-				left_softclip = int(cigar_split[0]) if cigar_split[1] == 'S' else 0
-				right_softclip = int(cigar_split[-2]) if cigar_split[-1] == 'S' else 0
-				# track values in chimeric region dicts
-				chimeric_region['left_softclip'] = left_softclip
-				chimeric_region['right_softclip'] = right_softclip
-				chimeric_region['consumed_query'] = alignment_sum
-				chimeric_region['consumed_reference'] = reference_sum
-				chimeric_region['seen'] = False
-				chimeric_regions.append(chimeric_region)
-			return chimeric_regions
+	try:
+		value = read.get_tag("SA")
+	except KeyError as _:
+		return chimeric_regions
+	# parse the SA tag if it exists
+	supp_alignments = [v.split(",") for v in value[:-1].split(";")]
+	sa_keys = ['chrom', 'pos', 'strand', 'CIGAR', 'mapQ', 'NM']
+	for supp_alignment in supp_alignments:
+		chimeric_region = dict(zip(sa_keys, supp_alignment))
+		chimeric_region['mapQ'] = int(chimeric_region['mapQ'])
+		cigar_split = re.split('([MIDNSHP=X])', chimeric_region['CIGAR'])[:-1]
+		if chimeric_region['strand'] == "-":
+			# reverse CIGAR if the direction of the supplementary doesn't match the primary
+			cigar_split.reverse()
+			cigar_split = [cigar_split[f(x)] for x in range(0,len(cigar_split),2) for f in (lambda x: x+1, lambda x: x)]
+		# calculate the number of bases from the SA CIGAR string that are consuming the query and reference
+		alignment_sum = sum_consumed_query(trim_supplementary(chimeric_region['CIGAR']))
+		reference_sum = sum_consumed_reference(trim_supplementary(chimeric_region['CIGAR']))
+		left_softclip = int(cigar_split[0]) if cigar_split[1] == 'S' else 0
+		right_softclip = int(cigar_split[-2]) if cigar_split[-1] == 'S' else 0
+		# track values in chimeric region dicts
+		chimeric_region['left_softclip'] = left_softclip
+		chimeric_region['right_softclip'] = right_softclip
+		chimeric_region['consumed_query'] = alignment_sum
+		chimeric_region['consumed_reference'] = reference_sum
+		chimeric_region['seen'] = False
+		chimeric_regions.append(chimeric_region)
 	return chimeric_regions
+
 
 def get_contigs(contig_file, ref_index):
 	""" use the contigs file to return contigs and lengths - otherwise use index """
@@ -302,6 +304,9 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">',
 		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">'
 	])
+	if example_breakpoint.phase:
+		vcf_header_str.append('##INFO=<ID=HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype (1,2,NA)">')
+		vcf_header_str.append('##INFO=<ID=PS,Number=.,Type=String,Description="List of unique phase sets from the supporting reads">')
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
 	breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()

@@ -355,7 +355,7 @@ def count_num_labels(source_breakpoints):
 
 	return label_counts
 
-def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, shared_phasing_dictionary, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
@@ -373,6 +373,17 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 			print(f'Unable to update coverage for contig {contig}')
 			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
 			print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
+
+		# add read phasing to phasing dictionary
+		phase = {'HP': None, 'PS': None}
+		for tag in phase.keys():
+			try:
+				phase[tag] = str(read.get_tag(tag))
+			except KeyError as _:
+				pass # this is fine, just means read unphased
+		if phase['HP'] or phase['PS']:
+			shared_phasing_dictionary[read.query_name] = phase
+
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
@@ -606,8 +617,8 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 
 	return final_breakpoints, chrom
 
-def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
-	""" use the contig coverages to annotate the depth of breakpoints (same method as mosdepth) """
+def compute_depth(breakpoints, shared_cov_arrays, shared_phasing_dictionary, coverage_binsize):
+	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """
 	for bp in breakpoints:
 		bp.local_depths = {
 			'tumour': [[0,0],[0,0],[0,0]],
@@ -645,6 +656,24 @@ def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 				# due to sloping edges this can sometimes be inflated
 				af[i] = 1.0 if af[i] > 1.0 else af[i]
 			bp.allele_fractions[label] = af
+
+		# finally, add the phasing information (if present)
+		if shared_phasing_dictionary:
+			bp_phase = {
+				'HP': {'1': 0, '2': 0, 'NA': 0},
+				'PS': []
+			}
+			for label, reads in bp.labels.items():
+				for read in reads:
+					read_phase = shared_phasing_dictionary.get(read, None)
+					if read_phase:
+						bp_phase['HP'][read_phase['HP']] += 1
+						if read_phase['PS'] not in bp_phase['PS']:
+							bp_phase['PS'].append(read_phase['PS'])
+					else:
+						bp_phase['HP']['NA'] += 1
+			bp.phase = bp_phase
+
 	return breakpoints
 
 if __name__ == "__main__":
