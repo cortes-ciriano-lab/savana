@@ -77,15 +77,21 @@ def format_data(data_matrix):
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STD_MEAN_RATIO'].fillna(0)
 	# convert the SVTYPE to 0/1/2
 	data_matrix['SVTYPE'] = data_matrix['SVTYPE'].map({'BND':0,'INS':1, 'SBND': 2})
-	# convert the SOURCE to 0/1/2
-	data_matrix['SOURCE'] = data_matrix['SOURCE'].map({'CIGAR':0,'SUPPLEMENTARY':1, 'CIGAR/SUPPLEMENTARY': 2})
+	# one-hot-encoding of SOURCE
+	source_one_hot = data_matrix['SOURCE'].str.get_dummies(sep='/')
+	# check to make sure all sources are present
+	for source in ["CIGAR", "SOFTCLIP", "SUPPLEMENTARY"]:
+		if source not in source_one_hot:
+			source_one_hot[source] = False
+	data_matrix = data_matrix.drop('SOURCE', axis=1)
+	data_matrix = data_matrix.join(source_one_hot)
 	# one-hot-encoding of BP_NOTATION
 	sv_type_one_hot = pd.get_dummies(data_matrix['BP_NOTATION'])
 	# check to make sure all bp types are present
-	for bp_type in ["++","+-","-+","--","<INS>", "<SBND>"]:
+	for bp_type in ["++","+-","-+","--","<INS>", "+", "-"]:
 		if bp_type not in sv_type_one_hot:
 			sv_type_one_hot[bp_type] = False
-	data_matrix.drop('BP_NOTATION', axis=1)
+	data_matrix = data_matrix.drop('BP_NOTATION', axis=1)
 	data_matrix = data_matrix.join(sv_type_one_hot)
 
 	return data_matrix
@@ -173,18 +179,7 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 			fold_nconform_scores[true_class] = np.append(fold_nconform_scores[true_class], nonconform_score)
 		# once all the non-conform scores collected, append to full nonconfom scores list
 		for key in fold_nconform_scores.keys():
-			if key not in class_nconform_scores:
-				# initialize
-				#class_nconform_scores[key] = np.array([])
-				# alt - for averaging the p-values
-				pass
-				#class_nconform_scores.setdefault(key, {})[fold] = np.array([])
-				"""
-				if fold not in class_nconform_scores[key]:
-					class_nconform_scores[key][fold] = np.array([])
-				"""
 			class_nconform_scores.setdefault(key, {})[fold] = np.array([])
-			#class_nconform_scores[key] = np.append(class_nconform_scores[key], fold_nconform_scores[key])
 			class_nconform_scores[key][fold] = np.append(class_nconform_scores[key][fold], fold_nconform_scores[key])
 		fold += 1
 
