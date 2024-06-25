@@ -124,6 +124,9 @@ def savana_classify(args):
             return
         classify.classify_by_model(args, checkpoints, time_str)
 
+    if args.cna:
+        classify.rescue_cna(args, checkpoints, time_str)
+
     # finish timing
     helper.time_function("Total time to classify variants", checkpoints, time_str, final=True)
 
@@ -235,6 +238,8 @@ def parse_args(args):
     classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
     classify_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
     classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+    classify_parser.add_argument('--cna', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
+    classify_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
     group = classify_parser.add_mutually_exclusive_group()
     group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
     group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
@@ -309,6 +314,8 @@ def parse_args(args):
         # classify args
         global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
         global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
+        global_parser.add_argument('--cna', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
+        global_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
         classify_group = global_parser.add_mutually_exclusive_group()
         classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
         classify_group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')

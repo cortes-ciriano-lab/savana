@@ -16,6 +16,8 @@ import json
 import pandas as pd
 import numpy as np
 import cyvcf2
+import csv
+import os
 
 import savana.train as train
 from savana.breakpoints import *
@@ -49,6 +51,74 @@ def predict(data_matrix, features_to_drop, model):
 		prediction_dict[ids.iloc[i]] = value
 
 	return prediction_dict
+
+def parse_cna(cna_file):
+	""" using the cna path, store the copy number changepoints """
+	cna_dict = {}
+	with open(cna_file) as f:
+		reader = csv.reader(f, delimiter="\t")
+		curr_chrom = None
+		curr_seg = None
+		curr_seg_start = 0
+		for row in reader:
+			_, chrom, start, end, _, _, _, seg, rel_cn = row
+			if not curr_seg or curr_chrom != chrom:
+				# first segment of chromosome
+				curr_chrom = chrom
+				curr_seg = seg
+				curr_seg_start = 0
+			if seg != curr_seg:
+				# change in segments
+				cna_dict.setdefault(chrom, []).append(
+					[curr_seg_start, start, curr_seg, rel_cn]
+				)
+				# now reset
+				curr_seg = seg
+				curr_seg_start = start
+
+	return cna_dict
+
+def rescue_cna(args, checkpoints, time_str):
+	""" update the filter column of variants which were rejected but have a supporting change in copy number """
+	cna_dict = parse_cna(args.cna)
+	classified_vcf = cyvcf2.VCF(args.output)
+	rescue_dict = {} # store the id and distance of the rescued variants for each segment
+	for variant in classified_vcf:
+		if variant.INFO['TUMOUR_SUPPORT'] >= args.min_support and variant.INFO['NORMAL_SUPPORT'] == 0:
+			for seg_start, _, seg_name, _ in cna_dict[variant.CHROM]:
+				distance = abs(variant.start - int(seg_start))
+				if distance < args.cna_rescue_distance:
+					rescue_dict.setdefault(seg_name, []).append((variant.ID, distance))
+
+	# sort by the distance
+	rescue_dict = {k: sorted(v, key=lambda x: x[1]) for k, v in rescue_dict.items()}
+	# flip so that the key is the variant id
+	variant_rescue_dict = {v[0][0]: k for k,v in rescue_dict.items()}
+
+	# open vcf(s) for reading/writing
+	in_vcf = cyvcf2.VCF(args.output)
+	cna_rescue_vcf = os.path.splitext(args.output)[0]+'.cna_rescue.vcf'
+	cna_out_vcf = cyvcf2.Writer(cna_rescue_vcf, in_vcf)
+	if args.somatic_output:
+		cna_rescue_somatic_vcf = os.path.splitext(args.somatic_output)[0]+'.cna_rescue.vcf'
+		cna_out_somatic_vcf = cyvcf2.Writer(cna_rescue_somatic_vcf, in_vcf)
+	for variant in in_vcf:
+		if not variant.FILTER and variant.ID in variant_rescue_dict:
+			print(f'Would rescue {variant.ID} but it already passes!')
+		if variant.FILTER and variant.ID in variant_rescue_dict or variant.INFO.get('MATEID', None) in variant_rescue_dict:
+			variant.FILTER = 'PASS'
+			variant.INFO['CLASS'] = 'RESCUED_CNA'
+		cna_out_vcf.write_record(variant)
+		if args.somatic_output and not variant.FILTER or variant.FILTER == 'PASS':
+			# add to the somatic only VCF
+			cna_out_somatic_vcf.write_record(variant)
+
+	cna_out_vcf.close()
+	cna_out_somatic_vcf.close()
+
+	helper.time_function("Rescued somatic SVs from CNAs", checkpoints, time_str)
+
+	return
 
 def legacy_pass_strict(variant, event_heuristic):
 	""" apply legacy filter for strict thresholds """
@@ -398,9 +468,17 @@ def classify_by_model(args, checkpoints, time_str):
 					# add to the somatic only VCF
 					germline_vcf.write_record(variant)
 		else:
-			# update the FILTER column
-			variant.FILTER = 'LIKELY_NOISE'
-			variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+			# perform rescue step if applicable
+			if pass_rescue(variant):
+				variant.INFO['CLASS'] = 'RESCUED_SOMATIC'
+				prediction_dict[variant_id] = 1 # update the dictionary as well for mate
+				if args.somatic_output:
+					# add to the somatic only VCF
+					somatic_vcf.write_record(variant)
+			else:
+				# update the FILTER column
+				variant.FILTER = 'LIKELY_NOISE'
+				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 		out_vcf.write_record(variant)
 	out_vcf.close()
 	if args.somatic_output:
