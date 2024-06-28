@@ -21,7 +21,7 @@ def generate_uuid():
 
 class ConsensusBreakpoint():
 	""" class for a second-round called breakpoint (stores originating cluster information """
-	def __init__(self, locations, source, originating_cluster, end_cluster, labels, breakpoint_notation, read_counts, inserts=None):
+	def __init__(self, locations, source, originating_cluster, end_cluster, breakpoint_notation, counts, inserts=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
@@ -38,17 +38,21 @@ class ConsensusBreakpoint():
 		self.source = source
 		self.originating_cluster = originating_cluster
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
-		self.labels = labels
-		self.read_counts = read_counts
-		self.count = None # used later for standardising across output files
-		# use the labels to calculate support by counting reads
-		self.support = {'normal': 0, 'tumour': 0}
-		for label, reads in self.labels.items():
-			self.support[label]+=len(reads)
+		# assign the various counts
+		self.supporting_reads, self.aln_support_counts, self.phasing, self.total_read_counts = counts
+		# use the label counts to calculate read support
+		self.read_support_counts = {'normal': 0, 'tumour': 0}
+		for label, reads in self.supporting_reads.items():
+			self.read_support_counts[label]+=len(reads)
+		# add count of 0 for aln support if key doesn't exist
+		for key in self.read_support_counts.keys():
+			if key not in self.aln_support_counts:
+				self.aln_support_counts[key] = 0
+		# used later for standardising across output files
+		self.count = None
 		# add these all later
 		self.local_depths = {}
 		self.allele_fractions = {}
-		self.phase = {}
 		# calculate the length
 		self.sv_length = None
 		if breakpoint_notation == "<INS>":
@@ -70,9 +74,9 @@ class ConsensusBreakpoint():
 			"end_loc": self.end_loc,
 			"first_inserted_sequence": None if not self.inserted_sequences else self.inserted_sequences[0],
 			"source": self.source,
-			"originating_cluster": self.originating_cluster.uid,
-			"end_cluster": self.end_cluster.uid,
-			"labels": "/".join([f'{label}_{str(len(reads))}' for label, reads in self.labels.items()]),
+			"read_support": "/".join([f'{label}_{str(count)}' for label, count in self.read_support_counts.items()]),
+			"aln_support": "/".join([f'{label}_{str(count)}' for label, count in self.aln_support_counts.items()]),
+			"phasing": self.phasing,
 			#"local_depths": self.local_depths, TODO: put this into a string format
 			"breakpoint_notation": self.breakpoint_notation
 		}
@@ -96,7 +100,6 @@ class ConsensusBreakpoint():
 				str(self.uid),
 				'1' # 1st edge
 			])
-
 		return "\n".join("\t".join(l) for l in bed_lines)+"\n"
 
 	def as_bedpe(self, count):
@@ -115,28 +118,26 @@ class ConsensusBreakpoint():
 			# add 1bp to the bedpe location for igv rendering
 			bedpe_line[4] = str(int(bedpe_line[4])+1)
 			bedpe_line[5] = str(int(bedpe_line[5])+1)
-		label_string = "/".join([f'{label.upper()}_{str(len(reads))}' for label, reads in self.labels.items()])
+		label_string = "/".join([f'{label.upper()}_{str(count)}' for label, count in self.read_support_counts.items()])
 		bp_length = str(abs(int(self.end_loc)-int(self.start_loc)))
-		start_cluster = str(self.originating_cluster.uid)
-		end_cluster = str(self.end_cluster.uid)
-		bedpe_line.append(f'ID_{count}|{bp_length}bp|{start_cluster}/{end_cluster}|{label_string}|{self.breakpoint_notation}')
+		bedpe_line.append(f'ID_{count}|{bp_length}bp|{label_string}|{self.breakpoint_notation}')
 
 		return "\t".join(bedpe_line)+"\n"
 
 	def as_read_support(self, count):
 		""" return read support line representation of a breakpoint """
-		if ',' in ("".join(self.labels.get('tumour',[])+self.labels.get('normal',[]))):
+		if ',' in ("".join(self.supporting_reads.get('tumour',[])+self.supporting_reads.get('normal',[]))):
 			# quote everything since at least one read name contains a comma
 			read_support_line = [
 				f'ID_{count}',
-				'"'+'","'.join(self.labels.get('tumour',[]))+'"',
-				'"'+'","'.join(self.labels.get('normal',[]))+'"'
+				'"'+'","'.join(self.supporting_reads.get('tumour',[]))+'"',
+				'"'+'","'.join(self.supporting_reads.get('normal',[]))+'"'
 			]
 		else:
 			read_support_line = [
 				f'ID_{count}',
-				'"'+",".join(self.labels.get('tumour',[]))+'"',
-				'"'+",".join(self.labels.get('normal',[]))+'"'
+				'"'+",".join(self.supporting_reads.get('tumour',[]))+'"',
+				'"'+",".join(self.supporting_reads.get('normal',[]))+'"'
 			]
 		return "\t".join(read_support_line)+"\n"
 
@@ -149,41 +150,6 @@ class ConsensusBreakpoint():
 			# split sequence to only have 80 characters per line
 			fasta_lines.extend([insert[i:i+80] for i in range(0, len(insert), 80)])
 		return "\n".join(fasta_lines)+"\n"
-
-	def as_variant_stats(self, count, stats_column_order):
-		""" return variant line with its stats """
-		variant_stats_lines = []
-		start_cluster_stats, end_cluster_stats = [],[]
-		for key in stats_column_order:
-			start_cluster_stats.append(self.originating_cluster.get_stats()[key])
-			end_cluster_stats.append(self.end_cluster.get_stats()[key])
-		variant_stats_lines.append([
-			f'{self.start_chr}:{self.start_loc}',
-			f'ID_{count}_1',
-			f'{self.breakpoint_notation}',
-			f'{self.sv_length}',
-			f'{self.originating_cluster.uid}',
-			f'{self.end_cluster.uid}',
-			f'{self.support["tumour"]}',
-			f'{self.support["normal"]}'
-		]+[str(s) for s in start_cluster_stats]+[str(s) for s in end_cluster_stats])
-
-		if self.breakpoint_notation not in ["<INS>", "+", "-"]:
-			variant_stats_lines.append([
-				f'{self.end_chr}:{self.end_loc}',
-				f'ID_{count}_2',
-				f'{self.breakpoint_notation}',
-				f'{self.sv_length}',
-				f'{self.originating_cluster.uid}',
-				f'{self.end_cluster.uid}',
-				f'{self.support["tumour"]}',
-				f'{self.support["normal"]}'
-			]+[str(s) for s in start_cluster_stats]+[str(s) for s in end_cluster_stats])
-
-		variant_stats_str = ''
-		for line in variant_stats_lines:
-			variant_stats_str+="\t".join(line)+"\n"
-		return variant_stats_str
 
 	def get_alts(self, start_base, end_base):
 		""" return the vcf ALT notation for a breakpoint (both lines) """
@@ -249,23 +215,22 @@ class ConsensusBreakpoint():
 
 		alts = self.get_alts(start_base, end_base)
 		gt_tag = ''
-		if self.support['normal'] >= 1:
+		if self.read_support_counts['normal'] >= 1:
 			gt_tag = '0/0'
 		else:
 			gt_tag = '0/1'
 		# construct info column
-		support_str = ';'.join([f'{label.upper()}_SUPPORT={label_count}' for label, label_count in self.support.items()])
+		support_str = ''
+		for key in sorted(self.read_support_counts.keys(), reverse=True):
+			support_str += f'{key.upper()}_READ_SUPPORT={self.read_support_counts[key]};'
+			support_str += f'{key.upper()}_ALN_SUPPORT={self.aln_support_counts[key]};'
 		stats_str = self.get_stats_str()
 		info = [f'{support_str};']
 		info[0] += f'SVLEN={self.sv_length};'
 		info[0] += f'BP_NOTATION={self.breakpoint_notation};'
 		info[0] += f'SOURCE={self.source};'
-		info[0] += f'CLUSTERED_READS_TUMOUR={self.read_counts["tumour"]};'
-		info[0] += f'CLUSTERED_READS_NORMAL={self.read_counts["normal"]};'
-		if self.phase:
-			info[0] += f'HP={self.phase["HP"]["1"]},{self.phase["HP"]["2"]},{self.phase["HP"]["NA"]};'
-			if self.phase["PS"]:
-				info[0] += f'PS={",".join(self.phase["PS"])};'
+		info[0] += f'CLUSTERED_READS_TUMOUR={self.total_read_counts["tumour"]};'
+		info[0] += f'CLUSTERED_READS_NORMAL={self.total_read_counts["normal"]};'
 		info[0] += stats_str
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
@@ -274,6 +239,11 @@ class ConsensusBreakpoint():
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
+			if self.phasing and self.phasing[0]:
+				bp_0_phase = f'{",".join([str(self.phasing[0]["HP"][i]) for i in ["1","2","NA"]])}'
+				info[0] += f';ALT_HP={bp_0_phase};'
+				if self.phasing[0]["PS"]:
+					info[0] += f'PS={",".join(self.phasing[0]["PS"])};'
 		elif self.breakpoint_notation in ["+","-"]:
 			info[0] = 'SVTYPE=SBND;' + info[0]
 			for label, depths in self.local_depths.items():
@@ -281,6 +251,11 @@ class ConsensusBreakpoint():
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
+			if self.phasing and self.phasing[0]:
+				bp_0_phase = f'{",".join([str(self.phasing[0]["HP"][i]) for i in ["1","2","NA"]])}'
+				info[0] += f';ALT_HP={bp_0_phase};'
+				if self.phasing[0]["PS"]:
+					info[0] += f'PS={",".join(self.phasing[0]["PS"])};'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
@@ -294,6 +269,16 @@ class ConsensusBreakpoint():
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 			info[1] = info[1] + f'TUMOUR_AF={",".join([str(af) for af in reversed(self.allele_fractions["tumour"])])};'
 			info[1] = info[1] + f'NORMAL_AF={",".join([str(af) for af in reversed(self.allele_fractions["normal"])])}'
+			if self.phasing and self.phasing[0]:
+				bp_0_phase = f'{",".join([str(self.phasing[0]["HP"][i]) for i in ["1","2","NA"]])}'
+				info[0] += f';ALT_HP={bp_0_phase};'
+				if self.phasing[0]["PS"]:
+					info[0] += f'PS={",".join(self.phasing[0]["PS"])};'
+			if len(self.phasing) > 1 and self.phasing[1]:
+				bp_1_phase = f'{",".join([str(self.phasing[1]["HP"][i]) for i in ["1","2","NA"]])}'
+				info[1] += f';ALT_HP={bp_1_phase};'
+				if self.phasing[1]["PS"]:
+					info[1] += f'PS={",".join(self.phasing[1]["PS"])};'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,
@@ -333,7 +318,7 @@ class ConsensusBreakpoint():
 
 class PotentialBreakpoint():
 	""" class for a potential breakpoint identified from a CIGAR string or split-read """
-	def __init__(self, locations, source, read_name, read_quality, label, breakpoint_notation, insert=None):
+	def __init__(self, locations, source, read_name, read_quality, label, breakpoint_notation, read_phasing, insert=None):
 		self.uid = generate_uuid()
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
@@ -354,6 +339,7 @@ class PotentialBreakpoint():
 		self.read_name = read_name
 		self.mapq = read_quality
 		self.label = label
+		self.phasing = read_phasing
 
 	def as_dict(self):
 		""" return dict representation of breakpoint"""
@@ -362,12 +348,13 @@ class PotentialBreakpoint():
 			"start_loc": self.start_loc,
 			"end_chr": self.end_chr,
 			"end_loc": self.end_loc,
-			"inserted_sequence": self.inserted_sequence if len(self.inserted_sequence) < 50 else (self.inserted_sequence[0:10]+"..."+self.inserted_sequence[-10:]),
+			"inserted_sequence": self.inserted_sequence if (not self.inserted_sequence or len(self.inserted_sequence) < 50) else (self.inserted_sequence[0:10]+"..."+self.inserted_sequence[-10:]),
 			"source": self.source,
 			"read_name": self.read_name,
 			"mapq": self.mapq,
 			"label": self.label,
-			"breakpoint_notation": self.breakpoint_notation
+			"breakpoint_notation": self.breakpoint_notation,
+			"phasing": self.phasing
 		}
 		return self_dict
 

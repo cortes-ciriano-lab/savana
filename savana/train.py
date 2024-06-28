@@ -41,7 +41,7 @@ FEATURES_TO_DROP = [
 	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID', 'DISTANCE_TO_MATCH',
 	'CLASS','REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
 	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN',
-	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN', 'HP', 'PS'
+	'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN', 'PS', 'ALT_HP'
 ]
 
 def format_data(data_matrix):
@@ -60,6 +60,9 @@ def format_data(data_matrix):
 	# split the AF tuples
 	data_matrix[['TUMOUR_AF_0', 'TUMOUR_AF_1']] = data_matrix['TUMOUR_AF'].apply(pd.Series)
 	data_matrix[['NORMAL_AF_0', 'NORMAL_AF_1']] = data_matrix['NORMAL_AF'].apply(pd.Series)
+	if 'ALT_HP' in data_matrix:
+		# split the HP tuples
+		data_matrix[['HP_1_COUNT', 'HP_2_COUNT', 'HP_NA_COUNT']] = data_matrix['ALT_HP'].apply(pd.Series)
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
 	data_matrix['TUMOUR_DP_AT_1'] = data_matrix['TUMOUR_DP_AT_1'].fillna(data_matrix['TUMOUR_DP_AT_0'])

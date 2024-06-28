@@ -15,7 +15,7 @@ from time import time
 from datetime import datetime
 import argparse
 
-__version__ = "1.0.28"
+__version__ = "1.0.29"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -288,8 +288,10 @@ def generate_vcf_header(args, example_breakpoint):
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
 		'##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
 		'##INFO=<ID=MATEID,Number=1,Type=String,Description="ID of mate breakends">',
-		'##INFO=<ID=NORMAL_SUPPORT,Number=1,Type=Integer,Description="Number of variant supporting normal reads">',
-		'##INFO=<ID=TUMOUR_SUPPORT,Number=1,Type=Integer,Description="Number of variant supporting tumour reads">',
+		'##INFO=<ID=NORMAL_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal reads">',
+		'##INFO=<ID=TUMOUR_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour reads">',
+		'##INFO=<ID=NORMAL_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal alignments">',
+		'##INFO=<ID=TUMOUR_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour alignments">',
 		'##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Length of the SV">',
 		'##INFO=<ID=TUMOUR_DP_BEFORE,Number=2,Type=Integer,Description="Local tumour depth in bin before the breakpoint(s) of an SV">',
 		'##INFO=<ID=TUMOUR_DP_AT,Number=2,Type=Integer,Description="Local tumour depth in bin at the breakpoint(s) of an SV">',
@@ -297,16 +299,15 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=NORMAL_DP_BEFORE,Number=2,Type=Integer,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
 		'##INFO=<ID=NORMAL_DP_AT,Number=2,Type=Integer,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
 		'##INFO=<ID=NORMAL_DP_AFTER,Number=2,Type=Integer,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
-		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
-		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
-		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">',
+		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour SV-supporting reads to tumour read depth (DP) at breakpoint">',
+		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal SV-supporting reads to normal read depth (DP) at breakpoint">',
+		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of SV (same for paired breakpoints)">',
 		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">',
 		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">',
-		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">'
+		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">',
+		'##INFO=<ID=ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype (1/2/NA)">',
+		'##INFO=<ID=PS,Number=.,Type=String,Description="List of unique phase sets from the supporting reads">'
 	])
-	if example_breakpoint.phase:
-		vcf_header_str.append('##INFO=<ID=HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype (1,2,NA)">')
-		vcf_header_str.append('##INFO=<ID=PS,Number=.,Type=String,Description="List of unique phase sets from the supporting reads">')
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
 	breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()
@@ -324,9 +325,9 @@ def time_function(desc, checkpoints, time_str, final=False):
 	""" prints the number of seconds elapsed compared to previous checkpoint """
 	checkpoints.append(time())
 	if not final:
-		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[-2], 3)} seconds'
+		formatted_time = f'{desc:<60}{round(checkpoints[-1] - checkpoints[-2], 3)} seconds'
 	else:
-		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[0], 3)} seconds\n'
+		formatted_time = f'{desc:<60}{round(checkpoints[-1] - checkpoints[0], 3)} seconds\n'
 	time_str.append(formatted_time)
 	print(formatted_time)
 	return

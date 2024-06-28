@@ -29,12 +29,11 @@ import objgraph
 from pympler import muppy, summary, refbrowser
 """
 
-def execute_annotate(task_arg_dict, contig_coverage_array, shared_phasing_dictionary, task_tracker, conn):
+def execute_annotate(task_arg_dict, contig_coverage_array, task_tracker, conn):
 	""" submit task arguments to the annotation function and send results through pipe """
 	breakpoints = compute_depth(
 		task_arg_dict['breakpoints'],
 		contig_coverage_array,
-		shared_phasing_dictionary,
 		task_arg_dict['coverage_binsize']
 	)
 	task_tracker[task_arg_dict['task_id']] = 1
@@ -90,7 +89,6 @@ def execute_get_potential_breakpoint_task(task_arg_dict, task_tracker, conn):
 		task_arg_dict['end_pos'],
 		task_arg_dict['coverage_binsize'],
 		task_arg_dict['contig_coverage_array'],
-		task_arg_dict['phasing_dictionary'],
 		task_arg_dict['single_bnd'],
 		task_arg_dict['single_bnd_min_length'],
 		task_arg_dict['single_bnd_max_mapq']
@@ -243,7 +241,7 @@ def generate_coverage_arrays(aln_files, args):
 			coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
 	return coverage_arrays
 
-def run_annotate(called_breakpoints, shared_cov_arrays, shared_phasing_dictionary, args):
+def run_annotate(called_breakpoints, shared_cov_arrays, args):
 	""" generate task list for annotating breakpoints and coordinate the execution """
 	tasks = generate_annotate_depth_tasks(called_breakpoints, args)
 	task_tracker = Array('h', [0]*len(tasks))
@@ -261,7 +259,7 @@ def run_annotate(called_breakpoints, shared_cov_arrays, shared_phasing_dictionar
 				# create new pipe
 				pipes[i] = Pipe(duplex=False)
 				# create a new process and replace it (match pipe w process)
-				proc = Process(target=execute_annotate, args=(task_args, shared_cov_arrays, shared_phasing_dictionary, task_tracker, pipes[i][1]))
+				proc = Process(target=execute_annotate, args=(task_args, shared_cov_arrays, task_tracker, pipes[i][1]))
 				processes[i] = (proc, task_args['task_id'])
 				proc.start()
 		for i, process in enumerate(processes):
@@ -418,8 +416,6 @@ def run_get_potential_breakpoints(aln_files, args):
 	tasks = generate_get_potential_breakpoint_tasks(aln_files, args)
 	task_tracker = Array('h', [0]*len(tasks))
 	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
-	manager = Manager()
-	shared_phasing_dictionary = manager.dict()
 
 	results = []
 	pipes = [None] * args.threads
@@ -434,7 +430,6 @@ def run_get_potential_breakpoints(aln_files, args):
 				task_args = tasks.pop(0)
 				# retrieve reference to the relevant contig's coverage array
 				task_args['contig_coverage_array'] = shared_cov_arrays[task_args['label']][task_args['contig']]
-				task_args['phasing_dictionary'] = shared_phasing_dictionary
 				# create a new pipe
 				pipes[i] = Pipe(duplex=False)
 				# create a new process and replace it (matching the pipe with its process)
@@ -483,14 +478,14 @@ def run_get_potential_breakpoints(aln_files, args):
 			if potential_breakpoints:
 				contig_potential_breakpoints.setdefault(contig, []).extend(potential_breakpoints)
 
-	return contig_potential_breakpoints, shared_cov_arrays, shared_phasing_dictionary
+	return contig_potential_breakpoints, shared_cov_arrays
 
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using {args.threads} thread(s)\n')
 
 	# 1) GET POTENTIAL BREAKPOINTS
-	potential_breakpoints, shared_cov_arrays, shared_phasing_dictionary = run_get_potential_breakpoints(aln_files, args)
+	potential_breakpoints, shared_cov_arrays = run_get_potential_breakpoints(aln_files, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
@@ -516,8 +511,8 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	gc.collect()
 
 	# use converted arrays to annotate depth
-	annotated_breakpoints = run_annotate(called_breakpoints, converted_shared_cov_arrays, shared_phasing_dictionary, args)
-	helper.time_function("Annotated breakpoints with depth and phasing (if applicable)", checkpoints, time_str)
+	annotated_breakpoints = run_annotate(called_breakpoints, converted_shared_cov_arrays, args)
+	helper.time_function("Annotated breakpoints with depth", checkpoints, time_str)
 
 
 	# more cleanup

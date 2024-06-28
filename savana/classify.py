@@ -84,7 +84,7 @@ def rescue_cna(args, checkpoints, time_str):
 	classified_vcf = cyvcf2.VCF(args.output)
 	rescue_dict = {} # store the id and distance of the rescued variants for each segment
 	for variant in classified_vcf:
-		if variant.INFO['TUMOUR_SUPPORT'] >= args.min_support and variant.INFO['NORMAL_SUPPORT'] == 0:
+		if variant.INFO['TUMOUR_READ_SUPPORT'] >= args.min_support and variant.INFO['NORMAL_READ_SUPPORT'] == 0:
 			for seg_start, _, seg_name, _ in cna_dict[variant.CHROM]:
 				distance = abs(variant.start - int(seg_start))
 				if distance < args.cna_rescue_distance:
@@ -122,16 +122,16 @@ def rescue_cna(args, checkpoints, time_str):
 
 def legacy_pass_strict(variant, event_heuristic):
 	""" apply legacy filter for strict thresholds """
-	if variant['NORMAL_SUPPORT'] > 0:
+	if variant['NORMAL_READ_SUPPORT'] > 0:
 		return False
-	if variant['TUMOUR_SUPPORT'] > 7:
+	if variant['TUMOUR_READ_SUPPORT'] > 7:
 		origin_uncertainty = (variant['ORIGIN_STARTS_STD_DEV']+1) * (variant['ORIGIN_EVENT_SIZE_STD_DEV']+1)
 		end_uncertainty = (variant['END_STARTS_STD_DEV']+1) * (variant['END_EVENT_SIZE_STD_DEV']+1)
 		try:
-			if variant['TUMOUR_SUPPORT'] > 12 and origin_uncertainty <= 15:
+			if variant['TUMOUR_READ_SUPPORT'] > 12 and origin_uncertainty <= 15:
 				if event_heuristic <= 0.025:
 					return True
-			elif variant['TUMOUR_SUPPORT'] > 12 and end_uncertainty <= 30:
+			elif variant['TUMOUR_READ_SUPPORT'] > 12 and end_uncertainty <= 30:
 				return True
 			elif end_uncertainty <= 10:
 				return True
@@ -141,14 +141,14 @@ def legacy_pass_strict(variant, event_heuristic):
 
 def legacy_pass_lenient(variant, event_heuristic):
 	""" apply legacy filter for lenient thresholds """
-	if variant['TUMOUR_SUPPORT'] == 0:
+	if variant['TUMOUR_READ_SUPPORT'] == 0:
 		return False
-	elif variant['NORMAL_SUPPORT']/variant['TUMOUR_SUPPORT'] < 0.1:
+	elif variant['NORMAL_READ_SUPPORT']/variant['TUMOUR_READ_SUPPORT'] < 0.1:
 		try:
 			if variant['ORIGIN_STARTS_STD_DEV'] < 150 and event_heuristic < 3:
-				if variant['BP_NOTATION'] == "<INS>" and variant['TUMOUR_SUPPORT'] > 25:
+				if variant['BP_NOTATION'] == "<INS>" and variant['TUMOUR_READ_SUPPORT'] > 25:
 					return True
-				elif variant['BP_NOTATION'] != "<INS>" and variant['TUMOUR_SUPPORT'] > 5:
+				elif variant['BP_NOTATION'] != "<INS>" and variant['TUMOUR_READ_SUPPORT'] > 5:
 					return True
 		except Exception as _:
 			# in case of None for any stat
@@ -284,9 +284,9 @@ def classify_by_params(args, checkpoints, time_str):
 
 def pacbio_pass_somatic(variant, min_support, min_af):
 	""" custom manual filters for PacBio """
-	if variant.INFO['NORMAL_SUPPORT'] != 0:
+	if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
 		return False
-	if variant.INFO['TUMOUR_SUPPORT'] < min_support:
+	if variant.INFO['TUMOUR_READ_SUPPORT'] < min_support:
 		return False
 	if variant.INFO['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant.INFO['END_STARTS_STD_DEV'] > 50.0:
 		return False
@@ -358,9 +358,9 @@ def classify_pacbio(args, checkpoints, time_str):
 
 def pass_rescue(variant):
 	""" rescue variants predicted noise by model if they pass set of filters """
-	if variant.INFO['NORMAL_SUPPORT'] != 0:
+	if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
 		return False
-	if variant.INFO['TUMOUR_SUPPORT'] <= 6:
+	if variant.INFO['TUMOUR_READ_SUPPORT'] <= 6:
 		return False
 	if variant.INFO['TUMOUR_AF'][0] <= 0.10:
 		return False
@@ -421,11 +421,11 @@ def classify_by_model(args, checkpoints, time_str):
 		if variant_prediction == 1 or variant_mate_prediction == 1:
 			# AT LEAST ONE EDGE PREDICTED SOMATIC BY MODEL
 			# perform sanity checks
-			if variant.INFO['TUMOUR_SUPPORT'] < args.min_support:
+			if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 				variant.FILTER = 'LOW_SUPPORT'
 				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
-			elif variant.INFO['TUMOUR_SUPPORT'] < variant.INFO['NORMAL_SUPPORT']:
+			elif variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 				variant.FILTER = 'LOW_SUPPORT'
 				prediction_dict[variant_id] = 0 # update the dictionary as well for mate
@@ -453,7 +453,7 @@ def classify_by_model(args, checkpoints, time_str):
 		elif variant_prediction == 2 and variant_mate_prediction == 2:
 			# PREDICTED GERMLINE By MODEL
 			# perform sanity checks
-			if variant.INFO['NORMAL_SUPPORT'] < args.min_support:
+			if variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support:
 				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
 				variant.FILTER = 'LOW_SUPPORT'
 				prediction_dict[variant_id] = 0 # update the dictionary as well for mate

@@ -20,8 +20,10 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 	""" given a vcf file, create a dict representation of relevant attributes for each variant """
 	variant_dicts = []
 	id_count = 0
+	seen_ids = {}
 	for variant in cyvcf2.VCF(vcf_file):
 		if (qual_filter and helper.is_int(variant.QUAL) and variant.QUAL >= qual_filter) or not qual_filter or not helper.is_int(variant.QUAL):
+			variant_id = variant.ID if variant.ID not in seen_ids else f'{variant.ID}_MATE' # in case same ID is used
 			variant_dict = {
 				'label': label,
 				'id': label+"_"+str(id_count),
@@ -30,13 +32,15 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 				'length': variant.INFO.get('SVLEN'),
 				'type': variant.INFO.get('SVTYPE'),
 				'within_buffer': [],
-				'external_id': variant.ID,
+				'external_id': variant_id,
 				'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
 				'validated': None
 			}
 			variant_dicts.append(variant_dict)
 			id_count += 1
+			seen_ids[variant.ID] = True
 			if variant.INFO.get("END"):
+				variant_id = f'{variant_id}_FROM_INFO_END'
 				# create another breakpoint object for alternate edge
 				variant_dict = {
 					'label': label,
@@ -46,13 +50,15 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 					'length': variant.INFO.get('SVLEN'),
 					'type': variant.INFO.get('SVTYPE'),
 					'within_buffer': [],
-					'external_id': variant.ID,
+					'external_id': variant_id,
 					'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
 					'validated': None
 				}
 				variant_dicts.append(variant_dict)
 				id_count += 1
+				seen_ids[variant.ID] = True
 			elif variant.INFO.get("END2"):
+				variant_id = f'{variant_id}_FROM_INFO_END2'
 				# create another breakpoint object for alternate edge
 				variant_dict = {
 					'label': label,
@@ -62,12 +68,13 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 					'length': variant.INFO.get('SVLEN'),
 					'type': variant.INFO.get('SVTYPE'),
 					'within_buffer': [],
-					'external_id': variant.ID,
+					'external_id': variant_id,
 					'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
 					'validated': None
 				}
 				variant_dicts.append(variant_dict)
 				id_count += 1
+				seen_ids[variant.ID] = True
 
 	return variant_dicts
 
@@ -207,8 +214,8 @@ def evaluate_vcf(args, checkpoints, time_str):
 			'type': variant.INFO.get('SVTYPE'),
 			'within_buffer': []})
 		if args.by_support:
-			input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_SUPPORT'))
-			input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_SUPPORT'))
+			input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
+			input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 		for compare_variant in compare_set:
 			if compare_variant['start_chr'] == variant_chrom:
 				distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
@@ -226,8 +233,8 @@ def evaluate_vcf(args, checkpoints, time_str):
 				'type': variant.INFO.get('SVTYPE'),
 				'within_buffer': []})
 			if args.by_support:
-				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_SUPPORT'))
-				input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_SUPPORT'))
+				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
+				input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 			for compare_variant in compare_set:
 				if compare_variant['start_chr'] == variant_chrom:
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
@@ -245,8 +252,8 @@ def evaluate_vcf(args, checkpoints, time_str):
 				'type': variant.INFO.get('SVTYPE'),
 				'within_buffer': []})
 			if args.by_support:
-				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_SUPPORT'))
-				input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_SUPPORT'))
+				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
+				input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 			for compare_variant in compare_set:
 				if compare_variant['start_chr'] == variant_chrom:
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
