@@ -48,6 +48,11 @@ class ConsensusBreakpoint():
 		for key in self.read_support_counts.keys():
 			if key not in self.aln_support_counts:
 				self.aln_support_counts[key] = 0
+			start_phase, end_phase = self.phasing
+			if key not in start_phase:
+				self.phasing[0][key] = {'HP': {'1': 0, '2': 0, 'NA': 0}, 'PS': []}
+			if key not in end_phase:
+				self.phasing[1][key] = {'HP': {'1': 0, '2': 0, 'NA': 0}, 'PS': []}
 		# used later for standardising across output files
 		self.count = None
 		# add these all later
@@ -239,11 +244,14 @@ class ConsensusBreakpoint():
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
-			if self.phasing and self.phasing[0]:
-				bp_0_phase = f'{",".join([str(self.phasing[0]["HP"][i]) for i in ["1","2","NA"]])}'
-				info[0] += f';ALT_HP={bp_0_phase};'
-				if self.phasing[0]["PS"]:
-					info[0] += f'PS={",".join(self.phasing[0]["PS"])};'
+			for label, phase in self.phasing[0].items():
+				bp_0_phase = f'{",".join([str(phase["HP"][i]) for i in ["1","2","NA"]])}'
+				info[0] += f';{label.upper()}_ALT_HP={bp_0_phase};'
+				if phase["PS"]:
+					info[0] += f'{label.upper()}_PS={",".join(phase["PS"])};'
+			for label, counts in self.phased_local_depths.items():
+				bp_0_phase_at = f'{",".join([str(v[0]) for k,v in counts[1].items()])}'
+				info[0] += f';{label.upper()}_TOTAL_HP_AT={bp_0_phase_at};'
 		elif self.breakpoint_notation in ["+","-"]:
 			info[0] = 'SVTYPE=SBND;' + info[0]
 			for label, depths in self.local_depths.items():
@@ -251,11 +259,14 @@ class ConsensusBreakpoint():
 					info[0]+=f'{label.upper()}_DP_{bin_label}={",".join([str(dp) for dp in depths[i]])};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
-			if self.phasing and self.phasing[0]:
-				bp_0_phase = f'{",".join([str(self.phasing[0]["HP"][i]) for i in ["1","2","NA"]])}'
-				info[0] += f';ALT_HP={bp_0_phase};'
-				if self.phasing[0]["PS"]:
-					info[0] += f'PS={",".join(self.phasing[0]["PS"])};'
+			for label, phase in self.phasing[0].items():
+				bp_0_phase = f'{",".join([str(phase["HP"][i]) for i in ["1","2","NA"]])}'
+				info[0] += f';{label.upper()}_ALT_HP={bp_0_phase};'
+				if phase["PS"]:
+					info[0] += f'{label.upper()}_PS={",".join(phase["PS"])};'
+			for label, counts in self.phased_local_depths.items():
+				bp_0_phase_at = f'{",".join([str(v[0]) for k,v in counts[1].items()])}'
+				info[0] += f';{label.upper()}_TOTAL_HP_AT={bp_0_phase_at};'
 		else:
 			info.append(info[0]) # duplicate info
 			# add edge-specific info
@@ -269,16 +280,21 @@ class ConsensusBreakpoint():
 			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 			info[1] = info[1] + f'TUMOUR_AF={",".join([str(af) for af in reversed(self.allele_fractions["tumour"])])};'
 			info[1] = info[1] + f'NORMAL_AF={",".join([str(af) for af in reversed(self.allele_fractions["normal"])])}'
-			if self.phasing and self.phasing[0]:
-				bp_0_phase = f'{",".join([str(self.phasing[0]["HP"][i]) for i in ["1","2","NA"]])}'
-				info[0] += f';ALT_HP={bp_0_phase};'
-				if self.phasing[0]["PS"]:
-					info[0] += f'PS={",".join(self.phasing[0]["PS"])};'
-			if len(self.phasing) > 1 and self.phasing[1]:
-				bp_1_phase = f'{",".join([str(self.phasing[1]["HP"][i]) for i in ["1","2","NA"]])}'
-				info[1] += f';ALT_HP={bp_1_phase};'
-				if self.phasing[1]["PS"]:
-					info[1] += f'PS={",".join(self.phasing[1]["PS"])};'
+			for label, phase in self.phasing[0].items():
+				bp_0_phase = f'{",".join([str(phase["HP"][i]) for i in ["1","2","NA"]])}'
+				info[0] += f';{label.upper()}_ALT_HP={bp_0_phase};'
+				if phase["PS"]:
+					info[0] += f'{label.upper()}_PS={",".join(phase["PS"])};'
+			for label, phase in self.phasing[0].items():
+				bp_1_phase = f'{",".join([str(phase["HP"][i]) for i in ["1","2","NA"]])}'
+				info[1] += f';{label.upper()}_ALT_HP={bp_1_phase};'
+				if phase["PS"]:
+					info[1] += f'{label.upper()}_PS={",".join(phase["PS"])};'
+			for label, counts in self.phased_local_depths.items():
+				bp_0_phase_at = f'{",".join([str(v[0]) for k,v in counts[1].items()])}'
+				info[0] += f';{label.upper()}_TOTAL_HP_AT={bp_0_phase_at};'
+				bp_1_phase_at = f'{",".join([str(v[1]) for k,v in counts[1].items()])}'
+				info[1] += f';{label.upper()}_TOTAL_HP_AT={bp_1_phase_at};'
 		# put together vcf line(s)
 		vcf_lines = [[
 			self.start_chr,

@@ -376,15 +376,6 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 	for read in aln_file.fetch(contig, start, end):
 		if read.is_secondary or read.is_unmapped:
 			continue
-		try:
-			# record start/end in read incrementer
-			contig_coverage_array[floor((read.reference_start-1)/coverage_binsize)]+=1
-			contig_coverage_array[floor((read.reference_end-1)/coverage_binsize)]-=1
-		except IndexError as _:
-			print(f'Unable to update coverage for contig {contig}')
-			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
-			print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
-
 		read_phasing = {'HP': 'NA', 'PS': None}
 		for tag in read_phasing.keys():
 			try:
@@ -392,7 +383,22 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 				read_phasing[tag] = value
 			except KeyError as _:
 				pass
-
+		# increment all overlapping bins
+		try:
+			if read.reference_start < read.reference_end:
+				start_bin = floor((read.reference_start)/coverage_binsize)
+				end_bin = floor((read.reference_end-1)/coverage_binsize)
+			else:
+				start_bin = floor((read.reference_end-1)/coverage_binsize)
+				end_bin = floor((read.reference_start)/coverage_binsize)
+			#contig_coverage_array[read_phasing['HP']][start_bin]+=1
+			#contig_coverage_array[read_phasing['HP']][end_bin]+=1
+			for i in range(start_bin, end_bin):
+				contig_coverage_array[read_phasing['HP']][i]+=1
+		except IndexError as _:
+			print(f'Unable to update coverage for contig {contig}')
+			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} to {floor((read.reference_end-1)/coverage_binsize)}')
+			print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold
 		curr_pos = {
@@ -469,6 +475,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 			potential_breakpoints.setdefault(curr_chrom,[]).append(
 				PotentialBreakpoint(prev_deletion, "CIGAR", read.query_name, read.mapping_quality, label, "+-", [read_phasing, read_phasing])
 				)
+
 	aln_file.close()
 	del aln_file
 
@@ -484,13 +491,13 @@ def count_labels_and_phase(source_breakpoints):
 	for bp in source_breakpoints:
 		if bp.phasing:
 			# phasing for the start
-			start_phase = {'HP': {'1': 0, '2': 0, 'NA': 0},'PS': []} if not start_phase else start_phase
-			start_phase['HP'][bp.phasing[0]['HP']] += 1
-			start_phase['PS'] += [bp.phasing[0]['PS']] if (bp.phasing[0]['PS'] is not None and bp.phasing[0]['PS'] not in start_phase['PS']) else []
+			start_phase = {bp.label :{'HP': {'1': 0, '2': 0, 'NA': 0},'PS': []}} if bp.label not in start_phase else start_phase
+			start_phase[bp.label]['HP'][bp.phasing[0]['HP']] += 1
+			start_phase[bp.label]['PS'] += [bp.phasing[0]['PS']] if (bp.phasing[0]['PS'] is not None and bp.phasing[0]['PS'] not in start_phase[bp.label]['PS']) else []
 			# phasing for the end
-			end_phase = {'HP': {'1': 0, '2': 0, 'NA': 0},'PS': []} if not end_phase else end_phase
-			end_phase['HP'][bp.phasing[1]['HP']] += 1
-			end_phase['PS'] += [bp.phasing[1]['PS']] if (bp.phasing[1]['PS'] is not None and bp.phasing[1]['PS'] not in end_phase['PS']) else []
+			end_phase = {bp.label :{'HP': {'1': 0, '2': 0, 'NA': 0},'PS': []}} if bp.label not in end_phase else end_phase
+			end_phase[bp.label]['HP'][bp.phasing[1]['HP']] += 1
+			end_phase[bp.label]['PS'] += [bp.phasing[1]['PS']] if (bp.phasing[1]['PS'] is not None and bp.phasing[1]['PS'] not in end_phase[bp.label]['PS']) else []
 		# alignment counts
 		if bp.label not in aln_counts:
 			aln_counts[bp.label] = 1
@@ -663,11 +670,11 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """
 	for bp in breakpoints:
-		bp.local_depths = {
-			'tumour': [[0,0],[0,0],[0,0]],
-			'normal': [[0,0],[0,0],[0,0]],
+		bp.phased_local_depths = {
+			'tumour': [{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]}],
+			'normal': [{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]}]
 		}
-		for label in bp.local_depths.keys():
+		for label in bp.phased_local_depths.keys():
 			for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):
 				if chrom not in shared_cov_arrays[label]:
 					print(f'WARNING: contig {chrom} not in shared_cov_array!')
@@ -675,21 +682,36 @@ def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 				# calculate centre bin (zero-based array, subtract 1)
 				centre_bin = floor((loc)/coverage_binsize)
 				# ensure is bound by 0 and last element of contig coverage array
-				centre_bin = min(max(centre_bin, 0), (len(shared_cov_arrays[label][chrom]) - 1))
+				centre_bin = min(max(centre_bin, 0), (len(shared_cov_arrays[label][chrom]['NA']) - 1))
 				# before
 				if centre_bin == 0:
 					# no coverage since out of range
-					bp.local_depths[label][0][i] = 0
+					for hp in bp.phased_local_depths[label][0].keys():
+						bp.phased_local_depths[label][0][hp][i] = 0
 				else:
-					bp.local_depths[label][0][i] = np.sum(shared_cov_arrays[label][chrom][0:centre_bin-1])
+					for hp in bp.phased_local_depths[label][0].keys():
+						bp.phased_local_depths[label][0][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin-1]
 				# at
-				bp.local_depths[label][1][i] = bp.local_depths[label][0][i] + shared_cov_arrays[label][chrom][centre_bin]
+				for hp in bp.phased_local_depths[label][1].keys():
+					bp.phased_local_depths[label][1][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin]
 				# after
-				if centre_bin == (len(shared_cov_arrays[label][chrom]) - 1):
+				if centre_bin == (len(shared_cov_arrays[label][chrom]['NA']) - 1):
 					# no coverage since out of range for contig
-					bp.local_depths[label][2][i] = 0
+					for hp in bp.phased_local_depths[label][2].keys():
+						bp.phased_local_depths[label][2][hp][i] = 0
 				else:
-					bp.local_depths[label][2][i] = bp.local_depths[label][1][i] + shared_cov_arrays[label][chrom][centre_bin+1]
+					for hp in bp.phased_local_depths[label][2].keys():
+						bp.phased_local_depths[label][2][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin+1]
+		# sum across haplotypes
+		bp.local_depths = {
+			'tumour': [[0,0],[0,0],[0,0]],
+			'normal': [[0,0],[0,0],[0,0]],
+		}
+		for label, depths in bp.phased_local_depths.items():
+			for i, count_dict in enumerate(depths):
+				for _, counts in count_dict.items():
+					bp.local_depths[label][i][0]+=counts[0]
+					bp.local_depths[label][i][1]+=counts[1]
 
 		# now calculate the allele fractions
 		for label, [_, dp_at, _] in bp.local_depths.items():

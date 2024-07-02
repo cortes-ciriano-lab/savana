@@ -15,7 +15,7 @@ from time import time
 from datetime import datetime
 import argparse
 
-__version__ = "1.0.29"
+__version__ = "1.0.30"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -305,8 +305,12 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">',
 		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">',
 		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">',
-		'##INFO=<ID=ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype (1/2/NA)">',
-		'##INFO=<ID=PS,Number=.,Type=String,Description="List of unique phase sets from the supporting reads">'
+		'##INFO=<ID=TUMOUR_ALT_HP,Number=3,Type=Integer,Description="Counts of SV-supporting reads belonging to each haplotype in the tumour sample (1/2/NA)">',
+		'##INFO=<ID=TUMOUR_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA)">',
+		'##INFO=<ID=TUMOUR_PS,Number=.,Type=String,Description="List of unique phase sets from the tumour supporting reads">',
+		'##INFO=<ID=NORMAL_ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype in the normal sample (1/2/NA)">',
+		'##INFO=<ID=NORMAL_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA)">',
+		'##INFO=<ID=NORMAL_PS,Number=.,Type=String,Description="List of unique phase sets from the normal supporting reads">'
 	])
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()

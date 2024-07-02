@@ -20,7 +20,7 @@ import pybedtools
 
 import savana.helper as helper
 from savana.breakpoints import get_potential_breakpoints, call_breakpoints, compute_depth
-from savana.clusters import cluster_breakpoints, output_clusters
+from savana.clusters import cluster_breakpoints
 
 """
 # developer dependencies
@@ -238,7 +238,8 @@ def generate_coverage_arrays(aln_files, args):
 		for contig, contig_length in contig_lengths.items():
 			if contig not in contigs_to_consider:
 				continue
-			coverage_arrays.setdefault(label, {})[contig] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
+			for hp in ['1', '2', 'NA']:
+				coverage_arrays.setdefault(label, {}).setdefault(contig, {})[hp] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
 	return coverage_arrays
 
 def run_annotate(called_breakpoints, shared_cov_arrays, args):
@@ -411,11 +412,10 @@ def run_cluster_breakpoints(potential_breakpoints, args):
 
 	return clustered_breakpoints
 
-def run_get_potential_breakpoints(aln_files, args):
+def run_get_potential_breakpoints(aln_files, shared_cov_arrays, args):
 	""" generate the task list and coordinate the task execution by processes  """
 	tasks = generate_get_potential_breakpoint_tasks(aln_files, args)
 	task_tracker = Array('h', [0]*len(tasks))
-	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
 
 	results = []
 	pipes = [None] * args.threads
@@ -478,14 +478,18 @@ def run_get_potential_breakpoints(aln_files, args):
 			if potential_breakpoints:
 				contig_potential_breakpoints.setdefault(contig, []).extend(potential_breakpoints)
 
-	return contig_potential_breakpoints, shared_cov_arrays
+	return contig_potential_breakpoints
 
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using {args.threads} thread(s)\n')
 
+	# 0) GENERATE SHARED COVERAGE ARRAYS
+	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
+	helper.time_function("Initialised coverage arrays", checkpoints, time_str)
+
 	# 1) GET POTENTIAL BREAKPOINTS
-	potential_breakpoints, shared_cov_arrays = run_get_potential_breakpoints(aln_files, args)
+	potential_breakpoints = run_get_potential_breakpoints(aln_files, shared_cov_arrays, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
@@ -500,20 +504,17 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	# convert sharedctype array to numpy
 	converted_shared_cov_arrays = {}
 	for label, label_dict in shared_cov_arrays.items():
-		for contig, contig_array in label_dict.items():
-			converted_shared_cov_arrays.setdefault(label, {})[contig] = np.frombuffer(contig_array, dtype=np.dtype(contig_array))[0]
-	helper.time_function("Computed local depth for breakpoints", checkpoints, time_str)
-
+		for contig, contig_dict in label_dict.items():
+			for hp, hp_array in contig_dict.items():
+				converted_shared_cov_arrays.setdefault(label, {}).setdefault(contig,{})[hp] = np.frombuffer(hp_array, dtype=np.dtype(hp_array))[0]
 	# cleanup
 	del potential_breakpoints
 	del clustered_breakpoints
 	del shared_cov_arrays
 	gc.collect()
-
 	# use converted arrays to annotate depth
 	annotated_breakpoints = run_annotate(called_breakpoints, converted_shared_cov_arrays, args)
 	helper.time_function("Annotated breakpoints with depth", checkpoints, time_str)
-
 
 	# more cleanup
 	del called_breakpoints

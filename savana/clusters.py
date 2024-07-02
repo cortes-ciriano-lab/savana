@@ -39,35 +39,6 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
 
 	return chrom, filtered_stack
 
-def output_clusters(refined_clusters, outdir):
-	""" output the json files of evidence """
-	for cluster in refined_clusters:
-		cluster_id = str(cluster.uid)
-		cluster_outdir = os.path.join(outdir, 'clusters', cluster_id)
-		if not os.path.exists(cluster_outdir):
-			os.makedirs(cluster_outdir)
-		output_json = open(os.path.join(cluster_outdir, f'{cluster_id}.json'), 'w')
-		json.dump(cluster.as_dict(), output_json, sort_keys=False, indent=2)
-		output_json.close()
-
-def write_cluster_bed(clusters, outdir):
-	""" store clusters in bed file"""
-	cluster_file = os.path.join(outdir, 'cluster.bed')
-	cluster_file_compressed = f'{cluster_file}.gz'
-	cluster_bed = ''
-	for clusters_sv_type in clusters.values():
-		for cluster in clusters_sv_type:
-			cluster_id = str(cluster.uid)
-			if cluster.start <= cluster.end:
-				cluster_bed+="\t".join([cluster.chr, str(cluster.start), str(cluster.end), cluster_id])
-			else:
-				cluster_bed+="\t".join([cluster.chr, str(cluster.end), str(cluster.start), cluster_id])
-			cluster_bed+="\n"
-	sorted_bed = pybedtools.BedTool(cluster_bed, from_string=True).sort()
-	sorted_bed.saveas(cluster_file)
-	pysam.tabix_compress(cluster_file, cluster_file_compressed)
-	pysam.tabix_index(cluster_file_compressed, preset='bed', keep_original=True)
-
 def calculate_cluster_stats(clusters, outdir):
 	""" compute and output statistical information about clusters """
 	num_breakpoints = []
