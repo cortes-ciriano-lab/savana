@@ -45,15 +45,14 @@ def execute_annotate(task_arg_dict, contig_coverage_array, task_tracker, conn):
 
 def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 	""" submit task arguments to the function and send results through pipe """
-	breakpoints, contig = call_breakpoints(
+	breakpoints = call_breakpoints(
 		task_arg_dict['clusters'],
 		task_arg_dict['buffer'],
 		task_arg_dict['length'],
-		task_arg_dict['depth'],
-		task_arg_dict['contig']
+		task_arg_dict['depth']
 	)
 	task_tracker[task_arg_dict['task_id']] = 1
-	conn.send((breakpoints, contig))
+	conn.send(breakpoints)
 	# cleanup
 	del task_arg_dict
 	gc.collect()
@@ -104,57 +103,86 @@ def generate_annotate_depth_tasks(called_breakpoints, args):
 	""" generate task list by splitting work into approx. evenly-sized chunks """
 	tasks = []
 	task_id_counter = 0
-	total_breakpoints = sum(len(bps) for bps in called_breakpoints.values())
-	split = max(floor(total_breakpoints/args.threads), 1)
-	spare_breakpoints = []
-	for _, breakpoints in called_breakpoints.items():
-		if len(breakpoints) > split:
-			n_chunks = ceil(len(breakpoints)/split)
-			for chunk in list(map(lambda x: breakpoints[x * split:x * split + split], list(range(n_chunks)))):
-				tasks.append({
-					'breakpoints': chunk,
-					'coverage_binsize': args.coverage_binsize,
-					'task_id': task_id_counter
-				})
-				task_id_counter += 1
-		else:
-			spare_breakpoints.extend(breakpoints)
-			if len(spare_breakpoints) > split:
-				tasks.append({
-					'breakpoints': spare_breakpoints,
-					'coverage_binsize': args.coverage_binsize,
-					'task_id': task_id_counter
-				})
-				task_id_counter += 1
-				spare_breakpoints = []
-	# assign remaining spare breakpoints to last task
-	if spare_breakpoints:
+	split = max(floor(len(called_breakpoints)/args.threads), 1)
+	n_chunks = ceil(len(called_breakpoints)/split)
+	for chunk in list(map(lambda x: called_breakpoints[x * split:x * split + split], list(range(n_chunks)))):
 		tasks.append({
-			'breakpoints': spare_breakpoints,
+			'breakpoints': chunk,
 			'coverage_binsize': args.coverage_binsize,
 			'task_id': task_id_counter
 		})
+		task_id_counter += 1
 
 	return tasks
 
 def generate_call_breakpoint_tasks(clustered_breakpoints, args):
-	""""""
+	""" split call breakpoint tasks into approximately even chunks of work """
 	tasks = []
 	task_id_counter = 0
-	for contig, clusters in clustered_breakpoints.items():
+
+	total_clusters = sum(len(clusters) for clusters in clustered_breakpoints.values())
+	print(f'Total number of clusters: {total_clusters}')
+	split = max(floor(total_clusters/(args.threads*100)), 1)
+	n_chunks = ceil(total_clusters/split)
+	print(f'Chunk size {split} means should be {n_chunks} chunks')
+	spare_clusters = []
+	for _, clusters in clustered_breakpoints.items():
+		if len(clusters) > split:
+			n_chunks = ceil(len(clusters)/split)
+			for chunk in list(map(lambda x: clusters[x * split:x * split + split], list(range(n_chunks)))):
+				tasks.append({
+					'clusters': chunk,
+					'buffer': args.end_buffer,
+					'length': args.length,
+					'depth': args.min_support,
+					'task_id': task_id_counter
+				})
+				task_id_counter += 1
+		else:
+			spare_clusters.extend(clusters)
+			if len(spare_clusters) > split:
+				tasks.append({
+					'clusters': spare_clusters,
+					'buffer': args.end_buffer,
+					'length': args.length,
+					'depth': args.min_support,
+					'task_id': task_id_counter
+				})
+				task_id_counter += 1
+	# assign remaining spare breakpoints to final task
+	if spare_clusters:
 		tasks.append({
-			'contig': contig,
-			'clusters': clusters,
+			'clusters': spare_clusters,
 			'buffer': args.end_buffer,
 			'length': args.length,
 			'depth': args.min_support,
 			'task_id': task_id_counter
 		})
-		task_id_counter += 1
+
+	print(f'After dividing work there were {len(tasks)} tasks')
+
+	"""
+	# experiment, just do a cluster per task
+	for _, clusters in clustered_breakpoints.items():
+		for cluster in clusters:
+			tasks.append({
+				'clusters': [cluster],
+				'buffer': args.end_buffer,
+				'length': args.length,
+				'depth': args.min_support,
+				'task_id': task_id_counter
+			})
+			task_id_counter += 1
+
+	print(f'After dividing work there were {len(tasks)} tasks')
+
+	return tasks
+	"""
+
 	return tasks
 
 def generate_cluster_breakpoints_tasks(potential_breakpoints, args):
-	""" """
+	""" split clustering tasks into tasks by their contig """
 	tasks = []
 	task_id_counter = 0
 	for contig, breakpoints in potential_breakpoints.items():
@@ -348,10 +376,9 @@ def run_call_breakpoints(clustered_breakpoints, args):
 					processes[i] = None
 					pipes[i] = None
 	del task_tracker
-	called_breakpoints = {}
+	called_breakpoints = []
 	for result in results:
-		breakpoints, contig = result
-		called_breakpoints.setdefault(contig, []).extend(breakpoints)
+		called_breakpoints.extend(result)
 
 	return called_breakpoints
 
@@ -416,6 +443,7 @@ def run_get_potential_breakpoints(aln_files, shared_cov_arrays, args):
 	""" generate the task list and coordinate the task execution by processes  """
 	tasks = generate_get_potential_breakpoint_tasks(aln_files, args)
 	task_tracker = Array('h', [0]*len(tasks))
+	print(f' > {len(tasks)} get breakpoints tasks')
 
 	results = []
 	pipes = [None] * args.threads
@@ -501,24 +529,19 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
 	# 4) COMPUTE LOCAL DEPTH
-	# convert sharedctype array to numpy
-	converted_shared_cov_arrays = {}
-	for label, label_dict in shared_cov_arrays.items():
-		for contig, contig_dict in label_dict.items():
-			for hp, hp_array in contig_dict.items():
-				converted_shared_cov_arrays.setdefault(label, {}).setdefault(contig,{})[hp] = np.frombuffer(hp_array, dtype=np.dtype(hp_array))[0]
 	# cleanup
 	del potential_breakpoints
 	del clustered_breakpoints
-	del shared_cov_arrays
+	#del shared_cov_arrays
 	gc.collect()
 	# use converted arrays to annotate depth
-	annotated_breakpoints = run_annotate(called_breakpoints, converted_shared_cov_arrays, args)
+	annotated_breakpoints = run_annotate(called_breakpoints, shared_cov_arrays, args)
 	helper.time_function("Annotated breakpoints with depth", checkpoints, time_str)
 
 	# more cleanup
 	del called_breakpoints
-	del converted_shared_cov_arrays
+	del shared_cov_arrays
+	#del converted_shared_cov_arrays
 	gc.collect()
 
 	# 5) OUTPUT BREAKPOINTS

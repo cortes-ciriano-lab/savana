@@ -374,6 +374,17 @@ class PotentialBreakpoint():
 		}
 		return self_dict
 
+	def flip(self):
+		""" flip the coordinates to enable clustered by end location """
+		old_start_chr = self.start_chr
+		old_start_loc = self.start_loc
+		# reassign
+		self.start_chr = self.end_chr
+		self.start_loc = self.end_loc
+		self.end_chr = old_start_chr
+		self.end_loc = old_start_loc
+		return
+
 	# string representation
 	def __str__(self):
 		return json.dumps(self.as_dict())
@@ -393,13 +404,6 @@ class PotentialBreakpoint():
 		return False
 	def __hash__(self):
 		return hash(self.uid)
-	def __reversed__(self):
-		reversed_breakpoint = copy(self)
-		setattr(reversed_breakpoint, 'start_chr', self.end_chr)
-		setattr(reversed_breakpoint, 'start_loc', self.end_loc)
-		setattr(reversed_breakpoint, 'end_chr', self.start_chr)
-		setattr(reversed_breakpoint, 'end_loc', self.start_loc)
-		return reversed_breakpoint
 
 class Cluster():
 	""" class for a cluster containing breakpoint objects within a buffer & sharing an SV type """

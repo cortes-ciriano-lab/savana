@@ -544,7 +544,8 @@ def cluster_by_insert_length(insertion_like_breakpoints, fraction):
 
 	return stack
 
-def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
+#@profile
+def call_breakpoints(clusters, end_buffer, min_length, min_support):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same start chromosome!
 	#TODO: refactor. this works but it's ugly and overcomplicated
@@ -564,17 +565,17 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 				insertion_like_breakpoints = [b for b in end_chrom_breakpoints if b.breakpoint_notation in ["<INS>", "+", "-"]]
 				if len(insertion_like_breakpoints) >= min_support:
 					insertion_like_clusters = cluster_by_insert_length(insertion_like_breakpoints, 0.75)
-					for ins_cluster in insertion_like_clusters:
-						ins_read_counts, ins_aln_counts, ins_phasing_counts = count_labels_and_phase(ins_cluster)
+					for source_breakpoints in insertion_like_clusters:
+						ins_read_counts, ins_aln_counts, ins_phasing_counts = count_labels_and_phase(source_breakpoints)
 						if max(len(count) for count in ins_read_counts.values()) >= min_support:
-							num_insertions = sum(b.breakpoint_notation == "<INS>" for b in ins_cluster)
+							num_insertions = sum(b.breakpoint_notation == "<INS>" for b in source_breakpoints)
 							if num_insertions >= 2:
 								# require at least two cigar insertions of similar lengths to call ins
 								# create new "originating cluster" with only used breakpoints
 								# (ensures statistics are calculated correctly)
 								event_info = {'starts':[], 'inserts': [], 'sources': {}}
 								start_cluster = None
-								for bp in ins_cluster:
+								for bp in source_breakpoints:
 									event_info['starts'].append(bp.start_loc)
 									event_info['inserts'].append(bp.inserted_sequence)
 									event_info['sources'].setdefault(bp.source, True)
@@ -591,13 +592,13 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							else:
 								# separate here by bp_notation
 								sorted_breakpoints = {}
-								for bp in ins_cluster:
+								for bp in source_breakpoints:
 									sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
-								for notation_type, breakpoints in sorted_breakpoints.items():
-									sbnd_read_counts, sbnd_aln_counts, sbnd_phasing_counts = count_labels_and_phase(breakpoints)
+								for notation_type, source_breakpoints in sorted_breakpoints.items():
+									sbnd_read_counts, sbnd_aln_counts, sbnd_phasing_counts = count_labels_and_phase(source_breakpoints)
 									event_info = {'starts':[], 'inserts': [], 'sources': {}}
 									start_cluster = None
-									for bp in breakpoints:
+									for bp in source_breakpoints:
 										event_info['starts'].append(bp.start_loc)
 										event_info['inserts'].append(bp.inserted_sequence)
 										event_info['sources'].setdefault(bp.source, True)
@@ -614,35 +615,36 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 											consensus_source, start_cluster, None, notation_type, counts, event_info['inserts']))
 				# now deal with other breakpoint notation types
 				# reverse start/end in order to re-cluster
-				flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints if b.breakpoint_notation not in ["<INS>", "+", "-"]]
+				non_insertion_breakpoints = [bp for bp in end_chrom_breakpoints if bp.breakpoint_notation not in ["<INS>", "+", "-"]]
+				for bp in non_insertion_breakpoints:
+					bp.flip()
 				# sort by new start
-				flipped_breakpoints.sort()
+				non_insertion_breakpoints.sort()
 				# cheeky reclustering with reversed breakpoints
-				_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer)
+				_, cluster_stack = cluster_breakpoints(end_chrom, non_insertion_breakpoints, end_buffer)
 				for end_chrom_cluster in cluster_stack:
-					# sort breakpoints by their breakpoint_notation
+					# after clustering, unflip bps and separate them by their breakpoint notation
 					sorted_breakpoints = {}
 					for bp in end_chrom_cluster.breakpoints:
+						bp.flip() # unflip
 						sorted_breakpoints.setdefault(bp.breakpoint_notation, []).append(bp)
 					# go through the breakpoints by notation type
-					for bp_type, breakpoints in sorted_breakpoints.items():
+					for bp_type, source_breakpoints in sorted_breakpoints.items():
 						# create a consensus breakpoint for each end cluster that has enough supporting reads
-						read_counts, aln_counts, phasing_counts = count_labels_and_phase(breakpoints)
+						read_counts, aln_counts, phasing_counts = count_labels_and_phase(source_breakpoints)
 						if max([len(count) for count in read_counts.values()]) >= min_support:
-							# un-flip the breakpoints
-							unflipped_breakpoints = [reversed(b) for b in breakpoints]
 							# create a new "originating cluster" with only the used breakpoints
 							# (ensures statistics are calculated correctly)
 							start_cluster = None
 							source = {}
-							for bp in unflipped_breakpoints:
+							for bp in source_breakpoints:
 								if not start_cluster:
 									start_cluster = Cluster(bp)
 								else:
 									start_cluster.add(bp)
 								source.setdefault(bp.source, True)
-							median_start = median([bp.start_loc for bp in unflipped_breakpoints])
-							median_end = median([bp.end_loc for bp in unflipped_breakpoints])
+							median_start = median([bp.start_loc for bp in source_breakpoints])
+							median_end = median([bp.end_loc for bp in source_breakpoints])
 							consensus_source = "/".join(sorted(source.keys()))
 							counts = [read_counts, aln_counts, phasing_counts, total_read_counts]
 							new_breakpoint = ConsensusBreakpoint(
@@ -665,7 +667,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 				else:
 					final_breakpoints.extend(breakpoints_for_end_chrom)
 
-	return final_breakpoints, chrom
+	return final_breakpoints
 
 def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """

@@ -92,6 +92,21 @@ def conditionally_decorate(dec, condition=False):
 		return dec(func)
 	return decorator
 
+# for developer debugging
+def profile_function(func):
+	""" line profile a subprocess """
+	@wraps(func)
+	def wrapper(*args, **kwargs):
+		profiler = line_profiler.LineProfiler()
+		profiler.add_function(func)
+		profiler.enable()
+		result = func(*args, **kwargs)
+		profiler.disable()
+		profile_output = f"profile_{os.getpid()}.lprof"
+		profiler.dump_stats(profile_output)
+		return result
+	return wrapper
+
 def reverse_complement(sequence):
 	""" dna reverse complement of bases """
 	bases = {'A':'T', 'T':'A', 'C': 'G', 'G': 'C', 'N': 'N'}
