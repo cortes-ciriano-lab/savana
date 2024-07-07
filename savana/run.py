@@ -122,7 +122,7 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 
 	total_clusters = sum(len(clusters) for clusters in clustered_breakpoints.values())
 	print(f'Total number of clusters: {total_clusters}')
-	split = max(floor(total_clusters/(args.threads*100)), 1)
+	split = max(floor(total_clusters/(args.threads)), 1)
 	n_chunks = ceil(total_clusters/split)
 	print(f'Chunk size {split} means should be {n_chunks} chunks')
 	spare_clusters = []
@@ -149,6 +149,7 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 					'task_id': task_id_counter
 				})
 				task_id_counter += 1
+				spare_clusters = []
 	# assign remaining spare breakpoints to final task
 	if spare_clusters:
 		tasks.append({
@@ -508,6 +509,61 @@ def run_get_potential_breakpoints(aln_files, shared_cov_arrays, args):
 
 	return contig_potential_breakpoints
 
+def single_bp_compute_depth(bp, shared_cov_arrays, coverage_binsize):
+	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """
+	bp.phased_local_depths = {
+		'tumour': [{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]}],
+		'normal': [{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]}]
+	}
+	for label in bp.phased_local_depths.keys():
+		for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):
+			if chrom not in shared_cov_arrays[label]:
+				print(f'WARNING: contig {chrom} not in shared_cov_array!')
+				continue
+			# calculate centre bin (zero-based array, subtract 1)
+			centre_bin = floor((loc)/coverage_binsize)
+			# ensure is bound by 0 and last element of contig coverage array
+			centre_bin = min(max(centre_bin, 0), (len(shared_cov_arrays[label][chrom]['NA']) - 1))
+			# before
+			if centre_bin == 0:
+				# no coverage since out of range
+				for hp in bp.phased_local_depths[label][0].keys():
+					bp.phased_local_depths[label][0][hp][i] = 0
+			else:
+				for hp in bp.phased_local_depths[label][0].keys():
+					bp.phased_local_depths[label][0][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin-1]
+			# at
+			for hp in bp.phased_local_depths[label][1].keys():
+				bp.phased_local_depths[label][1][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin]
+			# after
+			if centre_bin == (len(shared_cov_arrays[label][chrom]['NA']) - 1):
+				# no coverage since out of range for contig
+				for hp in bp.phased_local_depths[label][2].keys():
+					bp.phased_local_depths[label][2][hp][i] = 0
+			else:
+				for hp in bp.phased_local_depths[label][2].keys():
+					bp.phased_local_depths[label][2][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin+1]
+	# sum across haplotypes
+	bp.local_depths = {
+		'tumour': [[0,0],[0,0],[0,0]],
+		'normal': [[0,0],[0,0],[0,0]],
+	}
+	for label, depths in bp.phased_local_depths.items():
+		for i, count_dict in enumerate(depths):
+			for _, counts in count_dict.items():
+				bp.local_depths[label][i][0]+=counts[0]
+				bp.local_depths[label][i][1]+=counts[1]
+
+	# now calculate the allele fractions
+	for label, [_, dp_at, _] in bp.local_depths.items():
+		af = [None, None]
+		for i in [0,1]:
+			af[i] = round(bp.aln_support_counts[label]/dp_at[i], 3) if dp_at[i] != 0 else 0.0
+			# due to sloping edges this can sometimes be inflated
+			af[i] = 1.0 if af[i] >= 1 else af[i]
+		bp.allele_fractions[label] = af
+
+
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using {args.threads} thread(s)\n')
@@ -524,22 +580,33 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	clustered_breakpoints = run_cluster_breakpoints(potential_breakpoints, args)
 	helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
 
+	# cleanup
+	del potential_breakpoints
+	gc.collect()
+
+	print(f'There are {len(clustered_breakpoints)} clusters')
+
 	# 3) CALL BREAKPOINTS FROM CLUSTERS
 	called_breakpoints = run_call_breakpoints(clustered_breakpoints, args)
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
-	# 4) COMPUTE LOCAL DEPTH
 	# cleanup
-	del potential_breakpoints
 	del clustered_breakpoints
-	#del shared_cov_arrays
 	gc.collect()
+
+	# 4) COMPUTE LOCAL DEPTH
 	# use converted arrays to annotate depth
-	annotated_breakpoints = run_annotate(called_breakpoints, shared_cov_arrays, args)
+	#annotated_breakpoints = run_annotate(called_breakpoints, shared_cov_arrays, args)
+	# trying instead to do this without parallelisation
+	for bp in called_breakpoints:
+		single_bp_compute_depth(bp, shared_cov_arrays, args.coverage_binsize)
 	helper.time_function("Annotated breakpoints with depth", checkpoints, time_str)
 
+
+	print(f'There are {len(called_breakpoints)} to output')
+
 	# more cleanup
-	del called_breakpoints
+	#del called_breakpoints
 	del shared_cov_arrays
 	#del converted_shared_cov_arrays
 	gc.collect()
@@ -555,11 +622,11 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	# build strings
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
-	vcf_string = helper.generate_vcf_header(args, annotated_breakpoints[0])
+	vcf_string = helper.generate_vcf_header(args, called_breakpoints[0])
 	read_support_string = 'VARIANT_ID\tTUMOUR_SUPPORTING_READS\tNORMAL_SUPPORTING_READS\n'
 	insertion_fasta_string = ''
 	count = 0
-	for bp in annotated_breakpoints:
+	for bp in called_breakpoints:
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)

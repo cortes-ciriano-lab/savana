@@ -724,7 +724,7 @@ def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 				af[i] = 1.0 if af[i] >= 1 else af[i]
 			bp.allele_fractions[label] = af
 
-	return breakpoints
+	#return breakpoints
 
 if __name__ == "__main__":
 	print("Breakpoint Functions")
