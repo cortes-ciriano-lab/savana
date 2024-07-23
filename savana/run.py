@@ -11,12 +11,11 @@ import os
 import gc
 
 from math import ceil, floor
-from multiprocessing import Pool, Array, Pipe, Process, Manager, sharedctypes
+from multiprocessing import Array, Pipe, Process, Manager, sharedctypes
 
 import numpy as np
 import pysam
 import pysam.bcftools as bcftools
-import pybedtools
 
 import savana.helper as helper
 from savana.breakpoints import get_potential_breakpoints, call_breakpoints, compute_depth
@@ -45,14 +44,15 @@ def execute_annotate(task_arg_dict, contig_coverage_array, task_tracker, conn):
 
 def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 	""" submit task arguments to the function and send results through pipe """
-	breakpoints = call_breakpoints(
+	breakpoints, contig = call_breakpoints(
 		task_arg_dict['clusters'],
 		task_arg_dict['buffer'],
 		task_arg_dict['length'],
-		task_arg_dict['depth']
+		task_arg_dict['depth'],
+		task_arg_dict['contig']
 	)
 	task_tracker[task_arg_dict['task_id']] = 1
-	conn.send(breakpoints)
+	conn.send((breakpoints, contig))
 	# cleanup
 	del task_arg_dict
 	gc.collect()
@@ -103,87 +103,57 @@ def generate_annotate_depth_tasks(called_breakpoints, args):
 	""" generate task list by splitting work into approx. evenly-sized chunks """
 	tasks = []
 	task_id_counter = 0
-	split = max(floor(len(called_breakpoints)/args.threads), 1)
-	n_chunks = ceil(len(called_breakpoints)/split)
-	for chunk in list(map(lambda x: called_breakpoints[x * split:x * split + split], list(range(n_chunks)))):
-		tasks.append({
-			'breakpoints': chunk,
-			'coverage_binsize': args.coverage_binsize,
-			'task_id': task_id_counter
-		})
-		task_id_counter += 1
-
-	return tasks
-
-def generate_call_breakpoint_tasks(clustered_breakpoints, args):
-	""" split call breakpoint tasks into approximately even chunks of work """
-	tasks = []
-	task_id_counter = 0
-
-	total_clusters = sum(len(clusters) for clusters in clustered_breakpoints.values())
-	print(f'Total number of clusters: {total_clusters}')
-	split = max(floor(total_clusters/(args.threads)), 1)
-	n_chunks = ceil(total_clusters/split)
-	print(f'Chunk size {split} means should be {n_chunks} chunks')
-	spare_clusters = []
-	for _, clusters in clustered_breakpoints.items():
-		if len(clusters) > split:
-			n_chunks = ceil(len(clusters)/split)
-			for chunk in list(map(lambda x: clusters[x * split:x * split + split], list(range(n_chunks)))):
+	total_breakpoints = sum(len(bps) for bps in called_breakpoints.values())
+	split = max(floor(total_breakpoints/(args.threads*10)), 1)
+	spare_breakpoints = []
+	for _, breakpoints in called_breakpoints.items():
+		if len(breakpoints) > split:
+			n_chunks = ceil(len(breakpoints)/split)
+			for chunk in list(map(lambda x: breakpoints[x * split:x * split + split], list(range(n_chunks)))):
 				tasks.append({
-					'clusters': chunk,
-					'buffer': args.end_buffer,
-					'length': args.length,
-					'depth': args.min_support,
+					'breakpoints': chunk,
+					'coverage_binsize': args.coverage_binsize,
 					'task_id': task_id_counter
 				})
 				task_id_counter += 1
 		else:
-			spare_clusters.extend(clusters)
-			if len(spare_clusters) > split:
+			spare_breakpoints.extend(breakpoints)
+			if len(spare_breakpoints) > split:
 				tasks.append({
-					'clusters': spare_clusters,
-					'buffer': args.end_buffer,
-					'length': args.length,
-					'depth': args.min_support,
+					'breakpoints': spare_breakpoints,
+					'coverage_binsize': args.coverage_binsize,
 					'task_id': task_id_counter
 				})
 				task_id_counter += 1
-				spare_clusters = []
-	# assign remaining spare breakpoints to final task
-	if spare_clusters:
+				spare_breakpoints = []
+	# assign remaining spare breakpoints to last task
+	if spare_breakpoints:
 		tasks.append({
-			'clusters': spare_clusters,
+			'breakpoints': spare_breakpoints,
+			'coverage_binsize': args.coverage_binsize,
+			'task_id': task_id_counter
+		})
+
+	return tasks
+
+def generate_call_breakpoint_tasks(clustered_breakpoints, args):
+	""""""
+	tasks = []
+	task_id_counter = 0
+	for contig, clusters in clustered_breakpoints.items():
+		tasks.append({
+			'contig': contig,
+			'clusters': clusters,
 			'buffer': args.end_buffer,
 			'length': args.length,
 			'depth': args.min_support,
 			'task_id': task_id_counter
 		})
-
-	print(f'After dividing work there were {len(tasks)} tasks')
-
-	"""
-	# experiment, just do a cluster per task
-	for _, clusters in clustered_breakpoints.items():
-		for cluster in clusters:
-			tasks.append({
-				'clusters': [cluster],
-				'buffer': args.end_buffer,
-				'length': args.length,
-				'depth': args.min_support,
-				'task_id': task_id_counter
-			})
-			task_id_counter += 1
-
-	print(f'After dividing work there were {len(tasks)} tasks')
-
-	return tasks
-	"""
-
+		task_id_counter += 1
 	return tasks
 
 def generate_cluster_breakpoints_tasks(potential_breakpoints, args):
-	""" split clustering tasks into tasks by their contig """
+	""" """
 	tasks = []
 	task_id_counter = 0
 	for contig, breakpoints in potential_breakpoints.items():
@@ -267,8 +237,8 @@ def generate_coverage_arrays(aln_files, args):
 		for contig, contig_length in contig_lengths.items():
 			if contig not in contigs_to_consider:
 				continue
-			for hp in ['1', '2', 'NA']:
-				coverage_arrays.setdefault(label, {}).setdefault(contig, {})[hp] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
+			for haplotype in [1,2,None]:
+				coverage_arrays.setdefault(label, {}).setdefault(contig, {})[haplotype] = sharedctypes.RawArray('i', ceil(contig_length/args.coverage_binsize))
 	return coverage_arrays
 
 def run_annotate(called_breakpoints, shared_cov_arrays, args):
@@ -377,9 +347,10 @@ def run_call_breakpoints(clustered_breakpoints, args):
 					processes[i] = None
 					pipes[i] = None
 	del task_tracker
-	called_breakpoints = []
+	called_breakpoints = {}
 	for result in results:
-		called_breakpoints.extend(result)
+		breakpoints, contig = result
+		called_breakpoints.setdefault(contig, []).extend(breakpoints)
 
 	return called_breakpoints
 
@@ -440,11 +411,11 @@ def run_cluster_breakpoints(potential_breakpoints, args):
 
 	return clustered_breakpoints
 
-def run_get_potential_breakpoints(aln_files, shared_cov_arrays, args):
+def run_get_potential_breakpoints(aln_files, args):
 	""" generate the task list and coordinate the task execution by processes  """
 	tasks = generate_get_potential_breakpoint_tasks(aln_files, args)
 	task_tracker = Array('h', [0]*len(tasks))
-	print(f' > {len(tasks)} get breakpoints tasks')
+	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
 
 	results = []
 	pipes = [None] * args.threads
@@ -507,108 +478,59 @@ def run_get_potential_breakpoints(aln_files, shared_cov_arrays, args):
 			if potential_breakpoints:
 				contig_potential_breakpoints.setdefault(contig, []).extend(potential_breakpoints)
 
-	return contig_potential_breakpoints
-
-def single_bp_compute_depth(bp, shared_cov_arrays, coverage_binsize):
-	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """
-	bp.phased_local_depths = {
-		'tumour': [{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]}],
-		'normal': [{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]},{'1': [0,0], '2': [0,0], 'NA': [0,0]}]
-	}
-	for label in bp.phased_local_depths.keys():
-		for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):
-			if chrom not in shared_cov_arrays[label]:
-				print(f'WARNING: contig {chrom} not in shared_cov_array!')
-				continue
-			# calculate centre bin (zero-based array, subtract 1)
-			centre_bin = floor((loc)/coverage_binsize)
-			# ensure is bound by 0 and last element of contig coverage array
-			centre_bin = min(max(centre_bin, 0), (len(shared_cov_arrays[label][chrom]['NA']) - 1))
-			# before
-			if centre_bin == 0:
-				# no coverage since out of range
-				for hp in bp.phased_local_depths[label][0].keys():
-					bp.phased_local_depths[label][0][hp][i] = 0
-			else:
-				for hp in bp.phased_local_depths[label][0].keys():
-					bp.phased_local_depths[label][0][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin-1]
-			# at
-			for hp in bp.phased_local_depths[label][1].keys():
-				bp.phased_local_depths[label][1][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin]
-			# after
-			if centre_bin == (len(shared_cov_arrays[label][chrom]['NA']) - 1):
-				# no coverage since out of range for contig
-				for hp in bp.phased_local_depths[label][2].keys():
-					bp.phased_local_depths[label][2][hp][i] = 0
-			else:
-				for hp in bp.phased_local_depths[label][2].keys():
-					bp.phased_local_depths[label][2][hp][i] = shared_cov_arrays[label][chrom][hp][centre_bin+1]
-	# sum across haplotypes
-	bp.local_depths = {
-		'tumour': [[0,0],[0,0],[0,0]],
-		'normal': [[0,0],[0,0],[0,0]],
-	}
-	for label, depths in bp.phased_local_depths.items():
-		for i, count_dict in enumerate(depths):
-			for _, counts in count_dict.items():
-				bp.local_depths[label][i][0]+=counts[0]
-				bp.local_depths[label][i][1]+=counts[1]
-
-	# now calculate the allele fractions
-	for label, [_, dp_at, _] in bp.local_depths.items():
-		af = [None, None]
-		for i in [0,1]:
-			af[i] = round(bp.aln_support_counts[label]/dp_at[i], 3) if dp_at[i] != 0 else 0.0
-			# due to sloping edges this can sometimes be inflated
-			af[i] = 1.0 if af[i] >= 1 else af[i]
-		bp.allele_fractions[label] = af
-
+	return contig_potential_breakpoints, shared_cov_arrays
 
 def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	""" run main algorithm steps in parallel processes """
 	print(f'Using {args.threads} thread(s)\n')
 
-	# 0) GENERATE SHARED COVERAGE ARRAYS
-	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
-	helper.time_function("Initialised coverage arrays", checkpoints, time_str)
-
 	# 1) GET POTENTIAL BREAKPOINTS
-	potential_breakpoints = run_get_potential_breakpoints(aln_files, shared_cov_arrays, args)
+	potential_breakpoints, shared_cov_arrays = run_get_potential_breakpoints(aln_files, args)
 	helper.time_function("Identified potential breakpoints", checkpoints, time_str)
+
+	"""
+	# TESTING SIZE OF PB OBJECTS
+	from pympler import asizeof
+	max_size = -1
+	max_size_non_insertion = -1
+	mean_size = []
+	for _, chrom_bps in potential_breakpoints.items():
+		for bp in chrom_bps:
+			size = asizeof.asizeof(bp)
+			mean_size.append(size)
+			if size > max_size:
+				max_size = size
+				print(f'New max size of {round((max_size/1000), 2)}KB {bp.breakpoint_notation}')
+			if bp.breakpoint_notation not in ['+', '-', '<INS>'] and size > max_size_non_insertion:
+				max_size_non_insertion = size
+				print(f'New (non ins) max size of {round((max_size_non_insertion/1000), 2)}KB {bp.breakpoint_notation}')
+	print(f'The maximum size of PB objects is {round((max_size/1000), 2)}KB')
+	print(f'The maximum size of (non ins) PB objects is {round((max_size_non_insertion/1000), 2)}KB')
+	print(f'The mean size is {round((sum(mean_size)/len(mean_size))/1000, 2)}KB for {len(mean_size)} breakpoints')
+	"""
 
 	# 2) CLUSTER POTENTIAL BREAKPOINTS
 	clustered_breakpoints = run_cluster_breakpoints(potential_breakpoints, args)
 	helper.time_function("Clustered potential breakpoints", checkpoints, time_str)
-
-	# cleanup
-	del potential_breakpoints
-	gc.collect()
-
-	print(f'There are {len(clustered_breakpoints)} clusters')
 
 	# 3) CALL BREAKPOINTS FROM CLUSTERS
 	called_breakpoints = run_call_breakpoints(clustered_breakpoints, args)
 	helper.time_function("Called consensus breakpoints", checkpoints, time_str)
 
 	# cleanup
+	del potential_breakpoints
 	del clustered_breakpoints
 	gc.collect()
 
-	# 4) COMPUTE LOCAL DEPTH
+	# 4) COMPUTE AND ANNOTATE LOCAL DEPTH
 	# use converted arrays to annotate depth
-	#annotated_breakpoints = run_annotate(called_breakpoints, shared_cov_arrays, args)
-	# trying instead to do this without parallelisation
-	for bp in called_breakpoints:
-		single_bp_compute_depth(bp, shared_cov_arrays, args.coverage_binsize)
-	helper.time_function("Annotated breakpoints with depth", checkpoints, time_str)
+	annotated_breakpoints = run_annotate(called_breakpoints, shared_cov_arrays, args)
+	helper.time_function("Annotated breakpoints with depth and phasing", checkpoints, time_str)
 
-
-	print(f'There are {len(called_breakpoints)} to output')
+	print(f'{len(annotated_breakpoints)} annotated breakpoints to output')
 
 	# more cleanup
-	#del called_breakpoints
-	del shared_cov_arrays
-	#del converted_shared_cov_arrays
+	del called_breakpoints
 	gc.collect()
 
 	# 5) OUTPUT BREAKPOINTS
@@ -622,11 +544,11 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	# build strings
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
-	vcf_string = helper.generate_vcf_header(args, called_breakpoints[0])
+	vcf_string = helper.generate_vcf_header(args, annotated_breakpoints[0])
 	read_support_string = 'VARIANT_ID\tTUMOUR_SUPPORTING_READS\tNORMAL_SUPPORTING_READS\n'
 	insertion_fasta_string = ''
 	count = 0
-	for bp in called_breakpoints:
+	for bp in annotated_breakpoints:
 		bedpe_string += bp.as_bedpe(count)
 		vcf_string += bp.as_vcf(ref_fasta)
 		read_support_string += bp.as_read_support(count)

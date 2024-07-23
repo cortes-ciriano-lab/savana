@@ -20,10 +20,8 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 	""" given a vcf file, create a dict representation of relevant attributes for each variant """
 	variant_dicts = []
 	id_count = 0
-	seen_ids = {}
 	for variant in cyvcf2.VCF(vcf_file):
 		if (qual_filter and helper.is_int(variant.QUAL) and variant.QUAL >= qual_filter) or not qual_filter or not helper.is_int(variant.QUAL):
-			variant_id = variant.ID if variant.ID not in seen_ids else f'{variant.ID}_MATE' # in case same ID is used
 			variant_dict = {
 				'label': label,
 				'id': label+"_"+str(id_count),
@@ -32,15 +30,13 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 				'length': variant.INFO.get('SVLEN'),
 				'type': variant.INFO.get('SVTYPE'),
 				'within_buffer': [],
-				'external_id': variant_id,
+				'external_id': variant.ID,
 				'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
 				'validated': None
 			}
 			variant_dicts.append(variant_dict)
 			id_count += 1
-			seen_ids[variant.ID] = True
 			if variant.INFO.get("END"):
-				variant_id = f'{variant_id}_FROM_INFO_END'
 				# create another breakpoint object for alternate edge
 				variant_dict = {
 					'label': label,
@@ -50,15 +46,13 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 					'length': variant.INFO.get('SVLEN'),
 					'type': variant.INFO.get('SVTYPE'),
 					'within_buffer': [],
-					'external_id': variant_id,
+					'external_id': variant.ID,
 					'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
 					'validated': None
 				}
 				variant_dicts.append(variant_dict)
 				id_count += 1
-				seen_ids[variant.ID] = True
 			elif variant.INFO.get("END2"):
-				variant_id = f'{variant_id}_FROM_INFO_END2'
 				# create another breakpoint object for alternate edge
 				variant_dict = {
 					'label': label,
@@ -68,13 +62,12 @@ def create_variant_dicts(vcf_file, label, qual_filter):
 					'length': variant.INFO.get('SVLEN'),
 					'type': variant.INFO.get('SVTYPE'),
 					'within_buffer': [],
-					'external_id': variant_id,
+					'external_id': variant.ID,
 					'qual': round(variant.QUAL, 2) if variant.QUAL else variant.QUAL,
 					'validated': None
 				}
 				variant_dicts.append(variant_dict)
 				id_count += 1
-				seen_ids[variant.ID] = True
 
 	return variant_dicts
 

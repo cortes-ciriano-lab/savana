@@ -39,6 +39,23 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
 
 	return chrom, filtered_stack
 
+def write_cluster_bed(clusters, outdir):
+	""" store clusters in bed file"""
+	cluster_file = os.path.join(outdir, 'cluster.bed')
+	cluster_file_compressed = f'{cluster_file}.gz'
+	cluster_bed = ''
+	for clusters_sv_type in clusters.values():
+		for cluster in clusters_sv_type:
+			if cluster.start <= cluster.end:
+				cluster_bed+="\t".join([cluster.chr, str(cluster.start), str(cluster.end)])
+			else:
+				cluster_bed+="\t".join([cluster.chr, str(cluster.end), str(cluster.start)])
+			cluster_bed+="\n"
+	sorted_bed = pybedtools.BedTool(cluster_bed, from_string=True).sort()
+	sorted_bed.saveas(cluster_file)
+	pysam.tabix_compress(cluster_file, cluster_file_compressed)
+	pysam.tabix_index(cluster_file_compressed, preset='bed', keep_original=True)
+
 def calculate_cluster_stats(clusters, outdir):
 	""" compute and output statistical information about clusters """
 	num_breakpoints = []

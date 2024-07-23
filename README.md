@@ -1,19 +1,21 @@
 # ![SAVANA](/docs/SAVANA_logo_transparent.png)
 
-SAVANA is a somatic structural variant (SV) caller for long-read data. It takes aligned tumour and normal BAM files, examines the reads for evidence of SVs, clusters adjacent potential SVs together, and finally calls consensus breakpoints, classifies somatic events, and outputs them in BEDPE and VCF format.
+SAVANA is a somatic structural variant (SV) caller for long-read data. It takes aligned tumour and normal BAM files, examines the reads for evidence of SVs, clusters adjacent potential SVs together, and finally calls consensus breakpoints, classifies somatic events, and outputs them in BEDPE and VCF format. It also identifies copy number abberations and predicts purity and ploidy. (@cmsauer).
 
 SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and winnowmap. It requires a Unix-based operating system and has been developed and tested on Linux.
 
 ## Contents
 * [Installation](#installation)
   + [Install SAVANA with Conda](#install-savana-with-conda)
-  + [Install SAVANA from Source](#install-savana-from-source)
+  + [Alternately, Install SAVANA from Source](#alternately-install-savana-from-source)
   + [Check SAVANA Installation](#check-savana-installation)
 * [Run SAVANA](#run-savana)
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
   + [Optional Flags](#optional-flags)
   + [Output Files](#output-files)
+* [Generating Phased VCF](#generating-phased-vcf)
+* [Generating Phased BAMs](#generating-phased-bams)
 * [Advanced Options](#advanced-options)
   + [Alternate Classification Methods](#alternate-classification-methods)
   + [Label Known Variants](#label-known-variants)
@@ -33,7 +35,7 @@ conda install -c bioconda savana
 
 This will install all dependencies and allow you to use SAVANA on the command-line.
 
-### Install SAVANA from Source
+### Alternately, Install SAVANA from Source
 
 _Alternately_, you can install SAVANA from source (note these steps are not required if you've installed SAVANA via conda)
 
@@ -42,10 +44,7 @@ First, clone this repository:
 git clone git@github.com:cortes-ciriano-lab/savana.git
 ```
 
-To install from source, SAVANA requires Python 3.9 with the following dependencies:
-- pysam
-- pybedtools
-- cyvcf2
+To install from source, SAVANA requires Python 3.9 with dependencies as listed in the `requirements.txt` file
 
 All of which can be installed via conda __OR__ pip:
 #### Install Dependencies with Conda
@@ -78,7 +77,7 @@ python3 -m pip install . -vv
 
 You can test that SAVANA was installed successfully by running `savana --help`, which should display the following text:
 ```
-usage: savana [-h] [--version] {run,classify,evaluate,train} ...
+usage: savana [-h] [--version] {run,classify,evaluate,train,cna} ...
 
 SAVANA - somatic SV caller
 
@@ -87,19 +86,25 @@ optional arguments:
   --version             show program's version number and exit
 
 subcommands:
-  {run,classify,evaluate,train}
+  {run,classify,evaluate,train,cna}
                         SAVANA sub-commands
-    run                 run SAVANA on tumour and normal long-read BAMs to detect SVs
+    run                 identify and cluster breakpoints - output raw variants without classification
     classify            classify VCF using model
     evaluate            label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against
     train               train model on folder of input VCFs
+    cna                 run copy number
 ```
 
 ## Run SAVANA
 
-After installing, SAVANA can be with a minumum set of arguments:
+After installing, SAVANA can be run on Nanopore data with a minumum set of arguments:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
+```
+
+This will call somatic SVs. To compute copy number abberations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCFs](#generating-phased-vcfs)). Then, to call both SVs and CNAs you can run savana with:
+```
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file>
 ```
 
 ### Mandatory Arguments
@@ -114,21 +119,66 @@ Argument|Description
 Argument|Description
 --------|-----------
 *Basic Arguments*
---ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
+--phased_vcf| Path to phased vcf file to extract heterozygous SNPs for allele counting
+--ont | Run on Nanopore data (default)
+--pb | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio))
+--sample| Name to prepend to output files (default=tumour BAM filename without extension)
 --contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
 --length| Minimum length SV to consider (default=30)
 --mapq| Minimum MAPQ of reads to consider (default=0)
---min_support | Minimum supporting reads for a variant (default=5)
---min_af | Minimum allele-fraction (AF) for a variant (default=0.01)
+--min_support| Minimum supporting reads for a variant (default=5)
+--min_af| Minimum allele-fraction (AF) for a variant (default=0.01)
+--cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
+--cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
 --threads| Number of threads to use (default is maximum available)
---sample| Name to prepend to output files (default=tumour BAM filename without extension)
-*Algorithm Arguments*
+--ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
+--single_bnd| Report single breakend variants in addition to standard types (False by default)
+--single_bnd_min_length| Minimum length of single breakend to consider (default=100)
+--single_bnd_max_mapq| Convert supplementary alignments below this threshold to single breakend (default=5, must not exceed --mapq argument)
+--confidence| If using a model to classify variants (default), you can use Mondrian Conformal Prediction with a chosen confidence (0.01-0.99)
+*SV Algorithm Arguments*
 --buffer| Buffer to add when clustering adjacent (non-insertion) potential breakpoints, excepting insertions (default=10)
 --insertion_buffer| Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
 --end_buffer | Buffer to add when clustering the alternate edge of potential breakpoints, excepting insertions (default=100)
 --coverage_binsize | Length used for coverage bins (default=5)
 --chunksize | Chunksize to use when splitting genome for parallel analysis (default=1000000)
-*Advanced Arguments*
+*CNA Algorithm Arguments*
+--allele_counts_het_snps| If allele counting has already been performed provide the path for the allele counts of heterozygous SNPs to skip this step
+--allele_mapq|    Mapping quality threshold for reads to be included in the allele counting (default = 0)
+--allele_min_reads|    Minimum number of reads required per het SNP site for allele counting (default = 10)
+--cn_binsize|  Bin window size in kbp (default=10)
+--blacklist| Path to the blacklist file
+--breakpoints| Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis
+--chromosomes| Chromosomes to analyse. To run on all chromosomes leave unspecified (default). To run on a subset of chromosomes only specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "-c 1 4 23 24" to run chromosomes 1, 4, X and Y
+--readcount_mapq| Mapping quality threshold for reads to be included in the read counting (default = 5)
+--no_blacklist| Don't use a blacklist
+--bl_threshold| Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 0, i.e. no overlap tolerated). Please specify percentage threshold as integer, e.g. "-t 5"
+--no_basesfilter| Do not filter bases
+--bases_threshold| Percentage of known bases per bin required for read counting (default = 0, i.e. no filtering). Please specify percentage threshold as integer, e.g. "-bt 95"
+--smoothing_level|   Size of neighbourhood for smoothing.
+--trim| Trimming percentage to be used.
+--min_segment_size|    Minimum size for a segement to be considered a segment (default = 5).
+--shuffles|    Number of permutations (shuffles) to be performed during CBS (default = 1000).
+--p_seg| p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05).
+--p_val| p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01).
+--quantile| Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).
+--min_ploidy| Minimum ploidy to be considered for copy number fitting.
+--max_ploidy| Maximum ploidy to be considered for copy number fitting.
+--ploidy_step| Ploidy step size for grid search space used during for copy number fitting.
+--min_cellularity| Minimum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided| this is estimated during copy number fitting. Alternatively| a purity value can be provided if the purity of the sample is already known.
+--max_cellularity| Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided| this is estimated during copy number fitting. Alternatively| a purity value can be provided if the purity of the sample is already known.
+--cellularity_step| Cellularity step size for grid search space used during for copy number fitting.
+--cellularity_buffer| Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1).
+--distance_function| Distance function to be used for copy number fitting.| choices=[RMSD, MAD]
+--distance_filter_scale_factor| Distance filter scale factor to only include solutions with distances < scale factor * min(distance).
+--distance_precision|   Number of digits to round distance functions to
+--max_proportion_zero| Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state.
+--min_proportion_close_to_whole_number| Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.
+--max_distance_from_whole_number| Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.
+--min_ps_size|   Minimum size (number of SNPs) for phaseset to be considered for purity estimation.
+--min_ps_length|   Minimum length (bps) for phaseset to be considered for purity estimation.
+*Additional Arguments*
+--legacy | Use legacy filters (strict/lenient) to classify variants
 --custom_model | Path to custom model pkl file
 --custom_params | Path to custom paramaters JSON file for filtering
 --somatic_output | Output VCF path for a file containing only PASS somatic variants
@@ -139,15 +189,6 @@ Argument|Description
 --by_support | When comparing to --somatic or --germline VCF, tie-break by read-support
 --by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default)
 --stats | Output filename for statistics on comparison to somatic/germline VCF
-
-### Optional Flags
-Argument|Description
---------|-----------
- --ont  | Use Oxford Nanopore (ONT) trained model to classify variants (default)
- --pb   | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio))
- --predict_germline | Also output germline events (a note that this reduces the accuracy of somatic calls when using a model)
- --legacy | Use legacy filters (strict/lenient) to classify variants
- --debug| Output extra debugging info and files
 
 ### Output Files
 
@@ -168,15 +209,27 @@ SAVANA also reports information about each structural variant in the INFO field 
 | Field | Description |
 | ----- | ----------- |
 | SVTYPE | Type of structural variant (INS or BND) |
+| CLASS | Variant class (predicted or classified as SOMATIC or NOISE)
 | MATEID | ID of mate breakend |
-| NORMAL_SUPPORT | Number of variant-supporting normal reads |
-| TUMOUR_SUPPORT | Number of variant-supporting tumour reads |
-| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges) | Float |
-| NORMAL_AF | Normal allele-fraction: ratio of normal-supporting reads to DP (averaged over both edges) | Float |
+| TUMOUR_READ_SUPPORT | Number of variant-supporting tumour reads |
+| TUMOUR_ALN_SUPPORT | Number of variant-supporting tumour alignments |
+| NORMAL_READ_SUPPORT | Number of variant-supporting normal reads |
+| NORMAL_ALN_SUPPORT | Number of variant-supporting normal alignments |
+| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges) |
+| NORMAL_AF | Normal allele-fraction: ratio of normal-supporting reads to DP (averaged over both edges) |
 | SVLEN | Length of the SV (always >= 0) |
 | BP_NOTATION | Notation of breakpoint from table above (_not_ flipped for mate breakpoint) |
-| ORIGINATING_CLUSTER | Originating cluster id supporting variant (for debugging) |
-| END_CLUSTER | End cluster id supporting variant (for debugging) |
+| SOURCE | Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture |
+| CLUSTERED_READS_NORMAL | Total number of normal reads clustered at this location supporting any SV type |
+| CLUSTERED_READS_TUMOUR | Total number of tumour reads clustered at this location supporting any SV type |
+| TUMOUR_DP_{BEFORE\|AT\|AFTER} | Local tumour depth in bin before/at/after the breakpoint(s) of an SV |
+| NORMAL_DP_{BEFORE\|AT\|AFTER} | Local normal depth in bin before/at/after the breakpoint(s) of an SV |
+| TUMOUR_ALT_HP | Counts of SV-supporting reads belonging to each haplotype in the tumour sample (1/2/NA) |
+| NORMAL_ALT_HP | Counts of SV-supporting reads belonging to each haplotype in the normal sample (1/2/NA) |
+| TUMOUR_PS | List of unique phase sets from the tumour supporting reads |
+| NORMAL_PS | List of unique phase sets from the normal supporting reads |
+| TUMOUR_TOTAL_HP_AT | Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA) |
+| TUMOUR_TOTAL_HP_AT | Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA) |
 | {ORIGIN\|END}_STARTS_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' starts |
 | {ORIGIN\|END}_MAPQ_MEAN | Cluster value for the mean mapping quality (MAPQ) of the supporting reads |
 | {ORIGIN\|END}_EVENT_SIZE_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' lengths |
@@ -184,6 +237,7 @@ SAVANA also reports information about each structural variant in the INFO field 
 | {ORIGIN\|END}_EVENT_SIZE_MEAN | Cluster value for the mean of the supporting breakpoints' lengths |
 | {ORIGIN\|END}_TUMOUR_DP | Total depth/coverage (number of reads) in the tumour at SV location (one per breakpoint edge) |
 | {ORIGIN\|END}_NORMAL_DP | Total depth/coverage (number of reads) in the normal at SV location (one per breakpoint edge) |
+
 
 #### Classified Breakpoints VCF
 
@@ -207,12 +261,13 @@ Currently, there is no model available in SAVANA which was trained on PacBio dat
 
 | Field | Description | PacBio Somatic Filter |
 | ----- | ----------- | --------------------- |
-| TUMOUR_SUPPORT | Number of variant-supporting tumour reads; modify with `--min_support` | >=5 |
-| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges); modify with `--min_af` | >=0.01 |
+| TUMOUR_SUPPORT | Number of variant-supporting tumour reads; modify with `--min_support` | >=7 |
+| TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges); modify with `--min_af` | >=0.15 |
 | NORMAL_SUPPORT | Number of variant-supporting tumour reads | ==0 |
 | {ORIGIN\|END}_STARTS_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' starts | <=50.0 |
 | {ORIGIN\|END}_MAPQ_MEAN | Cluster value for the mean mapping quality (MAPQ) of the supporting reads | >=40.0 |
 | {ORIGIN\|END}_EVENT_SIZE_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' lengths | <=60.0 |
+| CLUSTERED_READS_NORMAL | Number of co-clustered normal reads of any variant type | <=3 |
 
 ### Classify by Parameters File
 
@@ -234,8 +289,8 @@ Given a custom parameters file, you can create your own filters via a JSON file.
 Briefly, you can set limits on the minimum and maximum allowable values for different fields, listed below:
 | Field | Description | Type |
 | ----- | ----------- | ---- |
-| TUMOUR_SUPPORT | Number of variant-supporting tumour reads | Int |
-| NORMAL_SUPPORT | Number of variant-supporting normal reads | Int |
+| TUMOUR_READ_SUPPORT | Number of variant-supporting tumour reads | Int |
+| NORMAL_READ_SUPPORT | Number of variant-supporting normal reads | Int |
 | TUMOUR_AF | Tumour allele-fraction: ratio of tumour-supporting reads to DP (averaged over both edges) | Float |
 | NORMAL_AF | Normal allele-fraction: ratio of normal-supporting reads to DP (averaged over both edges) | Float |
 | TUMOUR_DP_0 | Total depth/coverage (number of reads) in the tumour at first breakpoint edge | Int |
@@ -251,6 +306,14 @@ Briefly, you can set limits on the minimum and maximum allowable values for diff
 ### Classify by Legacy Methods
 
 Alternately, you can use the `--legacy` flag to use filtering and classification methods used in the Beta version of SAVANA. This will output `strict` and `lenient` somatic VCF files which are informed by a decision-tree classifier (strict) and manually plotting data to determine cutoffs (lenient).
+
+## Generating Phased VCF
+
+TODO
+
+## Generating Phased BAMs
+
+TODO
 
 ## Advanced Options
 

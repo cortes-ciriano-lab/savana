@@ -15,7 +15,7 @@ from time import time
 from datetime import datetime
 import argparse
 
-__version__ = "1.0.30"
+__version__ = "1.2.0"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -91,21 +91,6 @@ def conditionally_decorate(dec, condition=False):
 			return func
 		return dec(func)
 	return decorator
-
-# for developer debugging
-def profile_function(func):
-	""" line profile a subprocess """
-	@wraps(func)
-	def wrapper(*args, **kwargs):
-		profiler = line_profiler.LineProfiler()
-		profiler.add_function(func)
-		profiler.enable()
-		result = func(*args, **kwargs)
-		profiler.disable()
-		profile_output = f"profile_{os.getpid()}.lprof"
-		profiler.dump_stats(profile_output)
-		return result
-	return wrapper
 
 def reverse_complement(sequence):
 	""" dna reverse complement of bases """
@@ -314,18 +299,18 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=NORMAL_DP_BEFORE,Number=2,Type=Integer,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
 		'##INFO=<ID=NORMAL_DP_AT,Number=2,Type=Integer,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
 		'##INFO=<ID=NORMAL_DP_AFTER,Number=2,Type=Integer,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
-		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour SV-supporting reads to tumour read depth (DP) at breakpoint">',
-		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal SV-supporting reads to normal read depth (DP) at breakpoint">',
-		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of SV (same for paired breakpoints)">',
+		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
+		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
+		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">',
 		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">',
 		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">',
 		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">',
 		'##INFO=<ID=TUMOUR_ALT_HP,Number=3,Type=Integer,Description="Counts of SV-supporting reads belonging to each haplotype in the tumour sample (1/2/NA)">',
-		'##INFO=<ID=TUMOUR_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA)">',
 		'##INFO=<ID=TUMOUR_PS,Number=.,Type=String,Description="List of unique phase sets from the tumour supporting reads">',
 		'##INFO=<ID=NORMAL_ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype in the normal sample (1/2/NA)">',
-		'##INFO=<ID=NORMAL_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA)">',
-		'##INFO=<ID=NORMAL_PS,Number=.,Type=String,Description="List of unique phase sets from the normal supporting reads">'
+		'##INFO=<ID=NORMAL_PS,Number=.,Type=String,Description="List of unique phase sets from the normal supporting reads">',
+		'##INFO=<ID=TUMOUR_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA)">',
+		'##INFO=<ID=NORMAL_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA)">'
 	])
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()

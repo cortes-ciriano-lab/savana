@@ -40,7 +40,7 @@ FEATURES_TO_DROP = [
 	'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
 	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID', 'DISTANCE_TO_MATCH',
 	'CLASS','REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
-	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN','END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN',
+	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN',
 	'TUMOUR_PS', 'TUMOUR_ALT_HP', 'NORMAL_PS', 'NORMAL_ALT_HP', 'TUMOUR_TOTAL_HP_AT', 'NORMAL_TOTAL_HP_AT'
 ]
 
@@ -102,23 +102,13 @@ def format_data(data_matrix):
 	data_matrix = data_matrix.drop('BP_NOTATION', axis=1)
 	data_matrix = data_matrix.join(sv_type_one_hot)
 
+
 	return data_matrix
 
 def prepare_data(data_matrix, germline_class):
 	""" add predictor and split into train/test """
 	# reformat/parse columns
 	data_matrix = format_data(data_matrix)
-	# not enough ONT evidence to give these a 'SOMATIC' label
-	# relabelling to avoid confusing the model
-	condition = (data_matrix['LABEL'] == 'SOMATIC') & (data_matrix['TUMOUR_SUPPORT'] < 3)
-	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
-	condition = (data_matrix['LABEL'] == 'SOMATIC') & (data_matrix['TUMOUR_SUPPORT'] < data_matrix['NORMAL_SUPPORT'])
-	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
-	condition = (data_matrix['LABEL'] == 'SOMATIC') & (data_matrix['NORMAL_SUPPORT']/data_matrix['TUMOUR_SUPPORT'] > 0.1)
-	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
-	# similar threshold for 'GERMLINE'
-	condition = (data_matrix['LABEL'] == 'GERMLINE') & (data_matrix['NORMAL_SUPPORT']+data_matrix['TUMOUR_SUPPORT'] < 3)
-	data_matrix.loc[condition, 'LABEL'] = 'NOT_IN_COMPARISON'
 	if germline_class:
 		# encode the labels to 0/1/2 for FALSE/SOMATIC/GERMLINE
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
@@ -163,73 +153,34 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 	format_value_counts(y_reserved_test.value_counts(normalize=False))
 	format_value_counts(y_reserved_test.value_counts(normalize=True))
 
-	# split the data into 5 folds for cross-conformal prediction
-	kf = StratifiedKFold(n_splits=5)
-	class_nconform_scores = {}
-	fold = 1
-	print('')
-	for train_index, test_index in kf.split(X_train, y_train):
-		print(f'Training on Fold {fold}')
-		X_k_train, X_k_test = X_train.iloc[train_index], X_train.iloc[test_index]
-		y_k_train, y_k_test = y_train.iloc[train_index], y_train.iloc[test_index]
-		# train on k-fold split
-		random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=threads)
-		random_forest.fit(X_k_train, y_k_train)
-		# test on k-fold split
-		probabilities = random_forest.predict_proba(X_k_test)
-		fold_nconform_scores = {}
-		for i, prob in enumerate(probabilities):
-			true_class = y_k_test.iloc[i]
-			nonconform_score = prob[true_class]
-			if true_class not in fold_nconform_scores:
-				# initialize
-				fold_nconform_scores[true_class] = np.array([])
-			fold_nconform_scores[true_class] = np.append(fold_nconform_scores[true_class], nonconform_score)
-		# once all the non-conform scores collected, append to full nonconfom scores list
-		for key in fold_nconform_scores.keys():
-			class_nconform_scores.setdefault(key, {})[fold] = np.array([])
-			class_nconform_scores[key][fold] = np.append(class_nconform_scores[key][fold], fold_nconform_scores[key])
-		fold += 1
+	X_calibration, X_proper_train, y_calibration, y_proper_train = train_test_split(X_train, y_train, test_size=0.3)
 
-	# sort class non-conformity scores
-	for key in class_nconform_scores.keys():
-		#class_nconform_scores[key] = np.sort(class_nconform_scores[key])
-		for fold in class_nconform_scores[key].keys():
-			class_nconform_scores[key][fold] = np.sort(class_nconform_scores[key][fold])
+	# fit random forest on proper training set
+	random_forest = RandomForestClassifier(max_depth=20, n_jobs=threads)
+	random_forest.fit(X_proper_train, y_proper_train)
+	probabilites = random_forest.predict_proba(X_calibration)
+	nconform_scores = {}
+	for i, prob in enumerate(probabilites):
+		true_class = y_calibration.iloc[i]
+		nonconform_score = prob[true_class]
+		if true_class not in nconform_scores:
+			nconform_scores[true_class] = np.array([])
+		nconform_scores[true_class] = np.append(nconform_scores[true_class], nonconform_score)
+	# sort class non-conformity scores (and write out arrays)
+	for key in nconform_scores.keys():
+		nconform_scores[key] = np.sort(nconform_scores[key])
+		np.savetxt(f'{outdir}/{key}_mondrian_dist.txt', nconform_scores[key], delimiter='\t', header='probability', comments='')
 
-	# now fit random forest on full training set
-	random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=threads)
-	random_forest.fit(X_train, y_train)
-	# test on reserved test set
+	# now apply the random forest to the reserved test set
 	test_probabilities = random_forest.predict_proba(X_reserved_test)
 	confidence = 0.80
 	epsilon = 1.0 - confidence
-	# for testing, write out the Mondrian arrays of non-conformity scores
-	# requires concatenating and sorting all the folds
-	sorted_class_scores = {}
-	for key, fold_nconform_scores in class_nconform_scores.items():
-		sorted_class_scores[key] = np.array([])
-		for fold, scores in fold_nconform_scores.items():
-			sorted_class_scores[key] = np.append(sorted_class_scores[key], scores)
-		# sort once all folds appended
-		sorted_class_scores[key] = np.sort(sorted_class_scores[key])
-		# then write out to file
-		np.savetxt(f'{outdir}/{key}_mondrian_dist.txt', sorted_class_scores[key], delimiter='\t', header='probability', comments='')
-
-	#for key, scores in class_nconform_scores.items():
-	#	np.savetxt(f'{outdir}/{key}.txt', scores, delimiter='\t', header='probability', comments='')
-	print(f'\nUsing Epsilon of {round(epsilon, 3)}')
-	# initialize blank arrays for 0, 1 and 'truth'
-	p_class_assignments = {k: np.array([]) for k in class_nconform_scores.keys()}
+	p_class_assignments = {k: np.array([]) for k in nconform_scores.keys()}
 	p_class_assignments['truth'] = np.array([])
 	for i, prob in enumerate(test_probabilities):
 		p_class_assignments['truth'] = np.append(p_class_assignments['truth'], y_reserved_test.iloc[i])
-		for key, class_scores in class_nconform_scores.items():
-			#fraction = len(scores[scores <= prob[key]])/len(scores)
-			fractions = []
-			for fold, fold_scores in class_scores.items():
-				fractions.append(len(fold_scores[fold_scores <= prob[key]])/len(fold_scores))
-			fraction = np.mean(fractions)
+		for key, class_scores in nconform_scores.items():
+			fraction = len(class_scores[class_scores <= prob[key]])/len(class_scores)
 			if fraction >= epsilon:
 				p_class_assignments[key] = np.append(p_class_assignments[key], 1)
 			else:
@@ -313,7 +264,7 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 
 	# USING REGULAR NON-CONFORMAL VOTE
 	print('\nResults using standard prediction')
-	voting_class_assignments = {k: np.array([]) for k in class_nconform_scores.keys()}
+	voting_class_assignments = {k: np.array([]) for k in nconform_scores.keys()}
 	voting_class_assignments['truth'] = np.array([])
 	for i, prob in enumerate(test_probabilities):
 		voting_class_assignments['truth'] = np.append(voting_class_assignments['truth'], y_reserved_test.iloc[i])
