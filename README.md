@@ -274,11 +274,21 @@ The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_ab
 ## Phasing Information
 ### Generating Phased VCF
 
-TODO
+We recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command: 
+
+```
+whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <snps.vcf> <normal-file>
+```
+
+Germline SNPs can for example be obtained using [Clair3](https://github.com/HKU-BAL/Clair3) (or Strelka if using phased SNPs from a matched normal Illumina sample).
 
 ### Generating Phased BAMs
 
-TODO
+Again, we recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) for tagging sequencing reads by haplotype to generate phased BAMs (see example code below).
+
+```
+whatshap haplotag --ignore-read-groups -o <phased_tumour.bam> --reference <ref-fasta> <phased.vcf.gz> <tumour-file> && samtools index <phased_tumour.bam>
+```
 
 ## Advanced Options
 ### Alternate Classification Methods
