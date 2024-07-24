@@ -9,7 +9,7 @@ from multiprocessing import Pool
 from multiprocessing import cpu_count
 import argparse
 import numpy as np
-import seaborn as sns
+# import seaborn as sns
 import matplotlib.pyplot as plt
 import logging
 import re
@@ -226,43 +226,43 @@ def segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, q
             chr_out_data.append(row)
     return chr_out_data
 
+# Used for developing code and debugging but removed as plot is not very pretty...
+# def draw_segmented_data(data, seg_postions, chr_positions, title=None):
+#     '''Draw a scatterplot of the data with vertical lines at segment boundaries and horizontal lines at medians of
+#     the segments. S is a list of segment boundaries.'''
+#     breaks = [0] + [x[1] for x in seg_postions]
+#     # breaks = [x[0] for x in seg_postions]
+#     # breaks.append(seg_postions[-1][1])
 
-def draw_segmented_data(data, seg_postions, chr_positions, title=None):
-    '''Draw a scatterplot of the data with vertical lines at segment boundaries and horizontal lines at medians of
-    the segments. S is a list of segment boundaries.'''
-    breaks = [0] + [x[1] for x in seg_postions]
-    # breaks = [x[0] for x in seg_postions]
-    # breaks.append(seg_postions[-1][1])
+#     chr_breaks = [0]
+#     for x in chr_positions:
+#         chr_breaks.append(x[2])
 
-    chr_breaks = [0]
-    for x in chr_positions:
-        chr_breaks.append(x[2])
+#     ticks = [x[1] for x in chr_positions]
+#     labels = [x[0] for x in chr_positions]
 
-    ticks = [x[1] for x in chr_positions]
-    labels = [x[0] for x in chr_positions]
+#     # sns.set_context("paper", rc={"font.size":6,"axes.titlesize":5,"axes.labelsize":5,"xtick.labelsize": 5,"ytick.labelsize": 5})
 
-    # sns.set_context("paper", rc={"font.size":6,"axes.titlesize":5,"axes.labelsize":5,"xtick.labelsize": 5,"ytick.labelsize": 5})
+#     j=sns.scatterplot(x=range(len(data)),y=data,color='black',s=1.5,legend=None)
+#     # for x in breaks:
+#     #     j.axvline(x, linewidth=1)
+#     for x in chr_breaks:
+#         j.axvline(x, linewidth=0.5, linestyle='-', color='black')
 
-    j=sns.scatterplot(x=range(len(data)),y=data,color='black',s=1.5,legend=None)
-    # for x in breaks:
-    #     j.axvline(x, linewidth=1)
-    for x in chr_breaks:
-        j.axvline(x, linewidth=0.5, linestyle='-', color='black')
+#     for i in range(1,len(breaks)):
+#         # j.hlines(np.mean(data[breaks[i-1]:breaks[i]]),breaks[i-1],breaks[i],color='green')
+#         j.hlines(np.median(data[breaks[i-1]:breaks[i]]),breaks[i-1],breaks[i],color='#CC79A7',linewidth=2)
+#     #change axis ticks to chromosomes
+#     j.set_xticks(ticks)
+#     j.set_xticklabels(labels, rotation=45)
+#     j.set_title(title)
+#     j.set_ylim(-3, 3)
+#     # j.set_ylim(0, 2.5)
+#     # j.set_ylim(-1, 2)
+#     j.get_figure().set_size_inches(16,4)
+#     # j.get_figure().set_size_inches(9,2)
 
-    for i in range(1,len(breaks)):
-        # j.hlines(np.mean(data[breaks[i-1]:breaks[i]]),breaks[i-1],breaks[i],color='green')
-        j.hlines(np.median(data[breaks[i-1]:breaks[i]]),breaks[i-1],breaks[i],color='#CC79A7',linewidth=2)
-    #change axis ticks to chromosomes
-    j.set_xticks(ticks)
-    j.set_xticklabels(labels, rotation=45)
-    j.set_title(title)
-    j.set_ylim(-3, 3)
-    # j.set_ylim(0, 2.5)
-    # j.set_ylim(-1, 2)
-    j.get_figure().set_size_inches(16,4)
-    # j.get_figure().set_size_inches(9,2)
-
-    return j
+#     return j
 
 def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, p_seg, p_val, quantile, threads):
     ''' segment the copy number '''
@@ -311,42 +311,48 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
     outfile.close()
 
     ############### PLOTTING ###############
+
+    # Used for developing code and debugging but removed as plot is not very pretty...
+
     # define chromosomes and positions for plotting
     # chr_unique = np.unique([x[1] for x in original_data if x[1] != "chrY"])
-    chr_unique = np.array(chr_names)
-    indeces = [(index, sublist[1]) for index, sublist in enumerate(in_data)]
-    # define chromosome positions for plotting
-    chr_positions = []
-    for chr in chr_unique:
-        tmp = [x for x in indeces if x[1] == chr]
-        chr_break = max(x[0] for x in tmp)
-        midpoint = mean([x[0] for x in tmp])
-        chr_positions.append([chr, midpoint, chr_break])
-    # define segment positions for plotting
-    seg_postions = []
-    current_segment = None
-    start_index = 0
-    for i, (bin,chr,S,E,f,b,cn,segment,cnseg) in enumerate(segmentedData):
-        if segment != current_segment:
-            if current_segment is not None:
-                # Save the end index of the previous segment
-                seg_postions.append((start_index, i - 1))
-            # Update to the new segment
-            current_segment = segment
-            start_index = i
-    #add last segment
-    if current_segment is not None:
-        seg_postions.append((start_index, len(segmentedData) - 1))
-    # get copy number log2r values
-    input_log2 = []
-    for x in segmentedData:
-        val = float(x[-3])
-        input_log2.append(val)
+    # chr_unique = np.array(chr_names)
+    # indeces = [(index, sublist[1]) for index, sublist in enumerate(in_data)]
+    # # define chromosome positions for plotting
+    # chr_positions = []
+    # for chr in chr_unique:
+    #     tmp = [x for x in indeces if x[1] == chr]
+    #     chr_break = max(x[0] for x in tmp)
+    #     midpoint = mean([x[0] for x in tmp])
+    #     chr_positions.append([chr, midpoint, chr_break])
+    # # define segment positions for plotting
+    # seg_postions = []
+    # current_segment = None
+    # start_index = 0
+    # for i, (bin,chr,S,E,f,b,cn,segment,cnseg) in enumerate(segmentedData):
+    #     if segment != current_segment:
+    #         if current_segment is not None:
+    #             # Save the end index of the previous segment
+    #             seg_postions.append((start_index, i - 1))
+    #         # Update to the new segment
+    #         current_segment = segment
+    #         start_index = i
+    # #add last segment
+    # if current_segment is not None:
+    #     seg_postions.append((start_index, len(segmentedData) - 1))
+    # # get copy number log2r values
+    # input_log2 = []
+    # for x in segmentedData:
+    #     val = float(x[-3])
+    #     input_log2.append(val)
+
+    # Used for developing code and debugging but removed as plot is not very pretty...
+
     # plot log2r copy number profiles
-    title=str(f"copy number (log2R) of sample {prefix} (No. segments = {len(seg_postions)})")
-    ax = draw_segmented_data(input_log2,  seg_postions, chr_positions, title=title)
-    # ax.tick_params(axis='x', rotation=45)
-    ax.get_figure().savefig(f'{outdir}/{prefix}_segmented_CNprofile.png')
+    # title=str(f"copy number (log2R) of sample {prefix} (No. segments = {len(seg_postions)})")
+    # ax = draw_segmented_data(input_log2,  seg_postions, chr_positions, title=title)
+    # # ax.tick_params(axis='x', rotation=45)
+    # ax.get_figure().savefig(f'{outdir}/{prefix}_segmented_CNprofile.png')
 
     return segmented_outpath
 
