@@ -25,6 +25,7 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
   + [Re-classify Variants](#re-classify-variants)
 * [Troubleshooting](#troubleshooting)
 * [License](#license)
+* [Contacts](#contacts)
 
 ## Installation
 
@@ -99,12 +100,12 @@ subcommands:
 
 ## Run SAVANA
 
-After installing, SAVANA can be run on Nanopore data with a minumum set of arguments:
+After installing, SAVANA can be run on long-read data with a minumum set of arguments:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. To compute copy number abberations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCFs](#generating-phased-vcfs)). Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCFs](#generating-phased-vcfs)). Then, to call both SVs and CNAs you can run savana with:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file>
 ```
@@ -258,14 +259,14 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 ### Output Files SAVANA CNA Algorithm
 
 #### Raw read counts TSV
-... 
-in addition savana also outputs...
+`{sample}_{cn_binsize}_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered read counts (`{sample}_{cn_binsize}_read_counts_filtered.tsv`) and the, if provided, matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`). 
 
 #### Segmented log2r relative copy number TSV
 
 #### Fitted purity and ploidy TSV
 
 #### Segmented absolute copy number
+
 
 ## Alternate Classification Methods
 
@@ -415,3 +416,14 @@ For now, SAVANA reports the breakend orientation using brackets in the ALT field
 ## Troubleshooting
 
 Please raise a GitHub issue if you encounter issues installing or using SAVANA.
+
+## License
+SAVANA is free for academic use only. If you are not a member of a public funded academic and/or education and/or research institution you must obtain a commercial license from EMBL Enterprise Management GmbH (EMBLEM); please email EMBLEM (info@embl-em.de)
+
+## Contacts
+
+Hillary Elrick: helrick@ebi.ac.uk
+
+Carolin Sauer: csauer@ebi.ac.uk
+
+Isidro Cortes-Ciriano: icortes@ebi.ac.uk
