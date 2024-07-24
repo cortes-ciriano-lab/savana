@@ -13,8 +13,9 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
   + [Optional Flags](#optional-flags)
-  + [Output Files SV Algorithm](#output-files-sv-algorithm)
-  + [Output Files CNA Algorithm](#output-files-cna-algorithm)
+* [Output Files](#output-files)  
+  + [Output Files SAVANA SV Algorithm](#output-files-savana-sv-algorithm)
+  + [Output Files SAVANA CNA Algorithm](#output-files-savana-cna-algorithm)
 * [Generating Phased VCF](#generating-phased-vcf)
 * [Generating Phased BAMs](#generating-phased-bams)
 * [Advanced Options](#advanced-options)
@@ -191,7 +192,8 @@ Argument|Description
 --by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default)
 --stats | Output filename for statistics on comparison to somatic/germline VCF
 
-### Output Files SV Algorithm
+## Output Files
+### Output Files SAVANA SV Algorithm
 
 #### Raw SV Breakpoints VCF
 
@@ -253,7 +255,7 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 `{sample}_sv_breakpoints_read_support.tsv` contains one line per structural variant with the variant ID in the first column, the comma-separated ids of the tumour-supporting reads in the second, and normal-supporting reads in the third.
 
 
-### Output Files CNA Algorithm
+### Output Files SAVANA CNA Algorithm
 
 #### File 1...
 
