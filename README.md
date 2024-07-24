@@ -262,10 +262,13 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 `{sample}_{cn_binsize}_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered read counts (`{sample}_{cn_binsize}_read_counts_filtered.tsv`) and the, if provided, matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`). 
 
 #### Segmented log2r relative copy number TSV
+`{sample}_{cn_binsize}_read_counts_mnorm_log2r_segmented.tsv` contains the final relative copy number (log2r) data post CBS segmentation. This includes the log2r relative copy number for each bin across the reference genome, as well as the segment IDs and according segmented log2r relative copy number values.  
 
 #### Fitted purity and ploidy TSV
+`{sample}_{cn_binsize}_fitted_purity_ploidy.tsv` contains the final copy number fit (i.e. purity and ploidy values, as well as the distance function used during fitting) for a given sample. Note that SAVANA also outputs all viable solutions together with their distance functions and ranking prior to the final fit being selected (`{sample}_{cn_binsize}_ranked_solutions.tsv`). 
 
 #### Segmented absolute copy number
+The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_absolute_copy_number.tsv`, which contains the fitted total and minor absolute copy number values for each copy number segment (collapsed). Note that this output file (together with the classified somatic SAVANA SV calls) can be used to generate the copy number ReCon Plots, as outlined and described [here](https://github.com/cortes-ciriano-lab/ReConPlot). 
 
 
 ## Alternate Classification Methods
