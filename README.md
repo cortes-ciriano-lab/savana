@@ -14,10 +14,11 @@ SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and wi
   + [Optional Arguments](#optional-arguments)
   + [Optional Flags](#optional-flags)
 * [Output Files](#output-files)  
-  + [Output Files SAVANA SV Algorithm](#output-files-savana-sv-algorithm)
-  + [Output Files SAVANA CNA Algorithm](#output-files-savana-cna-algorithm)
-* [Generating Phased VCF](#generating-phased-vcf)
-* [Generating Phased BAMs](#generating-phased-bams)
+  + [Output Files SV Algorithm](#output-files-savana-sv-algorithm)
+  + [Output Files CNA Algorithm](#output-files-savana-cna-algorithm)
+* [Phasing Information](#phasing-information)
+  + [Generating Phased VCF](#generating-phased-vcf)
+  + [Generating Phased BAMs](#generating-phased-bams)
 * [Advanced Options](#advanced-options)
   + [Alternate Classification Methods](#alternate-classification-methods)
   + [Label Known Variants](#label-known-variants)
@@ -105,7 +106,7 @@ After installing, SAVANA can be run on long-read data with a minumum set of argu
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCFs](#generating-phased-vcfs)). Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file>
 ```
@@ -268,10 +269,19 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 `{sample}_{cn_binsize}_fitted_purity_ploidy.tsv` contains the final copy number fit (i.e. purity and ploidy values, as well as the distance function used during fitting) for a given sample. Note that SAVANA also outputs all viable solutions together with their distance functions and ranking prior to the final fit being selected (`{sample}_{cn_binsize}_ranked_solutions.tsv`). 
 
 #### Segmented absolute copy number
-The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_absolute_copy_number.tsv`, which contains the fitted total and minor absolute copy number values for each copy number segment (collapsed). Note that this output file (together with the classified somatic SAVANA SV calls) can be used to generate the copy number ReCon Plots, as outlined and described [here](https://github.com/cortes-ciriano-lab/ReConPlot). 
+The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_absolute_copy_number.tsv`, which contains the fitted total and minor absolute copy number values for each copy number segment (collapsed). Note that this output file (together with the classified somatic SAVANA SV calls) can be used to generate the Copy Number ReCon Plots, as outlined and described [here](https://github.com/cortes-ciriano-lab/ReConPlot). 
 
+## Phasing Information
+### Generating Phased VCF
 
-## Alternate Classification Methods
+TODO
+
+### Generating Phased BAMs
+
+TODO
+
+## Advanced Options
+### Alternate Classification Methods
 
 By default, SAVANA uses a model, trained on a range of ONT somatic data. However you may also use alternate classification methods. You may also [train your own model](#train-custom-model).
 
@@ -326,16 +336,6 @@ Briefly, you can set limits on the minimum and maximum allowable values for diff
 ### Classify by Legacy Methods
 
 Alternately, you can use the `--legacy` flag to use filtering and classification methods used in the Beta version of SAVANA. This will output `strict` and `lenient` somatic VCF files which are informed by a decision-tree classifier (strict) and manually plotting data to determine cutoffs (lenient).
-
-## Generating Phased VCF
-
-TODO
-
-## Generating Phased BAMs
-
-TODO
-
-## Advanced Options
 
 ### Label Known Variants
 
