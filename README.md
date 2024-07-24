@@ -39,7 +39,7 @@ conda install -c bioconda savana
 
 This will install all dependencies and allow you to use SAVANA on the command-line.
 
-### Alternately, Install SAVANA from Source
+### Alternately, install SAVANA from Source
 
 _Alternately_, you can install SAVANA from source (note these steps are not required if you've installed SAVANA via conda)
 
@@ -277,14 +277,14 @@ The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_ab
 We recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command: 
 
 ```
-whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <snps.vcf> <normal-file>
+whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <germline_snps.vcf> <normal-file>
 ```
 
-Germline SNPs can for example be obtained using [Clair3](https://github.com/HKU-BAL/Clair3) on the matched normal long-read BAM (or Strelka if using phased SNPs from a matched normal Illumina sample).
+Germline SNPs (`<germline_snps.vcf>`) can for example be obtained using [Clair3](https://github.com/HKU-BAL/Clair3) on the matched normal long-read BAM (or Strelka if using phased SNPs from a matched normal Illumina sample).
 
 ### Generating Phased BAMs
 
-Again, we recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) for tagging sequencing reads by haplotype to generate phased BAMs (see example code below).
+Again, we recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) for tagging sequencing reads by haplotype to generate phased BAMs (see example code below) using the `<phased.vcf.gz>` obtained in the previous step.
 
 ```
 whatshap haplotag --ignore-read-groups -o <phased_tumour.bam> --reference <ref-fasta> <phased.vcf.gz> <tumour-file> && samtools index <phased_tumour.bam>
