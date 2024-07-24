@@ -356,7 +356,7 @@ def parse_args(args):
     cna_parser.add_argument('-rq', '--readcount_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the read counting (default = 5)', required=False)
     cna_parser.add_argument('--no_blacklist', dest='blacklisting', action='store_false')
     cna_parser.set_defaults(blacklisting=True)
-    cna_parser.add_argument('-blt', '--bl_threshold', type=int,  default='5', help='Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 0, i.e. no overlap tolerated). Please specify percentage threshold as integer, e.g. "-t 5" ', required=False)
+    cna_parser.add_argument('-blt', '--bl_threshold', type=int,  default='5', help='Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 5). Please specify percentage threshold as integer, e.g. "-t 5". Set "-t 0" if no overlap with blacklist is to be tolerated', required=False)
     cna_parser.add_argument('--no_basesfilter', dest='bases_filter', action='store_false')
     cna_parser.set_defaults(bases_filter=True)
     cna_parser.add_argument('-bt', '--bases_threshold', type=int,  default='75', help='Percentage of known bases per bin required for read counting (default = 0, i.e. no filtering). Please specify percentage threshold as integer, e.g. "-bt 95" ', required=False)

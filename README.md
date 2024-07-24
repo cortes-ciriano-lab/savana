@@ -152,31 +152,31 @@ Argument|Description
 --chromosomes| Chromosomes to analyse. To run on all chromosomes leave unspecified (default). To run on a subset of chromosomes only specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "-c 1 4 23 24" to run chromosomes 1, 4, X and Y
 --readcount_mapq| Mapping quality threshold for reads to be included in the read counting (default = 5)
 --no_blacklist| Don't use a blacklist
---bl_threshold| Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 0, i.e. no overlap tolerated). Please specify percentage threshold as integer, e.g. "-t 5"
+--bl_threshold| Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 5). Please specify percentage threshold as integer, e.g. "-t 5". Set "-t 0" if no overlap with blacklist is to be tolerated
 --no_basesfilter| Do not filter bases
---bases_threshold| Percentage of known bases per bin required for read counting (default = 0, i.e. no filtering). Please specify percentage threshold as integer, e.g. "-bt 95"
---smoothing_level|   Size of neighbourhood for smoothing.
---trim| Trimming percentage to be used.
---min_segment_size|    Minimum size for a segement to be considered a segment (default = 5).
---shuffles|    Number of permutations (shuffles) to be performed during CBS (default = 1000).
---p_seg| p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05).
---p_val| p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01).
---quantile| Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).
---min_ploidy| Minimum ploidy to be considered for copy number fitting.
---max_ploidy| Maximum ploidy to be considered for copy number fitting.
---ploidy_step| Ploidy step size for grid search space used during for copy number fitting.
---min_cellularity| Minimum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided| this is estimated during copy number fitting. Alternatively| a purity value can be provided if the purity of the sample is already known.
---max_cellularity| Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided| this is estimated during copy number fitting. Alternatively| a purity value can be provided if the purity of the sample is already known.
---cellularity_step| Cellularity step size for grid search space used during for copy number fitting.
---cellularity_buffer| Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1).
---distance_function| Distance function to be used for copy number fitting.| choices=[RMSD, MAD]
---distance_filter_scale_factor| Distance filter scale factor to only include solutions with distances < scale factor * min(distance).
---distance_precision|   Number of digits to round distance functions to
---max_proportion_zero| Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state.
---min_proportion_close_to_whole_number| Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.
---max_distance_from_whole_number| Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.
---min_ps_size|   Minimum size (number of SNPs) for phaseset to be considered for purity estimation.
---min_ps_length|   Minimum length (bps) for phaseset to be considered for purity estimation.
+--bases_threshold| Percentage of known bases per bin required for read counting (default = 75). Please specify percentage threshold as integer, e.g. "-bt 95"
+--smoothing_level|   Size of neighbourhood for smoothing
+--trim| Trimming percentage to be used
+--min_segment_size|    Minimum size for a segement to be considered a segment (default = 5)
+--shuffles|    Number of permutations (shuffles) to be performed during CBS (default = 1000)
+--p_seg| p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05)
+--p_val| p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01)
+--quantile| Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging)
+--min_ploidy| Minimum ploidy to be considered for copy number fitting (default = 1.5)
+--max_ploidy| Maximum ploidy to be considered for copy number fitting (default = 5)
+--ploidy_step| Ploidy step size for grid search space used during for copy number fitting (default = 0.01)
+--min_cellularity| Minimum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided this is estimated during copy number fitting. Alternatively a purity value can be provided if the purity of the sample is already known
+--max_cellularity| Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided this is estimated during copy number fitting. Alternatively a purity value can be provided if the purity of the sample is already known
+--cellularity_step| Cellularity step size for grid search space used during for copy number fitting (default = 0.01)
+--cellularity_buffer| Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1)
+--distance_function| Distance function to be used for copy number fitting. choices=[RMSD, MAD] (default = RMSD)
+--distance_filter_scale_factor| Distance filter scale factor to only include solutions with distances < scale factor * min(distance)
+--distance_precision|   Number of digits to round distance functions to (default = 3)
+--max_proportion_zero| Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state (default = 0.1)
+--min_proportion_close_to_whole_number| Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit (default = 0.5)
+--max_distance_from_whole_number| Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer (default = 0.25)
+--min_ps_size|   Minimum size (number of SNPs) for phaseset to be considered for purity estimation (default = 10)
+--min_ps_length|   Minimum length (bps) for phaseset to be considered for purity estimation (default = 500000)
 *Additional Arguments*
 --legacy | Use legacy filters (strict/lenient) to classify variants
 --custom_model | Path to custom model pkl file
@@ -190,7 +190,7 @@ Argument|Description
 --by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default)
 --stats | Output filename for statistics on comparison to somatic/germline VCF
 
-### Output Files
+### Output Files - SV Algorithm
 
 #### Raw SV Breakpoints VCF
 
@@ -250,6 +250,12 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 #### Read-support TSV
 
 `{sample}_sv_breakpoints_read_support.tsv` contains one line per structural variant with the variant ID in the first column, the comma-separated ids of the tumour-supporting reads in the second, and normal-supporting reads in the third.
+
+
+### Output Files - CNA Algorithm
+
+#### File 1...
+
 
 ## Alternate Classification Methods
 
