@@ -195,7 +195,7 @@ Argument|Description
 --stats | Output filename for statistics on comparison to somatic/germline VCF
 
 ## Output Files
-### Output Files SAVANA SV Algorithm
+### Output Files SV Algorithm
 
 #### Raw SV Breakpoints VCF
 
@@ -257,7 +257,7 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 `{sample}_sv_breakpoints_read_support.tsv` contains one line per structural variant with the variant ID in the first column, the comma-separated ids of the tumour-supporting reads in the second, and normal-supporting reads in the third.
 
 
-### Output Files SAVANA CNA Algorithm
+### Output Files CNA Algorithm
 
 #### Raw read counts TSV
 `{sample}_{cn_binsize}_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered read counts (`{sample}_{cn_binsize}_read_counts_filtered.tsv`) and the, if provided, matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`). 
@@ -280,7 +280,7 @@ We recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.ht
 whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <snps.vcf> <normal-file>
 ```
 
-Germline SNPs can for example be obtained using [Clair3](https://github.com/HKU-BAL/Clair3) (or Strelka if using phased SNPs from a matched normal Illumina sample).
+Germline SNPs can for example be obtained using [Clair3](https://github.com/HKU-BAL/Clair3) on the matched normal long-read BAM (or Strelka if using phased SNPs from a matched normal Illumina sample).
 
 ### Generating Phased BAMs
 
@@ -295,7 +295,7 @@ whatshap haplotag --ignore-read-groups -o <phased_tumour.bam> --reference <ref-f
 
 By default, SAVANA uses a model, trained on a range of ONT somatic data. However you may also use alternate classification methods. You may also [train your own model](#train-custom-model).
 
-### Classify for PacBio
+#### Classify for PacBio
 
 Currently, there is no model available in SAVANA which was trained on PacBio data. If the `--pb` flag is used, a set of filters (shown in the table below), will be used. The minimum allele-fraction (AF) and support can be modified with the `--min_support` and `--min_af` flags. By default `--min_support` is set to 5, but we recommend testing different values here - in our PacBio samples, increasing this value to 10 yielded the best results.
 
@@ -309,7 +309,7 @@ Currently, there is no model available in SAVANA which was trained on PacBio dat
 | {ORIGIN\|END}_EVENT_SIZE_STD_DEV | Cluster value for the standard deviation of the supporting breakpoints' lengths | <=60.0 |
 | CLUSTERED_READS_NORMAL | Number of co-clustered normal reads of any variant type | <=3 |
 
-### Classify by Parameters File
+#### Classify by Parameters File
 
 Given a custom parameters file, you can create your own filters via a JSON file. An example of which can be found in `example/classification-parameters.json`. See below:
 ```
@@ -343,7 +343,7 @@ Briefly, you can set limits on the minimum and maximum allowable values for diff
 | {ORIGIN\|END}_EVENT_SIZE_MEDIAN | Cluster value for the median of the supporting breakpoints' lengths | Float |
 | {ORIGIN\|END}_EVENT_SIZE_MEAN | Cluster value for the mean of the supporting breakpoints' lengths | Float |
 
-### Classify by Legacy Methods
+#### Classify by Legacy Methods
 
 Alternately, you can use the `--legacy` flag to use filtering and classification methods used in the Beta version of SAVANA. This will output `strict` and `lenient` somatic VCF files which are informed by a decision-tree classifier (strict) and manually plotting data to determine cutoffs (lenient).
 
