@@ -257,8 +257,15 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 
 ### Output Files SAVANA CNA Algorithm
 
-#### File 1...
+#### Raw read counts TSV
+... 
+in addition savana also outputs...
 
+#### Segmented log2r relative copy number TSV
+
+#### Fitted purity and ploidy TSV
+
+#### Segmented absolute copy number
 
 ## Alternate Classification Methods
 
