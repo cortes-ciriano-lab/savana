@@ -28,6 +28,19 @@ def pool_predict(data_matrix, features_to_drop, model, threads, confidence=None)
 	""" split the prediction across multiprocessing Pool """
 	if confidence is not None:
 		print(f' > Using Mondrian Conformal Prediction with Confidence of {confidence}')
+		# untar nonconform scores if not already done
+		models_dir = os.path.join(os.path.dirname(__file__),'models')
+		for key in ['0','1']:
+			txt_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.txt')
+			tar_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.tar.gz')
+			if os.path.isfile(txt_path):
+				print(f'Using untarred {txt_path}')
+			elif os.path.isfile(tar_path):
+				import tarfile
+				print(f'First time using MCP - will untar {tar_path}')
+				tar = tarfile.open(tar_path, "r:gz")
+				tar.extractall(models_dir)
+				tar.close()
 	data_matrices = np.array_split(data_matrix, threads)
 	pool = Pool(threads)
 	results = pool.map(partial(

@@ -175,16 +175,19 @@ def savana_train(args):
     classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.threads)
     train.save_model(args, classifier, outdir)
 
-def savana_cna(args):
+def savana_cna(args, as_workflow=False):
     """ main function for copy number analysis """
-    if not args.sample:
-        # set sample name to default
-        args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
-    outdir = helper.check_outdir(args.outdir)
+    if not as_workflow:
+        # not being run under savana umbrella - do these checks/setup
+        if not args.sample:
+            # set sample name to default
+            args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
+        outdir = helper.check_outdir(args.outdir)
+    else:
+        outdir = args.outdir
     # initialize timing
     checkpoints = [time()]
     time_str = []
-    # TODO: should lift this into run.py?
     # first do allele counting
     if not args.allele_counts_het_snps:
         allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.phased_vcf, args.tumour, args.allele_mapq, args.allele_min_reads, args.threads)
@@ -214,7 +217,7 @@ def savana_cna(args):
     helper.time_function("Total time to perform copy number calling", checkpoints, time_str, final=True)
 
 def savana_main(args):
-    """ default workflow for savana: savana_run, savana_classify, savana_evaluate """
+    """ default workflow for savana: savana_run, savana_classify, savana_evaluate, savana_cna """
 
     # call raw breakpoints
     savana_run(args)
@@ -243,6 +246,9 @@ def savana_main(args):
         args.output = os.path.join(args.outdir, f'{args.sample}.germline.labelled.vcf')
         args.stats = os.path.join(args.outdir,f'{args.sample}.germline.evaluation.stats')
         savana_evaluate(args)
+
+    args.bp = args.somatic_output
+    savana_cna(args, True)
 
     return
 
@@ -282,7 +288,7 @@ def parse_args(args):
     classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
     classify_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
     classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-    classify_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
+    classify_parser.add_argument('--cna_rescue', action='store_true', help='Copy number abberation output file for this sample (used to rescue variants)')
     classify_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
     group = classify_parser.add_mutually_exclusive_group()
     group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
@@ -334,16 +340,16 @@ def parse_args(args):
     group = cna_parser.add_mutually_exclusive_group()
     group.add_argument('-n', '--normal', nargs='?', type=str, required=False, help='Normal BAM file (must have index)')
     group.add_argument('-pon', '--panel_of_normals', nargs='?', type=str, required=False, help='Path to panel-of-normals (PoN) file')
-    cna_parser.add_argument('-r', '--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
-    cna_parser.add_argument('-s','--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
+    cna_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
+    cna_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     cna_parser.add_argument('--threads', type=int,  default=48, help='number of threads to be used for multiprocessing of chromosomes. Use threads = 1 to avoid multiprocessing.', required=False)
-    cna_parser.add_argument('-o', '--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    cna_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     allele_group = cna_parser.add_mutually_exclusive_group()
     allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
     allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
     cna_parser.add_argument('-q', '--allele_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the allele counting (default = 0)', required=False)
     cna_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
-    cna_parser.add_argument('-w', '--cn_binsize', type=int, help='Bin window size in kbp', required=True)
+    cna_parser.add_argument('-w', '--cn_binsize', type=int, help='Bin window size in kbp', default=10, required=False)
     cna_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
     cna_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
     cna_parser.add_argument('-c', '--chromosomes', nargs='+', default='all', help='Chromosomes to analyse. To run on all chromosomes, leave unspecified (default). To run on a subset of chromosomes only, specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "-c 1 4 23 24" to run chromosomes 1, 4, X and Y', required=False)
@@ -409,7 +415,7 @@ def parse_args(args):
         # classify args
         global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
         global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
-        global_parser.add_argument('--cna_resuce', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
+        global_parser.add_argument('--cna_rescue', action='store_true', help='Copy number abberation output file for this sample (used to rescue variants)')
         global_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
         classify_group = global_parser.add_mutually_exclusive_group()
         classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
@@ -421,6 +427,7 @@ def parse_args(args):
         classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
         global_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF with only PASS somatic variants')
         global_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF with only PASS germline variants')
+        global_parser.add_argument('--confidence', nargs='?', type=helper.float_range(0.0, 1.0), default=None, help='Confidence level for mondrian conformal prediction - suggested range (0.70-0.99) (not used by default)')
         # evaluate args
         global_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
         global_parser.add_argument('--germline', nargs='?', type=str, required=False, help='Germline VCF file to evaluate against (optional)')
@@ -430,6 +437,46 @@ def parse_args(args):
         evaluate_group = global_parser.add_mutually_exclusive_group()
         evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
         evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
+        # cna args
+        global_parser.add_argument('-pon', '--panel_of_normals', nargs='?', type=str, required=False, help='Path to panel-of-normals (PoN) file (only used when no phased VCF provided)')
+        allele_group = global_parser.add_mutually_exclusive_group()
+        allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
+        allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
+        global_parser.add_argument('-q', '--allele_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the allele counting (default = 0)', required=False)
+        global_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
+        global_parser.add_argument('-w', '--cn_binsize', type=int, help='Bin window size in kbp', required=True)
+        global_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
+        global_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
+        global_parser.add_argument('-c', '--chromosomes', nargs='+', default='all', help='Chromosomes to analyse. To run on all chromosomes, leave unspecified (default). To run on a subset of chromosomes only, specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "-c 1 4 23 24" to run chromosomes 1, 4, X and Y', required=False)
+        global_parser.add_argument('-rq', '--readcount_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the read counting (default = 5)', required=False)
+        global_parser.add_argument('--no_blacklist', dest='blacklisting', action='store_false')
+        global_parser.set_defaults(blacklisting=True)
+        global_parser.add_argument('-blt', '--bl_threshold', type=int,  default='5', help='Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 0, i.e. no overlap tolerated). Please specify percentage threshold as integer, e.g. "-t 5" ', required=False)
+        global_parser.add_argument('--no_basesfilter', dest='bases_filter', action='store_false')
+        global_parser.set_defaults(bases_filter=True)
+        global_parser.add_argument('-bt', '--bases_threshold', type=int,  default='75', help='Percentage of known bases per bin required for read counting (default = 0, i.e. no filtering). Please specify percentage threshold as integer, e.g. "-bt 95" ', required=False)
+        global_parser.add_argument('-sl', '--smoothing_level', type=int, default='10', help='Size of neighbourhood for smoothing.', required=False)
+        global_parser.add_argument('-tr', '--trim', type=float, default='0.025', help='Trimming percentage to be used.', required=False)
+        global_parser.add_argument('-ms', '--min_segment_size', type=int,  default=5, help='Minimum size for a segement to be considered a segment (default = 5).', required=False)
+        global_parser.add_argument('-sf', '--shuffles', type=int,  default=1000, help='Number of permutations (shuffles) to be performed during CBS (default = 1000).', required=False)
+        global_parser.add_argument('-ps', '--p_seg', type=float,  default=0.05, help='p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05).', required=False)
+        global_parser.add_argument('-pv', '--p_val', type=float,  default=0.01, help='p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01).', required=False)
+        global_parser.add_argument('-qt', '--quantile', type=float,  default=0.2, help='Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).', required=False)
+        global_parser.add_argument('--min_ploidy', type=float, default=1.5, help='Minimum ploidy to be considered for copy number fitting.', required=False)
+        global_parser.add_argument('--max_ploidy', type=float, default=5, help='Maximum ploidy to be considered for copy number fitting.', required=False)
+        global_parser.add_argument('--ploidy_step', type=float, default=0.01, help='Ploidy step size for grid search space used during for copy number fitting.', required=False)
+        global_parser.add_argument('--min_cellularity', type=float, default=0.2, help='Minimum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided, this is estimated during copy number fitting. Alternatively, a purity value can be provided if the purity of the sample is already known.', required=False)
+        global_parser.add_argument('--max_cellularity', type=float, default=1, help='Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided, this is estimated during copy number fitting. Alternatively, a purity value can be provided if the purity of the sample is already known.', required=False)
+        global_parser.add_argument('--cellularity_step', type=float, default=0.01, help='Cellularity step size for grid search space used during for copy number fitting.', required=False)
+        global_parser.add_argument('--cellularity_buffer', type=float, default=0.1, help='Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1).', required=False)
+        global_parser.add_argument('--distance_function', type=str, default='RMSD', help='Distance function to be used for copy number fitting.', choices=['RMSD', 'MAD'], required=False)
+        global_parser.add_argument('--distance_filter_scale_factor', type=float, default=1.25, help='Distance filter scale factor to only include solutions with distances < scale factor * min(distance).', required=False)
+        global_parser.add_argument('--distance_precision', type=int, default=3, help='Number of digits to round distance functions to', required=False)
+        global_parser.add_argument('--max_proportion_zero', type=float, default=0.1, help='Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state.', required=False)
+        global_parser.add_argument('--min_proportion_close_to_whole_number', type=float, default=0.5, help='Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.', required=False)
+        global_parser.add_argument('--max_distance_from_whole_number', type=float, default=0.25, help='Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.', required=False)
+        global_parser.add_argument('--min_ps_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
+        global_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
         global_parser.set_defaults(func=savana_main)
         parsed_args = global_parser.parse_args() if not args else global_parser.parse_args(args)
     else:
