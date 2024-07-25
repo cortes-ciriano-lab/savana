@@ -257,6 +257,7 @@ def parse_args(args):
     global_parser = argparse.ArgumentParser(prog="savana", description="SAVANA - somatic SV caller")
     global_parser.add_argument('--version', action='version', version=f'SAVANA {helper.__version__}')
     subparsers = global_parser.add_subparsers(title="subcommands", help='SAVANA sub-commands', dest='command')
+    subparsers.required = False
 
     # savana run
     run_parser = subparsers.add_parser("run", help="identify and cluster breakpoints - output raw variants without classification")
