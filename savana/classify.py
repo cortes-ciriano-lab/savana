@@ -6,49 +6,85 @@ Hillary Elrick
 """
 #!/usr/bin/env python3
 
-import os
-
-import pandas as pd
-import numpy as np
-import cyvcf2
-import pickle
-import json
-
 from multiprocessing import Pool
 from functools import partial
 from collections import ChainMap
+from statistics import mean
+from scipy import stats
+
+import pickle
+import json
+import pandas as pd
+import numpy as np
+import cyvcf2
+import csv
+import os
 
 import savana.train as train
 from savana.breakpoints import *
 from savana.clusters import *
 
-def get_info_fields(vcf):
-	""" initialize the data header from INFO fields of sample VCF """
-	fields = []
-	for rec in vcf.header_iter():
-		if rec['HeaderType'] == "INFO":
-			fields.append(rec.info()['ID'])
-
-	return fields
-
-def pool_predict(data_matrix, features_to_drop, model, threads):
-	""" """
+def pool_predict(data_matrix, features_to_drop, model, threads, confidence=None):
+	""" split the prediction across multiprocessing Pool """
+	if confidence is not None:
+		print(f' > Using Mondrian Conformal Prediction with Confidence of {confidence}')
+		# untar nonconform scores if not already done
+		models_dir = os.path.join(os.path.dirname(__file__),'models')
+		for key in ['0','1']:
+			txt_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.txt')
+			tar_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.tar.gz')
+			if os.path.isfile(txt_path):
+				print(f'Using untarred {txt_path}')
+			elif os.path.isfile(tar_path):
+				import tarfile
+				print(f'First time using MCP - will untar {tar_path}')
+				tar = tarfile.open(tar_path, "r:gz")
+				tar.extractall(models_dir)
+				tar.close()
 	data_matrices = np.array_split(data_matrix, threads)
 	pool = Pool(threads)
 	results = pool.map(partial(
 		predict,
 		features_to_drop=features_to_drop,
-		model=model
+		model=model,
+		confidence=confidence
 	), data_matrices)
 	pool.close()
 	pool.join()
 
 	return dict(ChainMap(*results))
 
-def predict(data_matrix, features_to_drop, model):
-	""" given feautres and a model, return the predictions """
-	features = data_matrix.drop(features_to_drop, axis=1, errors='ignore')
+def predict(data_matrix, features_to_drop, model, confidence):
+	""" given features and a model, return the predictions """
 	ids = data_matrix['ID']
+	features = data_matrix.drop(features_to_drop, axis=1, errors='ignore')
+	# reorder the columns based on model order
+	feature_order = model.feature_names_in_
+	features = features[feature_order]
+
+	if confidence is not None:
+		# mondrian
+		predicted_probabilities = model.predict_proba(features)
+		# get nonconform scores
+		models_dir = os.path.join(os.path.dirname(__file__),'models')
+		sig_level = 1.0 - confidence
+		prediction_dict_mondrian = {}
+		mondrian_dists = {}
+		for key in [0, 1]:
+			mondrian_dist_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.txt')
+			mondrian_dists[key] = np.loadtxt(mondrian_dist_path, delimiter='\t', skiprows=1)
+		for i, prob in enumerate(predicted_probabilities):
+			for key in [0, 1]:
+				#fraction = len(mondrian_dists[key][mondrian_dists[key] <= prob[key]])/len(mondrian_dists[key])
+				p_value = stats.percentileofscore(mondrian_dists[key],  prob[key])
+				if p_value > sig_level:
+					existing_variant_predictions = prediction_dict_mondrian.get(ids.iloc[i], [])
+					prediction_dict_mondrian[ids.iloc[i]] = existing_variant_predictions
+					prediction_dict_mondrian[ids.iloc[i]] += [key]
+
+		return prediction_dict_mondrian
+
+	# perform prediction using model with standard prediction
 	predicted = model.predict(features)
 	prediction_dict = {}
 	for i, value in enumerate(predicted):
@@ -56,55 +92,138 @@ def predict(data_matrix, features_to_drop, model):
 
 	return prediction_dict
 
-def read_vcf(vcf_path):
-	""" read VCF into a dataframe """
-	data = []
-	input_vcf = cyvcf2.VCF(vcf_path)
-	header = ['ID'] + get_info_fields(input_vcf)
-	for variant in input_vcf:
-		row = [variant.ID]
-		for field in header[1:]:
-			row.append(variant.INFO.get(field))
-		data.append(row)
-	return pd.DataFrame(data, columns = header)
+def parse_cna(cna_file):
+	""" using the cna path, store the copy number changepoints """
+	cna_dict = {}
+	with open(cna_file) as f:
+		reader = csv.reader(f, delimiter="\t")
+		next(reader, None) # skip header
+		curr_chrom = None
+		curr_copy_num = None
+		curr_seg = None
+		curr_minor_copy_num = None
+		curr_seg_start = 0
+		for row in reader:
+			chrom, start, end, seg, _, _, _, copy_num, minor_copy_num = row
+			copy_num = round(float(copy_num))
+			if not curr_copy_num or curr_chrom != chrom:
+				# first segment of chromosome
+				curr_chrom = chrom
+				curr_copy_num = copy_num
+				curr_seg = seg
+				curr_seg_start = 0
+			elif copy_num != curr_copy_num or minor_copy_num != curr_minor_copy_num:
+				# change in total or minor copy number
+				cna_dict.setdefault(chrom, []).append(
+					[curr_seg_start, start, curr_seg]
+				)
+				# now reset
+				curr_copy_num = copy_num
+				curr_seg = seg
+				curr_minor_copy_num = minor_copy_num
+				curr_seg_start = start
+
+	return cna_dict
+
+def rescue_cna(args, checkpoints, time_str):
+	""" update the filter column of variants which were rejected but have a supporting change in copy number """
+	cna_dict = parse_cna(args.cna_rescue)
+	classified_vcf = cyvcf2.VCF(args.output)
+	rescue_dict = {} # store the id and distance of the rescued variants for each segment
+	for variant in classified_vcf:
+		if variant.INFO['TUMOUR_READ_SUPPORT'] >= args.min_support and variant.INFO['NORMAL_READ_SUPPORT'] == 0 and variant.CHROM in cna_dict:
+			for seg_start, seg_end, seg_name in cna_dict[variant.CHROM]:
+				# segment start
+				distance_start = abs(variant.start - int(seg_start))
+				distance_end = abs(variant.start - int(seg_end))
+				if distance_start <= args.cna_rescue_distance:
+					rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_start))
+				elif distance_end <= args.cna_rescue_distance:
+					rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_end))
+
+	# sort by the distance
+	rescue_dict = {k: sorted(v, key=lambda x: x[1]) for k, v in rescue_dict.items()}
+	# flip so that the key is the variant id
+	variant_rescue_dict = {v[0][0]: k for k,v in rescue_dict.items()}
+
+	# open vcf(s) for reading/writing
+	in_vcf = cyvcf2.VCF(args.output)
+	desc_string = str('Copy number segment used to rescue the SV')
+	in_vcf.add_info_to_header({
+		'ID': 'CNA_SEG',
+		'Type': 'String',
+		'Number': '1',
+		'Description': desc_string
+	})
+	cna_rescue_vcf = os.path.splitext(args.output)[0]+'.cna_rescue.vcf'
+	cna_out_vcf = cyvcf2.Writer(cna_rescue_vcf, in_vcf)
+	if args.somatic_output:
+		cna_rescue_somatic_vcf = os.path.splitext(args.somatic_output)[0]+'.cna_rescue.vcf'
+		cna_out_somatic_vcf = cyvcf2.Writer(cna_rescue_somatic_vcf, in_vcf)
+	for variant in in_vcf:
+		if not variant.FILTER and variant.ID in variant_rescue_dict:
+			print(f'Would rescue {variant.ID} but it already passes!')
+		elif variant.FILTER and variant.ID in variant_rescue_dict:
+			variant.FILTER = 'PASS'
+			variant.INFO['CLASS'] = 'RESCUED_CNA'
+			seg = variant_rescue_dict[variant.ID]
+			variant.INFO['CNA_SEG'] = seg
+		elif variant.FILTER and variant.INFO.get('MATEID', None) in variant_rescue_dict:
+			variant.FILTER = 'PASS'
+			variant.INFO['CLASS'] = 'RESCUED_CNA'
+			seg = variant_rescue_dict[variant.INFO.get('MATEID', None)]
+			variant.INFO['CNA_SEG'] = seg
+		cna_out_vcf.write_record(variant)
+		if args.somatic_output and not variant.FILTER or variant.FILTER == 'PASS':
+			# add to the somatic only VCF
+			cna_out_somatic_vcf.write_record(variant)
+
+	cna_out_vcf.close()
+	if args.somatic_output:
+		cna_out_somatic_vcf.close()
+
+	helper.time_function("Rescued somatic SVs from CNAs", checkpoints, time_str)
+
+	return
 
 def legacy_pass_strict(variant, event_heuristic):
 	""" apply legacy filter for strict thresholds """
-	if variant['NORMAL_SUPPORT'] > 0:
+	if variant['NORMAL_READ_SUPPORT'] > 0:
 		return False
-	if variant['TUMOUR_SUPPORT'] > 7:
+	if variant['TUMOUR_READ_SUPPORT'] > 7:
 		origin_uncertainty = (variant['ORIGIN_STARTS_STD_DEV']+1) * (variant['ORIGIN_EVENT_SIZE_STD_DEV']+1)
 		end_uncertainty = (variant['END_STARTS_STD_DEV']+1) * (variant['END_EVENT_SIZE_STD_DEV']+1)
 		try:
-			if variant['TUMOUR_SUPPORT'] > 12 and origin_uncertainty <= 15:
+			if variant['TUMOUR_READ_SUPPORT'] > 12 and origin_uncertainty <= 15:
 				if event_heuristic <= 0.025:
 					return True
-			elif variant['TUMOUR_SUPPORT'] > 12 and end_uncertainty <= 30:
+			elif variant['TUMOUR_READ_SUPPORT'] > 12 and end_uncertainty <= 30:
 				return True
 			elif end_uncertainty <= 10:
 				return True
-		except Exception as e:
+		except Exception as _:
 			# in case of None
 			return False
 
 def legacy_pass_lenient(variant, event_heuristic):
 	""" apply legacy filter for lenient thresholds """
-	if variant['TUMOUR_SUPPORT'] == 0:
+	if variant['TUMOUR_READ_SUPPORT'] == 0:
 		return False
-	elif variant['NORMAL_SUPPORT']/variant['TUMOUR_SUPPORT'] < 0.1:
+	elif variant['NORMAL_READ_SUPPORT']/variant['TUMOUR_READ_SUPPORT'] < 0.1:
 		try:
 			if variant['ORIGIN_STARTS_STD_DEV'] < 150 and event_heuristic < 3:
-				if variant['BP_NOTATION'] == "<INS>" and variant['TUMOUR_SUPPORT'] > 25:
+				if variant['BP_NOTATION'] == "<INS>" and variant['TUMOUR_READ_SUPPORT'] > 25:
 					return True
-				elif variant['BP_NOTATION'] != "<INS>" and variant['TUMOUR_SUPPORT'] > 5:
+				elif variant['BP_NOTATION'] != "<INS>" and variant['TUMOUR_READ_SUPPORT'] > 5:
 					return True
-		except Exception as e:
+		except Exception as _:
 			# in case of None for any stat
 			return False
 
 def classify_legacy(args, checkpoints, time_str):
 	""" classify using legacy lenient/strict filters """
-	data_matrix = read_vcf(args.vcf)
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
@@ -176,8 +295,9 @@ def filter_with_comparator(variant_value, filter_value, comparator):
 	return True
 
 def classify_by_params(args, checkpoints, time_str):
-	#read VCF into a dataframe, classify using a parameter JSON
-	data_matrix = read_vcf(args.vcf)
+	# read VCF into a dataframe, classify using a parameter JSON
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
 	data_matrix = train.format_data(data_matrix)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
@@ -228,77 +348,267 @@ def classify_by_params(args, checkpoints, time_str):
 
 	return
 
-def classify_by_model(args, checkpoints, time_str):
-	""" read VCF into a dataframe, classify using a model """
+def pacbio_pass_somatic(variant, min_support, min_af):
+	""" custom manual filters for PacBio """
+	if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
+		return False
+	if variant.INFO['TUMOUR_READ_SUPPORT'] < min_support:
+		return False
+	if variant.INFO['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant.INFO['END_STARTS_STD_DEV'] > 50.0:
+		return False
+	if variant.INFO['ORIGIN_MAPQ_MEAN'] < 40.0 or variant.INFO['END_MAPQ_MEAN'] < 40.0:
+		return False
+	if variant.INFO['ORIGIN_EVENT_SIZE_STD_DEV'] > 60.0 or variant.INFO['END_EVENT_SIZE_STD_DEV'] > 60.0:
+		return False
+	if variant.INFO['TUMOUR_AF'][0] < min_af:
+		return False
+	if variant.INFO['CLUSTERED_READS_NORMAL'] > 3:
+		return False
+	return True
 
-	data_matrix = read_vcf(args.vcf)
-	data_matrix = train.format_data(data_matrix)
-	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
+def classify_pacbio(args, checkpoints, time_str):
+	""" classify using PacBio filters (manually defined) """
 
-	loaded_model = pickle.load(open(args.model, "rb"))
-	helper.time_function("Loaded classification model", checkpoints, time_str)
+	# increase min support and AF for PacBio (not below supplied mins)
+	pacbio_min_support = max(7, args.min_support)
+	pacbio_min_af = max(0.15, args.min_af)
+	print(f'Using PacBio minimum support filters of {pacbio_min_support} reads and {pacbio_min_af} allele-fracion')
 
-	features_to_drop = [
-		'ID', 'LABEL','MATEID','ORIGINATING_CLUSTER','END_CLUSTER',
-		'TUMOUR_DP', 'NORMAL_DP', 'BP_NOTATION', 'SVTYPE', 'SVLEN',
-		'ORIGIN_EVENT_SIZE_MEAN', 'ORIGIN_EVENT_SIZE_MEDIAN',
-		'END_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN'
-		]
-	prediction_dict = pool_predict(data_matrix, features_to_drop, loaded_model, 20)
-	helper.time_function("Performed prediction", checkpoints, time_str)
-	# output vcf using modified input_vcf as template
+	if args.predict_germline:
+		print('Germline PacBio filters not yet implemented.')
+
 	input_vcf = cyvcf2.VCF(args.vcf)
-	desc_string = str(f'Variant class prediction from model {args.model}')
+	desc_string = str('Variant class prediction using PacBio filters')
 	input_vcf.add_info_to_header({
 		'ID': 'CLASS',
 		'Type': 'String',
 		'Number': '1',
 		'Description': desc_string
 	})
-	desc_string = str(f'Variant filtered as likely noise by model: {args.model}')
+	desc_string = str('Variant did not pass PacBio filters')
 	input_vcf.add_filter_to_header({
-		'ID': 'LIKELY_NOISE',
+		'ID': 'FAIL',
 		'Description': desc_string
 	})
 	out_vcf = cyvcf2.Writer(args.output, input_vcf)
 	if args.somatic_output:
 		somatic_vcf = cyvcf2.Writer(args.somatic_output, input_vcf)
+	if args.germline_output:
+		print('Germline PacBio filters not yet implemented.')
+		#germline_vcf = cyvcf2.Writer(args.germline_output, input_vcf)
+	pass_dict = {}
 	for variant in input_vcf:
 		variant_id = variant.ID
-		variant_prediction = prediction_dict.get(variant_id, None)
-		variant_mate_prediction = prediction_dict.get(variant.INFO.get('MATEID', None), None)
-		if variant_prediction == 1 or variant_mate_prediction == 1:
-			# PREDICTED SOMATIC BY MODEL
-			# perform sanity checks
-			if variant.INFO['TUMOUR_SUPPORT'] < 3:
-				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
-			elif variant.INFO['TUMOUR_SUPPORT'] < variant.INFO['NORMAL_SUPPORT']:
-				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
-			elif variant.INFO['NORMAL_SUPPORT']/variant.INFO['TUMOUR_SUPPORT'] > 0.1:
-				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
-			else:
-				# update the INFO field if all sanity checks pass
-				variant.INFO['CLASS'] = 'PREDICTED_SOMATIC'
-				if args.somatic_output:
-					# add to the somatic only VCF
-					somatic_vcf.write_record(variant)
-		elif variant_prediction == 2 or variant_mate_prediction == 2:
-			# PREDICTED GERMLINE By MODEL
-			# perform sanity checks
-			if (variant.INFO['NORMAL_SUPPORT']+variant.INFO['TUMOUR_SUPPORT']) <= 3:
-				variant.INFO['CLASS'] = 'PREDICTED_NOISE'
-			else:
-				# update the INFO field if sanity check passes
-				variant.INFO['CLASS'] = 'PREDICTED_GERMLINE'
+		passed_somatic = pacbio_pass_somatic(variant, pacbio_min_support, pacbio_min_af)
+		mate_passed_somatic = pass_dict.get(variant.INFO.get('MATEID', None), False)
+		# update the pass dictionary
+		pass_dict[variant_id] = passed_somatic
+		if passed_somatic or mate_passed_somatic:
+			# update the INFO field
+			variant.INFO['CLASS'] = 'SOMATIC'
+			if args.somatic_output:
+				# add to somatic-only vcf
+				somatic_vcf.write_record(variant)
 		else:
-			# update the FILTER column
-			variant.FILTER = 'LIKELY_NOISE'
-			variant.INFO['CLASS'] = 'PREDICTED_NOISE'
+			variant.FILTER = 'FAIL'
+		out_vcf.write_record(variant)
+
+	out_vcf.close()
+	if args.somatic_output:
+		somatic_vcf.close()
+	input_vcf.close()
+
+	helper.time_function("Output PacBio somatic VCF", checkpoints, time_str)
+
+	return
+
+def pass_rescue(variant):
+	""" rescue variants predicted noise by model if they pass set of filters """
+	# regardless of phase reject on these criteria
+	if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
+		return False
+	if variant.INFO['ORIGIN_MAPQ_MEAN'] < 15.0:
+		return False
+	if variant.INFO['TUMOUR_ALT_HP'][0] > 0 and variant.INFO['TUMOUR_ALT_HP'][1] > 0:
+		# inconsistent phasing
+		return False
+	# is there high read support from a single haplotype?
+	is_phased = True if (variant.INFO['TUMOUR_ALT_HP'][0] > 5 and variant.INFO['TUMOUR_ALT_HP'][1] == 0) else False
+	is_phased = True if (variant.INFO['TUMOUR_ALT_HP'][0] == 0 and variant.INFO['TUMOUR_ALT_HP'][1] > 5) else is_phased
+	if is_phased:
+		# allow maximum one clustered normal read
+		if variant.INFO['CLUSTERED_READS_NORMAL'] > 1:
+			return False
+		# must have more than 10% AF
+		if variant.INFO['TUMOUR_AF'][0] <= 0.10:
+			return False
+	else:
+		# if not high phased-reads support, require 7 reads of support
+		if variant.INFO['TUMOUR_READ_SUPPORT'] < 7:
+			return False
+		# don't allow any clustered normal reads
+		if variant.INFO['CLUSTERED_READS_NORMAL'] > 0:
+			return False
+		# require 20% AF
+		if variant.INFO['TUMOUR_AF'][0] <= 0.20:
+			return False
+
+	return True
+
+def classify_by_model(args, checkpoints, time_str):
+	""" read VCF into a dataframe, classify using a model """
+
+	header, data = train.read_vcf(args.vcf)
+	data_matrix = pd.DataFrame(data, columns=header)
+	data_matrix = train.format_data(data_matrix)
+	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
+
+	loaded_model = pickle.load(open(args.custom_model, "rb"))
+	helper.time_function("Loaded classification model", checkpoints, time_str)
+
+	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], loaded_model, args.threads, args.confidence)
+
+	helper.time_function("Performed prediction", checkpoints, time_str)
+	class_dictionary = {
+		-2: 'PREDICTED_BOTH', # mondrian
+		-1: 'PREDICTED_NEITHER', # mondrian
+		0: 'PREDICTED_NOISE',
+		1: 'PREDICTED_SOMATIC',
+		2: 'PREDICTED_GERMLINE',
+		3: 'RESCUED_SOMATIC',
+		4: 'REJECTED_LOW_SUPPORT',
+		5: 'REJECTED_LOW_AF'
+	}
+	variant_classes = prediction_dict
+
+	if args.confidence is not None:
+		# convert the raw mondrian predictions into classes listed above
+		for variant, raw_prediction in prediction_dict.items():
+			# convert the raw predictions (inclu. mondrian)
+			if type(raw_prediction) is list and len(raw_prediction) == 1:
+				prediction_dict[variant] = raw_prediction[0]
+			if type(raw_prediction) is list and len(raw_prediction) == 2:
+				prediction_dict[variant] = -2
+			if type(raw_prediction) is list and len(raw_prediction) == 0:
+				prediction_dict[variant] = -1
+
+	# assign the classes of variants in input vcf
+	input_vcf = cyvcf2.VCF(args.vcf)
+	for variant in input_vcf:
+		variant_id = variant.ID
+		variant_mate_id = variant.INFO.get('MATEID', None)
+		variant_class = prediction_dict.get(variant_id, None)
+		# if no mate present, (as in ins, sbnds) set mate prediction to self prediction
+		variant_mate_class = variant_classes.get(variant.INFO.get('MATEID', None), variant_class)
+		if variant_class == 1 or variant_mate_class == 1:
+			# check against hard filters that override prediction
+			if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+				variant_classes[variant_id] = 4
+				if variant_mate_id: # reject mate as well
+					variant_classes[variant_mate_id] = 4
+			elif variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']:
+				variant_classes[variant_id] = 4
+				if variant_mate_id: # reject mate as well
+					variant_classes[variant_mate_id] = 4
+			elif variant.INFO['TUMOUR_AF'][0] < args.min_af and variant.INFO['TUMOUR_AF'][1] < args.min_af:
+				# determine if tumour-amplified
+				avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
+				avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
+				if avg_tumour_dp <= avg_normal_dp*5:
+					# no tumour amplification, low af holds
+					variant_classes[variant_id] = 5
+					if variant_mate_id: # reject mate as well
+						variant_classes[variant_mate_id] = 5
+			else:
+				# both pass
+				variant_classes[variant_id] = 1
+				if variant_mate_id: # accept mate as well
+					variant_classes[variant_mate_id] = 1
+		elif variant_class == 2 and variant_mate_class == 2:
+			# check against hard filters that override prediction
+			if variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support:
+				variant_classes[variant_id] = 4
+				if variant_mate_id: # reject mate as well
+					variant_classes[variant_mate_id] = 4
+			elif variant.INFO['NORMAL_AF'] < args.min_af:
+				variant_classes[variant_id] = 5
+				if variant_mate_id: # reject mate as well
+					variant_classes[variant_mate_id] = 5
+			else:
+				# keep the true prediction
+				variant_classes[variant_id] = variant_class
+		elif variant_class == 0 or variant_mate_class == 0:
+			# either edge was predicted as noise (and neither edge somatic or germline since failed earlier check)
+			# update both edges to noise
+			variant_classes[variant_id] = 0
+			if variant_mate_id: # reject mate as well
+				variant_classes[variant_mate_id] = 0
+		elif (variant_class == -1 and variant_mate_class == -2) or (variant_class == -2 and variant_mate_class == -1):
+			# tricky case - one edge predicted both and the other predicted neither.
+			# update both edges to "BOTH"
+			variant_classes[variant_id] = -2
+			if variant_mate_id:
+				variant_classes[variant_mate_id] = -2
+
+	# all variants and mates have final classes, output files
+	input_vcf = cyvcf2.VCF(args.vcf)
+	desc_string = str(f'Variant class prediction from model {args.custom_model} (after filtering for low AF or support)')
+	input_vcf.add_info_to_header({
+		'ID': 'CLASS',
+		'Type': 'String',
+		'Number': '1',
+		'Description': desc_string
+	})
+	desc_string = str(f'Variant filtered as likely noise by model: {args.custom_model}')
+	input_vcf.add_filter_to_header({
+		'ID': 'PREDICTED_NOISE',
+		'Description': desc_string
+	})
+	if args.confidence is not None:
+		desc_string = str('Variant predicted as neither noise nor somatic')
+		input_vcf.add_filter_to_header({
+			'ID': 'PREDICTED_NEITHER',
+			'Description': desc_string
+		})
+		desc_string = str('Variant predicted as both noise and somatic')
+		input_vcf.add_filter_to_header({
+			'ID': 'PREDICTED_BOTH',
+			'Description': desc_string
+		})
+	desc_string = str(f'Variant classified by model but removed due to low support (< {args.min_support} supporting reads)')
+	input_vcf.add_filter_to_header({
+		'ID': 'REJECTED_LOW_SUPPORT',
+		'Description': desc_string
+	})
+	desc_string = str(f'Variant classified by model but removed due to AF < {args.min_af}')
+	input_vcf.add_filter_to_header({
+		'ID': 'REJECTED_LOW_AF',
+		'Description': desc_string
+	})
+	out_vcf = cyvcf2.Writer(args.output, input_vcf)
+	if args.somatic_output:
+		somatic_vcf = cyvcf2.Writer(args.somatic_output, input_vcf)
+	if args.germline_output:
+		germline_vcf = cyvcf2.Writer(args.germline_output, input_vcf)
+	for variant in input_vcf:
+		variant_id = variant.ID
+		variant_class = class_dictionary[variant_classes[variant_id]]
+		variant.INFO['CLASS'] = variant_class
+		# update the filter column here
+		if variant_class not in ['PREDICTED_SOMATIC', 'PREDICTED_GERMLINE', 'RESCUED_SOMATIC']:
+			variant.FILTER = variant_class
+		# write germline and somatic files
+		if args.somatic_output and variant_class in ['PREDICTED_SOMATIC', 'RESCUED_SOMATIC']:
+			# add to the somatic only VCF
+			somatic_vcf.write_record(variant)
+		if args.germline_output and variant_class == 'PREDICTED_GERMLINE':
+			germline_vcf.write_record(variant)
 		out_vcf.write_record(variant)
 	out_vcf.close()
 	if args.somatic_output:
-		# add to the somatic only VCF
 		somatic_vcf.close()
+	if args.germline_output:
+		germline_vcf.close()
 	input_vcf.close()
 	helper.time_function("Output classified VCF", checkpoints, time_str)
 

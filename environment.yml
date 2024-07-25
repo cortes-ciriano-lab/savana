@@ -1,7 +1,6 @@
 # This file may be used to create an environment using:
-# $ conda create --name <env> --file <this file>
+# $ conda env create --name <env> --file environment.yml
 # platform: linux-64
-name: SAVANA-env
 channels:
   - conda-forge
   - bioconda
@@ -9,7 +8,7 @@ channels:
 dependencies:
   - python=3.9.6
   - pybedtools=0.9.0
-  - pysam=0.20.0
+  - pysam=0.21.0
   - cyvcf2=0.30.16
   - scikit-learn=1.2.2
   - pandas=2.0.0

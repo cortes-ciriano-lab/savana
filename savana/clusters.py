@@ -16,70 +16,28 @@ import pybedtools
 
 from savana.core import Cluster
 
-def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer):
+def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """
-	cluster_stacks = {
-		"+-": [],
-		"++": [],
-		"-+": [],
-		"--": [],
-		"<INS>": []
-	}
+	stack = []
 	breakpoints.sort()
 	for bp in breakpoints:
 		bp_notation_type = str(bp.breakpoint_notation)
-		if len(cluster_stacks[bp_notation_type]) == 0:
-			# put a new cluster onto the sv stack
+		bp_buffer = ins_buffer if (ins_buffer and bp_notation_type == "<INS>") else buffer
+		if len(stack) == 0:
+			# put a new cluster on the stack
 			new_cluster = Cluster(bp)
-			cluster_stacks[bp_notation_type].append(new_cluster)
-		elif bp_notation_type == "<INS>":
-			if not cluster_stacks[bp_notation_type][-1].overlaps(bp, ins_buffer):
-				# put a new cluster onto the sv stack
-				new_cluster = Cluster(bp)
-				cluster_stacks[bp_notation_type].append(new_cluster)
-			else:
-				# add to cluster on top of stack
-				cluster_stacks[bp_notation_type][-1].add(bp)
-		elif bp_notation_type != "<INS>" and not cluster_stacks[bp_notation_type][-1].overlaps(bp, buffer):
-			# put a new cluster onto the sv stack
+			stack.append(new_cluster)
+		elif not stack[-1].overlaps(bp, bp_buffer):
+			# put a new cluster on the stack
 			new_cluster = Cluster(bp)
-			cluster_stacks[bp_notation_type].append(new_cluster)
+			stack.append(new_cluster)
 		else:
-			# add to cluster on top of stack
-			cluster_stacks[bp_notation_type][-1].add(bp)
-	for bp_notation_type, stack in cluster_stacks.items():
-		# can't cluster with only one read - require two
-		filtered_cluster_stacks = [c for c in stack if len(c.supporting_reads) >= 2]
-		cluster_stacks[bp_notation_type] = filtered_cluster_stacks
+			stack[-1].add(bp)
 
-	return chrom, cluster_stacks
+	# require two supporting reads per cluster
+	filtered_stack = [cluster for cluster in stack if len(cluster.supporting_reads) >= 2]
 
-def output_clusters(refined_clusters, outdir):
-	""" output the json files of evidence """
-	for cluster in refined_clusters:
-		cluster_id = str(cluster.uid)
-		cluster_outdir = os.path.join(outdir, 'clusters', cluster_id)
-		if not os.path.exists(cluster_outdir):
-			os.makedirs(cluster_outdir)
-		output_json = open(os.path.join(cluster_outdir, f'{cluster_id}.json'), 'w')
-		json.dump(cluster.as_dict(), output_json, sort_keys=False, indent=2)
-		output_json.close()
-
-def wrap_subprocess(command, outfile=None, wait=False):
-	""" error handling for subprocess commands """
-	if wait and outfile:
-		try:
-			with open(outfile, 'w') as out:
-				p = subprocess.Popen(command, stdout=out, stderr=subprocess.DEVNULL)
-				p.wait()
-		except Exception as e:
-			print(f'Command {command} failed with error (code {e.returncode}): {e.output}')
-	if outfile:
-		try:
-			with open(outfile, 'w') as out:
-				subprocess.run(command, stdout=out, stderr=subprocess.DEVNULL)
-		except Exception as e:
-			print(f'Command {command} failed with error (code {e.returncode}): {e.output}')
+	return chrom, filtered_stack
 
 def write_cluster_bed(clusters, outdir):
 	""" store clusters in bed file"""
@@ -88,11 +46,10 @@ def write_cluster_bed(clusters, outdir):
 	cluster_bed = ''
 	for clusters_sv_type in clusters.values():
 		for cluster in clusters_sv_type:
-			cluster_id = str(cluster.uid)
 			if cluster.start <= cluster.end:
-				cluster_bed+="\t".join([cluster.chr, str(cluster.start), str(cluster.end), cluster_id])
+				cluster_bed+="\t".join([cluster.chr, str(cluster.start), str(cluster.end)])
 			else:
-				cluster_bed+="\t".join([cluster.chr, str(cluster.end), str(cluster.start), cluster_id])
+				cluster_bed+="\t".join([cluster.chr, str(cluster.end), str(cluster.start)])
 			cluster_bed+="\n"
 	sorted_bed = pybedtools.BedTool(cluster_bed, from_string=True).sort()
 	sorted_bed.saveas(cluster_file)

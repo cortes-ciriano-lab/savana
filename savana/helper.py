@@ -13,8 +13,9 @@ import sys
 
 from time import time
 from datetime import datetime
+import argparse
 
-__version__ = "1.0.5"
+__version__ = "1.2.0"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -107,9 +108,11 @@ breakend_type = {
 def is_int(string):
 	""" return true if string can be converted to int, False otherwise """
 	try:
-		_ = int(string)
+		__ = int(string)
 		return True
-	except ValueError as e:
+	except ValueError as _:
+		return False
+	except TypeError as _:
 		return False
 
 def flatten(list_of_lists):
@@ -192,37 +195,40 @@ def get_clipping(cigar_tuples, is_reverse):
 
 	return clipping
 
-def get_chimeric_regions(read, mapq_filter):
+def get_chimeric_regions(read):
 	""" get info for the chimeric regions of a read and store in a dict """
+	if read.is_supplementary:
+		return None
 	chimeric_regions = []
+	try:
+		value = read.get_tag("SA")
+	except KeyError as _:
+		return chimeric_regions
+	# parse the SA tag if it exists
+	supp_alignments = [v.split(",") for v in value[:-1].split(";")]
 	sa_keys = ['chrom', 'pos', 'strand', 'CIGAR', 'mapQ', 'NM']
-	for tag, value in read.get_tags():
-		if tag == "SA":
-			# (chrom, pos, strand, CIGAR, mapQ, NM)
-			supp_alignments = [v.split(",") for v in value[:-1].split(";")]
-			for supp_alignment in supp_alignments:
-				chimeric_region = dict(zip(sa_keys, supp_alignment))
-				if int(chimeric_region['mapQ']) < mapq_filter:
-					# only consider those above quality threshold
-					continue
-				cigar_split = re.split('([MIDNSHP=X])', chimeric_region['CIGAR'])[:-1]
-				if chimeric_region['strand'] == "-":
-					# reverse CIGAR if the direction of the supplementary doesn't match the primary
-					cigar_split.reverse()
-					cigar_split = [cigar_split[f(x)] for x in range(0,len(cigar_split),2) for f in (lambda x: x+1, lambda x: x)]
-				# calculate the number of bases from the SA CIGAR string that are consuming the query and reference
-				alignment_sum = sum_consumed_query(trim_supplementary(chimeric_region['CIGAR']))
-				reference_sum = sum_consumed_reference(trim_supplementary(chimeric_region['CIGAR']))
-				left_softclip = int(cigar_split[0]) if cigar_split[1] == 'S' else 0
-				right_softclip = int(cigar_split[-2]) if cigar_split[-1] == 'S' else 0
-				# track values in chimeric region dicts
-				chimeric_region['left_softclip'] = left_softclip
-				chimeric_region['right_softclip'] = right_softclip
-				chimeric_region['consumed_query'] = alignment_sum
-				chimeric_region['consumed_reference'] = reference_sum
-				chimeric_region['seen'] = False
-				chimeric_regions.append(chimeric_region)
+	for supp_alignment in supp_alignments:
+		chimeric_region = dict(zip(sa_keys, supp_alignment))
+		chimeric_region['mapQ'] = int(chimeric_region['mapQ'])
+		cigar_split = re.split('([MIDNSHP=X])', chimeric_region['CIGAR'])[:-1]
+		if chimeric_region['strand'] == "-":
+			# reverse CIGAR if the direction of the supplementary doesn't match the primary
+			cigar_split.reverse()
+			cigar_split = [cigar_split[f(x)] for x in range(0,len(cigar_split),2) for f in (lambda x: x+1, lambda x: x)]
+		# calculate the number of bases from the SA CIGAR string that are consuming the query and reference
+		alignment_sum = sum_consumed_query(trim_supplementary(chimeric_region['CIGAR']))
+		reference_sum = sum_consumed_reference(trim_supplementary(chimeric_region['CIGAR']))
+		left_softclip = int(cigar_split[0]) if cigar_split[1] == 'S' else 0
+		right_softclip = int(cigar_split[-2]) if cigar_split[-1] == 'S' else 0
+		# track values in chimeric region dicts
+		chimeric_region['left_softclip'] = left_softclip
+		chimeric_region['right_softclip'] = right_softclip
+		chimeric_region['consumed_query'] = alignment_sum
+		chimeric_region['consumed_reference'] = reference_sum
+		chimeric_region['seen'] = False
+		chimeric_regions.append(chimeric_region)
 	return chimeric_regions
+
 
 def get_contigs(contig_file, ref_index):
 	""" use the contigs file to return contigs and lengths - otherwise use index """
@@ -281,15 +287,30 @@ def generate_vcf_header(args, example_breakpoint):
 		f'##reference={args.ref}',
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
 		'##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
-		'##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakends">',
-		'##INFO=<ID=NORMAL_SUPPORT,Number=1,Type=Float,Description="Number of variant supporting normal reads">',
-		'##INFO=<ID=TUMOUR_SUPPORT,Number=1,Type=Float,Description="Number of variant supporting tumour reads">',
-		'##INFO=<ID=SVLEN,Number=1,Type=Float,Description="Length of the SV">',
-		'##INFO=<ID=ORIGINATING_CLUSTER,Number=.,Type=String,Description="SAVANA internal originating cluster id supporting variant">',
-		'##INFO=<ID=END_CLUSTER,Number=.,Type=String,Description="SAVANA internal end cluster id supporting variant">',
-		'##INFO=<ID=TUMOUR_DP,Number=.,Type=Float,Description="Local depth in tumour at the breakpoint(s) of an SV">',
-		'##INFO=<ID=NORMAL_DP,Number=.,Type=Float,Description="Local depth in normal at the breakpoint(s) of an SV">',
-		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">'
+		'##INFO=<ID=MATEID,Number=1,Type=String,Description="ID of mate breakends">',
+		'##INFO=<ID=NORMAL_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal reads">',
+		'##INFO=<ID=TUMOUR_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour reads">',
+		'##INFO=<ID=NORMAL_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal alignments">',
+		'##INFO=<ID=TUMOUR_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour alignments">',
+		'##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Length of the SV">',
+		'##INFO=<ID=TUMOUR_DP_BEFORE,Number=2,Type=Integer,Description="Local tumour depth in bin before the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_DP_AT,Number=2,Type=Integer,Description="Local tumour depth in bin at the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_DP_AFTER,Number=2,Type=Integer,Description="Local tumour depth in bin after the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP_BEFORE,Number=2,Type=Integer,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP_AT,Number=2,Type=Integer,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
+		'##INFO=<ID=NORMAL_DP_AFTER,Number=2,Type=Integer,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
+		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
+		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
+		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">',
+		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">',
+		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">',
+		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">',
+		'##INFO=<ID=TUMOUR_ALT_HP,Number=3,Type=Integer,Description="Counts of SV-supporting reads belonging to each haplotype in the tumour sample (1/2/NA)">',
+		'##INFO=<ID=TUMOUR_PS,Number=.,Type=String,Description="List of unique phase sets from the tumour supporting reads">',
+		'##INFO=<ID=NORMAL_ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype in the normal sample (1/2/NA)">',
+		'##INFO=<ID=NORMAL_PS,Number=.,Type=String,Description="List of unique phase sets from the normal supporting reads">',
+		'##INFO=<ID=TUMOUR_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA)">',
+		'##INFO=<ID=NORMAL_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA)">'
 	])
 	# add the stat info fields
 	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
@@ -308,23 +329,52 @@ def time_function(desc, checkpoints, time_str, final=False):
 	""" prints the number of seconds elapsed compared to previous checkpoint """
 	checkpoints.append(time())
 	if not final:
-		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[-2], 3)} seconds'
+		formatted_time = f'{desc:<60}{round(checkpoints[-1] - checkpoints[-2], 3)} seconds'
 	else:
-		formatted_time = f'{desc:<40}{round(checkpoints[-1] - checkpoints[0], 3)} seconds\n'
+		formatted_time = f'{desc:<60}{round(checkpoints[-1] - checkpoints[0], 3)} seconds\n'
 	time_str.append(formatted_time)
 	print(formatted_time)
 	return
 
-def check_outdir(args_outdir):
+def check_outdir(args_outdir, illegal=None):
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args_outdir)
 	if not os.path.exists(outdir):
 		print(f'Creating directory {outdir} to store results')
 		os.mkdir(outdir)
-	elif os.listdir(outdir):
-		sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	if not illegal:
+		# throw error if ANY files present
+		if os.listdir(outdir):
+			sys.exit(f'Output directory "{outdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	else:
+		# check if illegal files exist in outdir
+		for f in os.listdir(outdir):
+			if f.endswith(illegal):
+				sys.exit(f'Output directory "{outdir}" already exists and contains {illegal} files which may be overwritten. Please remove the files or supply a different directory name.')
 
 	return outdir
+
+# credit to stackoverflow: https://stackoverflow.com/questions/55324449/how-to-specify-a-minimum-or-maximum-float-value-with-argparse
+def float_range(mini,maxi):
+	"""Return function handle of an argument type function for ArgumentParser checking a float range: mini <= arg <= maxi
+		mini - minimum acceptable argument
+		maxi - maximum acceptable argument
+	"""
+
+	# Define the function with default arguments
+	def float_range_checker(arg):
+		"""New Type function for argparse - a float within predefined range."""
+
+		try:
+			f = float(arg)
+		except ValueError:
+			raise argparse.ArgumentTypeError("must be a floating point number")
+		if f < mini or f > maxi:
+			raise argparse.ArgumentTypeError("must be in range [" + str(mini) + " .. " + str(maxi)+"]")
+		return f
+
+	# Return function handle to checking function
+	return float_range_checker
 
 if __name__ == "__main__":
 	print("Helper functions for SAVANA")
