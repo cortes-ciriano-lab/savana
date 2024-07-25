@@ -431,7 +431,11 @@ For now, SAVANA reports the breakend orientation using brackets in the ALT field
 Please raise a GitHub issue if you encounter issues installing or using SAVANA.
 
 ## License
-SAVANA is free for academic use only. If you are not a member of a public funded academic and/or education and/or research institution you must obtain a commercial license from EMBL Enterprise Management GmbH (EMBLEM); please email EMBLEM (info@embl-em.de)
+
+Apache 2.0 License
+
+Copyright (c) 2024 - European Molecular Biology Laboratory (EMBL).
+All rights reserved.
 
 ## Contacts
 
