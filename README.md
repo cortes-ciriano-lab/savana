@@ -1,8 +1,10 @@
 # ![SAVANA](/docs/SAVANA_logo_transparent.png)
 
-SAVANA is a somatic structural variant (SV) caller for long-read data. It takes aligned tumour and normal BAM files, examines the reads for evidence of SVs, clusters adjacent potential SVs together, and finally calls consensus breakpoints, classifies somatic events, and outputs them in BEDPE and VCF format. It also identifies copy number abberations and predicts purity and ploidy. (@cmsauer).
+SAVANA is a somatic structural variant (SV) and copy number aberrations (SCNA) caller for long-read data. It takes aligned tumour and normal BAM files, examines the reads for evidence of SVs, clusters adjacent potential SVs together, and finally calls consensus breakpoints, classifies somatic events, and outputs them in BEDPE and VCF format. It also identifies copy number abberations utilising somatic SV breakpoints and circular binary segmentation. SAVANA then estimates tumour purity using B-allele frequency values of heterozygous SNPs at regions with loss of heterozygosity, and performs absolute copy number fitting to determine tumour ploidy and allele-specific absolute copy number.
 
 SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and winnowmap. It requires a Unix-based operating system and has been developed and tested on Linux.
+
+For further information, benchmarking and for citation, please refer to our [SAVANA preprint](https://doi.org/10.1101/2024.07.25.604944).
 
 ## Contents
 * [Installation](#installation)
@@ -108,8 +110,9 @@ savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <re
 
 This will call somatic SVs. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
 ```
-savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file>
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
 ```
+Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. 
 
 ### Mandatory Arguments
 Argument|Description
