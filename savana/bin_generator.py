@@ -134,10 +134,14 @@ def generate_bins(outdir, sample, ref, chromosomes, bin_size, blacklist, breakpo
         binmode = "standard"
     # a. Extract chormosome info and pass fasta file into chr_in list
     fasta = pysam.FastaFile(ref)
+    contigs = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','X','Y']
+    ref_contigs = fasta.references
+    if 'chr1' in ref_contigs:
+        contigs = [f'chr{x}' for x in contigs]
     if chromosomes != 'all':
-        chr_names = [fasta.references[(int(x)-1)] for x in chromosomes]
+        chr_names = [contigs[(int(x)-1)] for x in chromosomes]
     else:
-        chr_names = fasta.references[0:24]
+        chr_names = contigs
     # b. Extract breakpoints into dictionary from savana vcf to integrate into CN analysis if provided, and define input for main processing step
     if (breakpoints is not None):
         in_dict = { chrom : list([]) for chrom in chr_names }
