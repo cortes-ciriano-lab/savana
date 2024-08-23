@@ -65,17 +65,9 @@ If preferred, you can install and manage dependencies with pip instead using the
 pip install -r requirements.txt
 ```
 
-#### Clone and Install SAVANA
+#### Install SAVANA
 Once you've installed the required dependencies with conda or pip, you can install SAVANA by navigating to the cloned repo and running:
 ```
-python3 -m pip install . -vv
-```
-
-#### Clone and Install SAVANA
-Once you've installed the required dependencies with conda or pip, you can install SAVANA by cloning this repository, navigating to the main folder, and installing with pip:
-```
-git clone git@github.com:cortes-ciriano-lab/savana.git
-cd savana
 python3 -m pip install . -vv
 ```
 
