@@ -104,7 +104,20 @@ This will call somatic SVs. To compute copy number aberrations, you must provide
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
 ```
-Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. 
+> Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead.
+
+### Quickstart
+
+To test on a small BAM, download subset COLO829 cell-line files:
+```
+wget ftp://ftp.ebi.ac.uk/pub/databases/icortes-public/COLO829_subset/*.bam*
+```
+
+Then, to call somatic SVs, run:
+```
+savana --tumour ONT_COLO829_T_truthset_50k.phased.bam --normal ONT_COLO829_N_truthset_50k.phased.bam --outdir COLO829_subset_test --threads 8 --ref <hg38-fasta>
+```
+> To run the above on a SLURM cluster we requested an interactive job with 8 cpus (`-c 8`) and 16 GB of memory (`--mem 16`). The total time to call variants (as measured by Linux `time`) was 48.88 seconds. You may need to adjust requirements for your computing environment
 
 ### Mandatory Arguments
 Argument|Description
@@ -130,6 +143,7 @@ Argument|Description
 --cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
 --cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
 --threads| Number of threads to use (default is maximum available)
+--cna_threads| Number of threads to use for CNA calling (default is to use `--threads`)
 --ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
 --single_bnd| Report single breakend variants in addition to standard types (False by default)
 --single_bnd_min_length| Minimum length of single breakend to consider (default=100)
@@ -251,25 +265,28 @@ By default, SAVANA classifies somatic variants using a random-forest classifier,
 
 `{sample}_sv_breakpoints_read_support.tsv` contains one line per structural variant with the variant ID in the first column, the comma-separated ids of the tumour-supporting reads in the second, and normal-supporting reads in the third.
 
+#### Inserted sequences FASTA
+
+To enable the examination of inserted sequence, `{sample}.inserted_sequences.fa` contains supporting sequences for insertion variants. Each sequence identifier contains the variant ID, index of the inserted sequence (INSSEQ_0000n, INSSEQ_0000n+1, etc.), variant type (whether insertion or single-breakend), index of the insert (out of all inserts supporting the variant, i.e. 1/17), and length of the sequence. This identifier line is followed by the inserted bases.
 
 ### Output Files CNA Algorithm
 
 #### Raw read counts TSV
-`{sample}_{cn_binsize}_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered read counts (`{sample}_{cn_binsize}_read_counts_filtered.tsv`) and the, if provided, matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`). 
+`{sample}_{cn_binsize}_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered read counts (`{sample}_{cn_binsize}_read_counts_filtered.tsv`) and the, if provided, matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`).
 
 #### Segmented log2r relative copy number TSV
-`{sample}_{cn_binsize}_read_counts_mnorm_log2r_segmented.tsv` contains the final relative copy number (log2r) data post CBS segmentation. This includes the log2r relative copy number for each bin across the reference genome, as well as the segment IDs and according segmented log2r relative copy number values.  
+`{sample}_{cn_binsize}_read_counts_mnorm_log2r_segmented.tsv` contains the final relative copy number (log2r) data post CBS segmentation. This includes the log2r relative copy number for each bin across the reference genome, as well as the segment IDs and according segmented log2r relative copy number values.
 
 #### Fitted purity and ploidy TSV
-`{sample}_{cn_binsize}_fitted_purity_ploidy.tsv` contains the final copy number fit (i.e. purity and ploidy values, as well as the distance function used during fitting) for a given sample. Note that SAVANA also outputs all viable solutions together with their distance functions and ranking prior to the final fit being selected (`{sample}_{cn_binsize}_ranked_solutions.tsv`). 
+`{sample}_{cn_binsize}_fitted_purity_ploidy.tsv` contains the final copy number fit (i.e. purity and ploidy values, as well as the distance function used during fitting) for a given sample. Note that SAVANA also outputs all viable solutions together with their distance functions and ranking prior to the final fit being selected (`{sample}_{cn_binsize}_ranked_solutions.tsv`).
 
 #### Segmented absolute copy number
-The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_absolute_copy_number.tsv`, which contains the fitted total and minor absolute copy number values for each copy number segment (collapsed). Note that this output file (together with the classified somatic SAVANA SV calls) can be used to generate the Copy Number ReCon Plots, as outlined and described [here](https://github.com/cortes-ciriano-lab/ReConPlot). 
+The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_absolute_copy_number.tsv`, which contains the fitted total and minor absolute copy number values for each copy number segment (collapsed). Note that this output file (together with the classified somatic SAVANA SV calls) can be used to generate the Copy Number ReCon Plots, as outlined and described [here](https://github.com/cortes-ciriano-lab/ReConPlot).
 
 ## Phasing Information
 ### Generating Phased VCF
 
-We recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command: 
+We recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command:
 
 ```
 whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <germline_snps.vcf> <normal-file>
