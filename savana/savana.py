@@ -252,7 +252,7 @@ def savana_main(args):
 
     args.bp = args.somatic_output
 
-    if args.phased_vcf:
+    if args.phased_vcf or args.allele_counts_het_snps:
         savana_cna(args, True)
 
     return
