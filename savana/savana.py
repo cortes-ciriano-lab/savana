@@ -188,6 +188,9 @@ def savana_cna(args, as_workflow=False):
     # initialize timing
     checkpoints = [time()]
     time_str = []
+    # cna threads
+    if args.cna_threads:
+        args.threads = args.cna_threads
     # first do allele counting
     if not args.allele_counts_het_snps:
         allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.phased_vcf, args.tumour, args.allele_mapq, args.allele_min_reads, args.threads)
@@ -248,7 +251,9 @@ def savana_main(args):
         savana_evaluate(args)
 
     args.bp = args.somatic_output
-    savana_cna(args, True)
+
+    if args.phased_vcf or args.allele_counts_het_snps:
+        savana_cna(args, True)
 
     return
 
@@ -289,7 +294,7 @@ def parse_args(args):
     classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
     classify_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
     classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
-    classify_parser.add_argument('--cna_rescue', action='store_true', help='Copy number abberation output file for this sample (used to rescue variants)')
+    classify_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
     classify_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
     group = classify_parser.add_mutually_exclusive_group()
     group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
@@ -416,7 +421,7 @@ def parse_args(args):
         # classify args
         global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
         global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
-        global_parser.add_argument('--cna_rescue', action='store_true', help='Copy number abberation output file for this sample (used to rescue variants)')
+        global_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
         global_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
         classify_group = global_parser.add_mutually_exclusive_group()
         classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
@@ -439,6 +444,7 @@ def parse_args(args):
         evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
         evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
         # cna args
+        global_parser.add_argument('--cna_threads', nargs='?', type=int, const=0, help='Number of threads to use for CNA (default=max)')
         global_parser.add_argument('-pon', '--panel_of_normals', nargs='?', type=str, required=False, help='Path to panel-of-normals (PoN) file (only used when no phased VCF provided)')
         allele_group = global_parser.add_mutually_exclusive_group()
         allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
