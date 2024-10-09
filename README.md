@@ -14,7 +14,6 @@ For further information, benchmarking and for citation, please refer to our [SAV
 * [Run SAVANA](#run-savana)
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
-  + [Optional Flags](#optional-flags)
 * [Output Files](#output-files)
   + [Output Files SV Algorithm](#output-files-sv-algorithm)
   + [Output Files CNA Algorithm](#output-files-cna-algorithm)
@@ -100,7 +99,7 @@ After installing, SAVANA can be run on long-read data with a minumum set of argu
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
 ```
