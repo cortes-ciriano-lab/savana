@@ -94,8 +94,8 @@ def filter_and_normalise(nmode, countData):
         for r in normalised_counts:
             r[-2] = str(math.log2(int(r[-2])/med_self)) # median normalise readcounts
             del r[-1]
-    elif nmode == "pon":
-        print("This function is yet to be implemented...")
+    # elif nmode == "pon":
+    #     print("This function is yet to be implemented...")
     elif nmode == "mnorm":
         filtered_counts = [x for x in countData if x[-3] == 'True' and int(x[-2]) != 0 and int(x[-1]) != 0]
         cov_scaler = statistics.median([math.log2(int(x[-2])/int(x[-1])) for x in filtered_counts])
@@ -122,7 +122,7 @@ def chunkify_bed(bed_file, chunk_size):
         chunks.append(pybedtools.BedTool(current_chunk))
     return chunks
 
-def count_reads(outdir, tumour, normal, panel_of_normals, sample, bin_annotations_path, readcount_mapq, blacklisting, bl_threshold, bases_filter, bases_threshold, threads):
+def count_reads(outdir, tumour, normal, sample, bin_annotations_path, readcount_mapq, blacklisting, bl_threshold, bases_filter, bases_threshold, threads):
     """ Perform binned read counting on bam file/files per chromosome """
 
     # check and define threads
@@ -136,12 +136,12 @@ def count_reads(outdir, tumour, normal, panel_of_normals, sample, bin_annotation
                 'tumour': tumour,
                 'normal': normal
             }
-    elif panel_of_normals is not None:
-        nmode = "pon" #panel of normals will be used for logR normalisation
-        aln_files = {
-                'tumour': tumour
-            }
-    elif normal is None and panel_of_normals is None:
+    # elif panel_of_normals is not None:
+    #     nmode = "pon" #panel of normals will be used for logR normalisation
+    #     aln_files = {
+    #             'tumour': tumour
+    #         }
+    elif normal is None: #and panel_of_normals is None:
         nmode = "self"
         aln_files = {
                 'tumour': tumour
