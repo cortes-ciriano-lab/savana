@@ -213,9 +213,9 @@ def savana_cna(args, as_workflow=False):
     helper.time_function("Performed CBS", checkpoints, time_str)
     # fit absolute copy number
     fit_absolute.fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, args.sample,
-        args.min_ploidy, args.max_ploidy, args.ploidy_step, args.min_cellularity, args.max_cellularity, args.cellularity_step, args.cellularity_buffer,
+        args.min_ploidy, args.max_ploidy, args.ploidy_step, args.min_cellularity, args.max_cellularity, args.cellularity_step, args.cellularity_buffer, args.overule_cellularity,
         args.distance_function, args.distance_filter_scale_factor, args.distance_precision,
-        args.max_proportion_zero, args.min_proportion_close_to_whole_number, args.max_distance_from_whole_number,
+        args.max_proportion_zero, args.min_proportion_close_to_whole_number, args.max_distance_from_whole_number, args.main_cn_step_change,
         args.min_ps_size, args.min_ps_length, args.threads)
     helper.time_function("Fit absolute copy number", checkpoints, time_str)
 
@@ -354,9 +354,9 @@ def parse_args(args):
     allele_group = cna_parser.add_mutually_exclusive_group()
     allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
     allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
-    cna_parser.add_argument('-q', '--allele_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the allele counting (default = 0)', required=False)
+    cna_parser.add_argument('-q', '--allele_mapq', type=int,  default=5, help='Mapping quality threshold for reads to be included in the allele counting (default = 5)', required=False)
     cna_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
-    cna_parser.add_argument('-acw','--ac_window', type=int, default=100000, help='Window size for allele counting to parallelise (default = 100000)', required=False)
+    cna_parser.add_argument('-acw','--ac_window', type=int, default=1000000, help='Window size for allele counting to parallelise (default = 1000000)', required=False)
     cna_parser.add_argument('-w', '--cn_binsize', type=int, default=10, help='Bin window size in kbp', required=False)
     cna_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
     cna_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
@@ -382,12 +382,14 @@ def parse_args(args):
     cna_parser.add_argument('--max_cellularity', type=float, default=1, help='Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided, this is estimated during copy number fitting. Alternatively, a purity value can be provided if the purity of the sample is already known.', required=False)
     cna_parser.add_argument('--cellularity_step', type=float, default=0.01, help='Cellularity step size for grid search space used during for copy number fitting.', required=False)
     cna_parser.add_argument('--cellularity_buffer', type=float, default=0.1, help='Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1).', required=False)
+    cna_parser.add_argument('--overrule_cellularity', type=float, default=None, help='Set to sample`s purity if known. This value will overrule the cellularity estimated using hetSNP allele counts (not used by default).', required=False)   
     cna_parser.add_argument('--distance_function', type=str, default='RMSD', help='Distance function to be used for copy number fitting.', choices=['RMSD', 'MAD'], required=False)
     cna_parser.add_argument('--distance_filter_scale_factor', type=float, default=1.25, help='Distance filter scale factor to only include solutions with distances < scale factor * min(distance).', required=False)
     cna_parser.add_argument('--distance_precision', type=int, default=3, help='Number of digits to round distance functions to', required=False)
     cna_parser.add_argument('--max_proportion_zero', type=float, default=0.1, help='Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state.', required=False)
     cna_parser.add_argument('--min_proportion_close_to_whole_number', type=float, default=0.5, help='Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.', required=False)
     cna_parser.add_argument('--max_distance_from_whole_number', type=float, default=0.25, help='Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.', required=False)
+    cna_parser.add_argument('--main_cn_step_change', type=int, default=1, help='Max main copy number step change across genome to be considered for a given solution.', required=False)
     cna_parser.add_argument('--min_ps_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
     cna_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
     cna_parser.set_defaults(func=savana_cna)
@@ -451,9 +453,9 @@ def parse_args(args):
         allele_group = global_parser.add_mutually_exclusive_group()
         allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
         allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
-        global_parser.add_argument('-q', '--allele_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the allele counting (default = 0)', required=False)
+        global_parser.add_argument('-q', '--allele_mapq', type=int,  default=5, help='Mapping quality threshold for reads to be included in the allele counting (default = 5)', required=False)
         global_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
-        global_parser.add_argument('-acw','--ac_window', type=int, default=100000, help='Window size for allele counting to parallelise (default = 100000)', required=False)
+        global_parser.add_argument('-acw','--ac_window', type=int, default=1000000, help='Window size for allele counting to parallelise (default = 1000000)', required=False)
         global_parser.add_argument('-w', '--cn_binsize', type=int, default=10, help='Bin window size in kbp', required=False)
         global_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
         global_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
@@ -479,12 +481,14 @@ def parse_args(args):
         global_parser.add_argument('--max_cellularity', type=float, default=1, help='Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided, this is estimated during copy number fitting. Alternatively, a purity value can be provided if the purity of the sample is already known.', required=False)
         global_parser.add_argument('--cellularity_step', type=float, default=0.01, help='Cellularity step size for grid search space used during for copy number fitting.', required=False)
         global_parser.add_argument('--cellularity_buffer', type=float, default=0.1, help='Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1).', required=False)
+        global_parser.add_argument('--overrule_cellularity', type=float, default=None, help='Set to sample`s purity if known. This value will overrule the cellularity estimated using hetSNP allele counts (not used by default).', required=False)   
         global_parser.add_argument('--distance_function', type=str, default='RMSD', help='Distance function to be used for copy number fitting.', choices=['RMSD', 'MAD'], required=False)
         global_parser.add_argument('--distance_filter_scale_factor', type=float, default=1.25, help='Distance filter scale factor to only include solutions with distances < scale factor * min(distance).', required=False)
         global_parser.add_argument('--distance_precision', type=int, default=3, help='Number of digits to round distance functions to', required=False)
         global_parser.add_argument('--max_proportion_zero', type=float, default=0.1, help='Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state.', required=False)
         global_parser.add_argument('--min_proportion_close_to_whole_number', type=float, default=0.5, help='Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.', required=False)
         global_parser.add_argument('--max_distance_from_whole_number', type=float, default=0.25, help='Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.', required=False)
+        global_parser.add_argument('--main_cn_step_change', type=int, default=1, help='Max main copy number step change across genome to be considered for a given solution.', required=False)
         global_parser.add_argument('--min_ps_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
         global_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
         global_parser.set_defaults(func=savana_main)

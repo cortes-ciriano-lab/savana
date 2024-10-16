@@ -258,7 +258,7 @@ def reduce_grid(fits,distance_filter_scale_factor = 1.25):
     return reduced_grid
 
 
-def is_acceptable_fit(purity, ploidy, relative_CN, weights, max_proportion_zero = 0.1, min_proportion_close_to_whole_number = 0.5, max_distance_from_whole_number = 0.25):
+def is_acceptable_fit(purity, ploidy, relative_CN, weights, max_proportion_zero = 0.1, min_proportion_close_to_whole_number = 0.5, max_distance_from_whole_number = 0.25, main_cn_step_change = 1):
     '''
     Test if given fit is acceptable using parameters looking at the proportion of zero or negative segments, proportion of genome fitted close to an integer, and distance between most common CN state peaks.
     '''
@@ -282,14 +282,14 @@ def is_acceptable_fit(purity, ploidy, relative_CN, weights, max_proportion_zero 
     # Remove fits which result in overstretchin/overfitting of copy number states (i.e. copy number state skipping) normally caused by oversegmentation
     most_common = statistics.mode(acn_int)
     second_most_common = statistics.mode([x for x in acn_int if x != most_common])
-    if abs(most_common - second_most_common) >= 2:
+    if abs(most_common - second_most_common) > main_cn_step_change:
         print(f"Fit of purity={purity} and ploidy={ploidy} is NOT an acceptable solution, as main CN change step = {abs(most_common - second_most_common)}." )
         return False
     else:
         return True
 
 
-def viable_solutions(fits_r, relative_CN, weights, max_proportion_zero = 0.1, min_proportion_close_to_whole_number = 0.5, max_distance_from_whole_number = 0.25):
+def viable_solutions(fits_r, relative_CN, weights, max_proportion_zero = 0.1, min_proportion_close_to_whole_number = 0.5, max_distance_from_whole_number = 0.25, main_cn_step_change = 1):
     '''
     Return acceptable solution candidates.
     '''
@@ -299,7 +299,7 @@ def viable_solutions(fits_r, relative_CN, weights, max_proportion_zero = 0.1, mi
         if is_acceptable_fit(purity, ploidy, relative_CN, weights,
                         max_proportion_zero = max_proportion_zero,
                         min_proportion_close_to_whole_number = min_proportion_close_to_whole_number,
-                        max_distance_from_whole_number = max_distance_from_whole_number) == True:
+                        max_distance_from_whole_number = max_distance_from_whole_number, main_cn_step_change = main_cn_step_change) == True:
             solutions.append([sol[0],sol[1],sol[-1]])
     # sort solutions by distance function
     return solutions
