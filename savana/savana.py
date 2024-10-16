@@ -203,7 +203,7 @@ def savana_cna(args, as_workflow=False):
     bin_annotations_path = bin_generator.generate_bins(outdir, args.sample, args.ref, args.chromosomes, args.cn_binsize, args.blacklist, args.breakpoints, args.threads)
     helper.time_function("Binned reference genome", checkpoints, time_str)
     # perform the read counting
-    read_counts_path = read_counter.count_reads(outdir, args.tumour, args.normal, args.panel_of_normals, args.sample, bin_annotations_path, args.readcount_mapq, args.blacklisting, args.bl_threshold, args.bases_filter, args.bases_threshold, args.threads)
+    read_counts_path = read_counter.count_reads(outdir, args.tumour, args.normal, args.sample, bin_annotations_path, args.readcount_mapq, args.blacklisting, args.bl_threshold, args.bases_filter, args.bases_threshold, args.threads)
     helper.time_function("Performed read counting", checkpoints, time_str)
     # smooth the copy number data
     smoothened_cn_path = smooth.smooth_copy_number(outdir, read_counts_path, args.smoothing_level, args.trim)
