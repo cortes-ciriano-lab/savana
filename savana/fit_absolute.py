@@ -114,7 +114,7 @@ def process_log2r_input(log2r_cn_path):
     return rel_copy_number_segments
 
 def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
-    min_ploidy, max_ploidy, ploidy_step, min_cellularity, max_cellularity, cellularity_step, cellularity_buffer, overule_cellularity,
+    min_ploidy, max_ploidy, ploidy_step, min_cellularity, max_cellularity, cellularity_step, cellularity_buffer, overrule_cellularity,
     distance_function, distance_filter_scale_factor, distance_precision,
     max_proportion_zero, min_proportion_close_to_whole_number, max_distance_from_whole_number, main_cn_step_change,
     min_ps_size, min_ps_length, threads):
@@ -144,9 +144,9 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
         cellularity = estimate_cellularity(phasesets_dict, ps_summary)
         digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
         print(f"        estimated cellularity using hetSNPs = {round(cellularity,digs)}.")
-        if overule_cellularity != None:
-            cellularity = int(overule_cellularity)
-            print(f"        cellularity overuled by user with cellularity = {cellularity}.")
+        if overrule_cellularity != None:
+            cellularity = int(overrule_cellularity)
+            print(f"        cellularity overruled by user with cellularity = {cellularity}.")
         min_cellularity = round(max(0,cellularity - cellularity_buffer),digs)
         max_cellularity = round(min(1,cellularity + cellularity_buffer),digs)
 

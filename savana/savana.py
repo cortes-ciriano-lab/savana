@@ -213,7 +213,7 @@ def savana_cna(args, as_workflow=False):
     helper.time_function("Performed CBS", checkpoints, time_str)
     # fit absolute copy number
     fit_absolute.fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, args.sample,
-        args.min_ploidy, args.max_ploidy, args.ploidy_step, args.min_cellularity, args.max_cellularity, args.cellularity_step, args.cellularity_buffer, args.overule_cellularity,
+        args.min_ploidy, args.max_ploidy, args.ploidy_step, args.min_cellularity, args.max_cellularity, args.cellularity_step, args.cellularity_buffer, args.overrule_cellularity,
         args.distance_function, args.distance_filter_scale_factor, args.distance_precision,
         args.max_proportion_zero, args.min_proportion_close_to_whole_number, args.max_distance_from_whole_number, args.main_cn_step_change,
         args.min_ps_size, args.min_ps_length, args.threads)
