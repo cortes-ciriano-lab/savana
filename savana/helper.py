@@ -354,6 +354,24 @@ def check_outdir(args_outdir, illegal=None):
 
 	return outdir
 
+def check_tmpdir(args_tmpdir, outdir, illegal=None):
+	# create output dir if it doesn't exist
+	tmpdir = os.path.join(outdir, args_tmpdir)
+	if not os.path.exists(tmpdir):
+		print(f'Creating directory {tmpdir} to store temp files during hetSNP allele counting')
+		os.mkdir(tmpdir)
+	if not illegal:
+		# throw error if ANY files present
+		if os.listdir(tmpdir):
+			sys.exit(f'Temp directory "{tmpdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	else:
+		# check if illegal files exist in outdir
+		for f in os.listdir(tmpdir):
+			if f.endswith(illegal):
+				sys.exit(f'Temp directory "{tmpdir}" already exists and contains {illegal} files which may be overwritten. Please remove the files or supply a different directory name.')
+
+	return tmpdir
+
 # credit to stackoverflow: https://stackoverflow.com/questions/55324449/how-to-specify-a-minimum-or-maximum-float-value-with-argparse
 def float_range(mini,maxi):
 	"""Return function handle of an argument type function for ArgumentParser checking a float range: mini <= arg <= maxi

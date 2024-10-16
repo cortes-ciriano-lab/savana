@@ -185,6 +185,8 @@ def savana_cna(args, as_workflow=False):
         outdir = helper.check_outdir(args.outdir)
     else:
         outdir = args.outdir
+    # define tmpdir
+    tmpdir = helper.check_tmpdir(args.tmpdir, outdir)
     # initialize timing
     checkpoints = [time()]
     time_str = []
@@ -193,7 +195,7 @@ def savana_cna(args, as_workflow=False):
         args.threads = args.cna_threads
     # first do allele counting
     if not args.allele_counts_het_snps:
-        allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.phased_vcf, args.tumour, args.allele_mapq, args.allele_min_reads, args.threads)
+        allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.chromosomes,  args.ref, args.phased_vcf, args.tumour, args.ac_window, args.allele_mapq, args.allele_min_reads, tmpdir, args.threads)
         helper.time_function("Counted alleles of phased SNPs", checkpoints, time_str)
     else:
         allele_counts_bed_path = args.allele_counts_het_snps
@@ -343,18 +345,18 @@ def parse_args(args):
     # savana cna
     cna_parser = subparsers.add_parser("cna", help="run copy number")
     cna_parser.add_argument('-t','--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-    group = cna_parser.add_mutually_exclusive_group()
-    group.add_argument('-n', '--normal', nargs='?', type=str, required=False, help='Normal BAM file (must have index)')
-    group.add_argument('-pon', '--panel_of_normals', nargs='?', type=str, required=False, help='Path to panel-of-normals (PoN) file')
+    cna_parser.add_argument('-n', '--normal', nargs='?', type=str, required=False, help='Normal BAM file (must have index)')
     cna_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
     cna_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     cna_parser.add_argument('--threads', type=int,  default=48, help='number of threads to be used for multiprocessing of chromosomes. Use threads = 1 to avoid multiprocessing.', required=False)
     cna_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    cna_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')
     allele_group = cna_parser.add_mutually_exclusive_group()
     allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
     allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
     cna_parser.add_argument('-q', '--allele_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the allele counting (default = 0)', required=False)
     cna_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
+    cna_parser.add_argument('-acw','--ac_window', type=int, default=100000, help='Window size for allele counting to parallelise (default = 100000)', required=False)
     cna_parser.add_argument('-w', '--cn_binsize', type=int, default=10, help='Bin window size in kbp', required=False)
     cna_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
     cna_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
@@ -445,12 +447,13 @@ def parse_args(args):
         evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
         # cna args
         global_parser.add_argument('--cna_threads', nargs='?', type=int, const=0, help='Number of threads to use for CNA (default=max)')
-        global_parser.add_argument('-pon', '--panel_of_normals', nargs='?', type=str, required=False, help='Path to panel-of-normals (PoN) file (only used when no phased VCF provided)')
+        global_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')
         allele_group = global_parser.add_mutually_exclusive_group()
         allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
         allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
         global_parser.add_argument('-q', '--allele_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the allele counting (default = 0)', required=False)
         global_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
+        global_parser.add_argument('-acw','--ac_window', type=int, default=100000, help='Window size for allele counting to parallelise (default = 100000)', required=False)
         global_parser.add_argument('-w', '--cn_binsize', type=int, default=10, help='Bin window size in kbp', required=False)
         global_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
         global_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
