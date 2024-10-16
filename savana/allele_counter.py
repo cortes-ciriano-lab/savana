@@ -16,7 +16,7 @@ import glob
 import math
 
 
-def extract_hets(phased_vcf):
+def extract_hets(phased_vcf, window):
     '''
     Extracts heterozygous SNPs from phased.vcf (i.e. from matched normal bam).
     '''
@@ -37,7 +37,7 @@ def extract_hets(phased_vcf):
                     key=f"{str(variant.POS)}_{str(variant.REF)}"
                     var_out = [variant.ALT[0],gt_str,str(ps)]
                     # nested dictionary - by chromosome and by position (in 100k increments)
-                    pos_cat = math.floor(int(variant.POS)/100000) * 100000
+                    pos_cat = math.floor(int(variant.POS)/window) * window
                     if (CHROM not in hets_dict):
                         hets_dict[CHROM] = {}
                         if (pos_cat not in hets_dict[CHROM]):
@@ -51,7 +51,7 @@ def extract_hets(phased_vcf):
     print(f"    ... Heterozygous SNPs from {phased_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
     return hets_dict
 
-def process_allele_counts(allele_counts_path, hets_dict):
+def process_allele_counts(allele_counts_path, hets_dict, window):
     '''
     Extracts and process allele counts for heterozygous SNPs dictionary.
     '''
@@ -61,7 +61,7 @@ def process_allele_counts(allele_counts_path, hets_dict):
         chrom,pos,ref,dp= site[0], site[2], site[3], site[9]
         bases = { 'A': site[4], 'C': site[5], 'G': site[6], 'T': site[7], 'N': site[8]}
         key=f"{pos}_{ref}"
-        pos_cat = math.floor(int(pos)/100000) * 100000 # same key as above
+        pos_cat = math.floor(int(pos)/window) * window # same key as above
         # try:
         #     hets_dict[chrom][pos_cat][key]
         #     pass
@@ -245,12 +245,12 @@ def perform_allele_counting(outdir, sample, contigs, fasta_file_path, phased_vcf
     # 4. Generate dictionary of heterozygous SNPs from normal VCF
     #----
     # print(f"    ... Extracting heterozygous SNPs from {phased_vcf} ... ")
-    het_snps = extract_hets(phased_vcf)
+    het_snps = extract_hets(phased_vcf, ac_window)
     # print(f"    ... Heterozygous SNPs from {phased_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
     #----
     # 5. Extract allele counts for hetSNPs
     #----
-    allele_counts_final = process_allele_counts(out_path_interim,het_snps)
+    allele_counts_final = process_allele_counts(out_path_interim, het_snps, ac_window)
     #----
     # 6. Get results and write out
     #----
