@@ -274,6 +274,7 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
 
     in_data = []
     with open(smoothened_cn_path, "r") as file:
+        header_line = next(file)
         for line in file:
             fields = line.strip().split("\t")
             in_data.append(fields)
@@ -305,6 +306,8 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
     ### WRITE OUT FILE ###
     segmented_outpath = f"{outdir}/{prefix}_segmented.tsv"
     outfile = open(segmented_outpath, "w")
+    header=[header_line.replace('\n',''), 'seg_id', 'seg_log2r_copynumber']
+    outfile.write('\t'.join(header)+'\n')
     for r in segmentedData:
         Line = '\t'.join(r) + '\n'
         outfile.write(Line)

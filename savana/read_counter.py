@@ -182,9 +182,9 @@ def count_reads(outdir, tumour, normal, sample, bin_annotations_path, readcount_
     #----
     outfile = open(f"{outdir}/{sample}_raw_read_counts.tsv", "w")
     if blacklisting == True:
-        header=['bin', 'chromosome','start','end','perc_known_bases', 'use_bin', 'tumour_read_count', 'normal_read_count']
-    else: 
         header=['bin', 'chromosome','start','end','known_bases', 'overlap_blacklist', 'use_bin', 'tumour_read_count', 'normal_read_count']
+    else: 
+        header=['bin', 'chromosome','start','end','perc_known_bases', 'use_bin', 'tumour_read_count', 'normal_read_count']
     outfile.write('\t'.join(header)+'\n')
     for r in countData:
         Line = '\t'.join(r) + '\n'
@@ -202,9 +202,9 @@ def count_reads(outdir, tumour, normal, sample, bin_annotations_path, readcount_
     log2_ratio_readcounts_path = f"{outdir}/{sample}_read_counts_{nmode}_log2r.tsv"
     outfile3 = open(log2_ratio_readcounts_path, "w")
     if blacklisting == True:
-        header=['bin', 'chromosome','start','end','perc_known_bases', 'use_bin', 'log2r_copynumber']
-    else: 
         header=['bin', 'chromosome','start','end','known_bases', 'overlap_blacklist', 'use_bin', 'log2r_copynumber']
+    else: 
+        header=['bin', 'chromosome','start','end','perc_known_bases', 'use_bin', 'log2r_copynumber']
     outfile3.write('\t'.join(header)+'\n')
     for r in normalised_counts:
         Line = '\t'.join(r) + '\n'
