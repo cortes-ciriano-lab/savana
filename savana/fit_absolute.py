@@ -251,7 +251,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
     if allele_counts_bed_path == None:
         header=['chromosome','start','end','segment_id', 'bin_count', 'sum_of_bin_lengths', 'weight', 'copyNumber']
     elif allele_counts_bed_path != None:
-        header=['chromosome','start','end','segment_id', 'bin_count', 'sum_of_bin_lengths', 'weight', 'copyNumber', 'minorAlleleCopyNumber']
+        header=['chromosome','start','end','segment_id', 'bin_count', 'sum_of_bin_lengths', 'weight', 'copyNumber', 'minorAlleleCopyNumber', 'meanBAF', 'no_hetSNPs']
     outfile3.write('\t'.join(header)+'\n')
     for r in abs_copy_number_segments:
         Line = '\t'.join(str(e) for e in r) + '\n'
