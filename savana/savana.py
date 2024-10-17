@@ -45,6 +45,8 @@ def savana_run(args):
     # set number of threads to cpu count if none set
     if not args.threads:
         args.threads = cpu_count()
+    if not args.cna_threads:
+        args.cna_threads = cpu_count()
     # check if files are bam or cram (must have indices)
     if args.tumour.endswith('bam') and args.normal.endswith('bam'):
         args.is_cram = False
@@ -191,32 +193,34 @@ def savana_cna(args, as_workflow=False):
     checkpoints = [time()]
     time_str = []
     # cna threads
-    if args.cna_threads:
-        args.threads = args.cna_threads
+    if not args.cna_threads:
+        args.cna_threads = cpu_count()
+    # if args.cna_threads:
+    #     args.threads = args.cna_threads
     # first do allele counting
     if not args.allele_counts_het_snps:
-        allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.chromosomes,  args.ref, args.phased_vcf, args.tumour, args.ac_window, args.allele_mapq, args.allele_min_reads, tmpdir, args.threads)
+        allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.chromosomes,  args.ref, args.phased_vcf, args.tumour, args.ac_window, args.allele_mapq, args.allele_min_reads, tmpdir, args.cna_threads)
         helper.time_function("Counted alleles of phased SNPs", checkpoints, time_str)
     else:
         allele_counts_bed_path = args.allele_counts_het_snps
     # now generate bins
-    bin_annotations_path = bin_generator.generate_bins(outdir, args.sample, args.ref, args.chromosomes, args.cn_binsize, args.blacklist, args.breakpoints, args.threads)
+    bin_annotations_path = bin_generator.generate_bins(outdir, args.sample, args.ref, args.chromosomes, args.cn_binsize, args.blacklist, args.breakpoints, args.cna_threads)
     helper.time_function("Binned reference genome", checkpoints, time_str)
     # perform the read counting
-    read_counts_path = read_counter.count_reads(outdir, args.tumour, args.normal, args.sample, bin_annotations_path, args.readcount_mapq, args.blacklisting, args.bl_threshold, args.bases_filter, args.bases_threshold, args.threads)
+    read_counts_path = read_counter.count_reads(outdir, args.tumour, args.normal, args.sample, bin_annotations_path, args.readcount_mapq, args.blacklisting, args.bl_threshold, args.bases_filter, args.bases_threshold, args.cna_threads)
     helper.time_function("Performed read counting", checkpoints, time_str)
     # smooth the copy number data
     smoothened_cn_path = smooth.smooth_copy_number(outdir, read_counts_path, args.smoothing_level, args.trim)
     helper.time_function("Performed smoothing", checkpoints, time_str)
     # segment the copy number data
-    log2r_cn_path = segment.segment_copy_number(outdir, smoothened_cn_path, args.min_segment_size, args.shuffles, args.p_seg, args.p_val, args.quantile, args.threads)
+    log2r_cn_path = segment.segment_copy_number(outdir, smoothened_cn_path, args.min_segment_size, args.shuffles, args.p_seg, args.p_val, args.quantile, args.cna_threads)
     helper.time_function("Performed CBS", checkpoints, time_str)
     # fit absolute copy number
     fit_absolute.fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, args.sample,
         args.min_ploidy, args.max_ploidy, args.ploidy_step, args.min_cellularity, args.max_cellularity, args.cellularity_step, args.cellularity_buffer, args.overrule_cellularity,
         args.distance_function, args.distance_filter_scale_factor, args.distance_precision,
         args.max_proportion_zero, args.min_proportion_close_to_whole_number, args.max_distance_from_whole_number, args.main_cn_step_change,
-        args.min_ps_size, args.min_ps_length, args.threads)
+        args.min_ps_size, args.min_ps_length, args.cna_threads)
     helper.time_function("Fit absolute copy number", checkpoints, time_str)
 
     helper.time_function("Total time to perform copy number calling", checkpoints, time_str, final=True)
@@ -348,7 +352,7 @@ def parse_args(args):
     cna_parser.add_argument('-n', '--normal', nargs='?', type=str, required=False, help='Normal BAM file (must have index)')
     cna_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
     cna_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
-    cna_parser.add_argument('--threads', type=int,  default=48, help='number of threads to be used for multiprocessing of chromosomes. Use threads = 1 to avoid multiprocessing.', required=False)
+    cna_parser.add_argument('--cna_threads', nargs='?', type=int, const=0, help='Number of threads to use for CNA (default=max)')
     cna_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     cna_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')
     allele_group = cna_parser.add_mutually_exclusive_group()
