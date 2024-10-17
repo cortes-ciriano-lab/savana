@@ -41,7 +41,7 @@ def savana_run(args):
         # set sample name to default if req.
         args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
     print(f'Running as sample {args.sample}')
-    outdir = helper.check_outdir(args.outdir, illegal='.vcf')
+    outdir = helper.check_outdir(args.outdir, args.overwrite, illegal='.vcf')
     # set number of threads to cpu count if none set
     if not args.threads:
         args.threads = cpu_count()
@@ -164,7 +164,7 @@ def savana_evaluate(args):
 
 def savana_train(args):
     """ main function for savana train """
-    outdir = helper.check_outdir(args.outdir, illegal='.pkl')
+    outdir = helper.check_outdir(args.outdir, args.overwrite, illegal='.pkl')
     data_matrix = None
     if args.vcfs:
         # read in and create matrix from VCF files
@@ -184,11 +184,11 @@ def savana_cna(args, as_workflow=False):
         if not args.sample:
             # set sample name to default
             args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
-        outdir = helper.check_outdir(args.outdir)
+        outdir = helper.check_outdir(args.outdir, args.overwrite)
     else:
         outdir = args.outdir
     # define tmpdir
-    tmpdir = helper.check_tmpdir(args.tmpdir, outdir)
+    tmpdir = helper.check_tmpdir(args.tmpdir, outdir, args.overwrite)
     # initialize timing
     checkpoints = [time()]
     time_str = []
@@ -222,7 +222,8 @@ def savana_cna(args, as_workflow=False):
         args.max_proportion_zero, args.min_proportion_close_to_whole_number, args.max_distance_from_whole_number, args.main_cn_step_change,
         args.min_ps_size, args.min_ps_length, args.cna_threads)
     helper.time_function("Fit absolute copy number", checkpoints, time_str)
-
+    # cleanup tmpdir
+    helper.clean_tmpdir(args.tmpdir, outdir)
     helper.time_function("Total time to perform copy number calling", checkpoints, time_str, final=True)
 
 def savana_main(args):
@@ -284,6 +285,7 @@ def parse_args(args):
     run_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
     run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
     run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    run_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
     run_parser.add_argument('-s','--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     run_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
     run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
@@ -343,6 +345,7 @@ def parse_args(args):
     train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
     train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
     train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    train_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
     train_parser.add_argument('--threads', nargs='?', type=int, default=16, const=0, help='Number of threads to use')
     train_parser.set_defaults(func=savana_train)
 
@@ -354,6 +357,7 @@ def parse_args(args):
     cna_parser.add_argument('--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     cna_parser.add_argument('--cna_threads', nargs='?', type=int, const=0, help='Number of threads to use for CNA (default=max)')
     cna_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    cna_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
     cna_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')
     allele_group = cna_parser.add_mutually_exclusive_group()
     allele_group.add_argument('-v', '--phased_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
@@ -419,6 +423,7 @@ def parse_args(args):
         global_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
         global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
         global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+        global_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
         global_parser.add_argument('--sample', nargs='?', type=str, help='Name to prepend to output files (default=tumour BAM filename without extension)')
         global_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
         global_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
