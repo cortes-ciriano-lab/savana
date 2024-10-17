@@ -103,7 +103,12 @@ This will call somatic SVs. We recommend running with the --contigs argument (`-
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
 ```
-> Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. Additionally, if you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> file instead of the phased VCF using the `--allele_counts_het_snps` flag. \nExample command for both: \n`savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --allele_counts_het_snps <allele_counts_hetSNPs.bed> --no_blacklist`.
+Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. 
+Additionally, if you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> file instead of the phased VCF using the `--allele_counts_het_snps` flag. 
+Example command to run savana for both of the above:
+```
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --allele_counts_het_snps <allele_counts_hetSNPs.bed> --no_blacklist
+```
 
 ### Quickstart
 
