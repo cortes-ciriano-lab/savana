@@ -365,7 +365,7 @@ def parse_args(args):
     cna_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
     cna_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
     cna_parser.add_argument('-c', '--chromosomes', nargs='+', default='all', help='Chromosomes to analyse. To run on all chromosomes, leave unspecified (default). To run on a subset of chromosomes only, specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "-c 1 4 23 24" to run chromosomes 1, 4, X and Y', required=False)
-    cna_parser.add_argument('-rq', '--readcount_mapq', type=int,  default=0, help='Mapping quality threshold for reads to be included in the read counting (default = 5)', required=False)
+    cna_parser.add_argument('-rq', '--readcount_mapq', type=int,  default=5, help='Mapping quality threshold for reads to be included in the read counting (default = 5)', required=False)
     cna_parser.add_argument('--no_blacklist', dest='blacklisting', action='store_false')
     cna_parser.set_defaults(blacklisting=True)
     cna_parser.add_argument('-blt', '--bl_threshold', type=int,  default='5', help='Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 5). Please specify percentage threshold as integer, e.g. "-t 5". Set "-t 0" if no overlap with blacklist is to be tolerated', required=False)
