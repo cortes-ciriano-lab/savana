@@ -129,6 +129,7 @@ def smooth_copy_number(outdir, read_counts_path, smoothing_level, trim):
     # process input data
     in_data = []
     with open(read_counts_path, "r") as file:
+        header_line=next(file)
         for line in file:
             fields = line.strip().split("\t")
             in_data.append(fields)
@@ -147,10 +148,13 @@ def smooth_copy_number(outdir, read_counts_path, smoothing_level, trim):
     # Get results and write out
     outfile_path = f"{outdir}/{file_name}_smoothened_sl{smoothing_level}_t{trim}.tsv"
     outfile = open(outfile_path, "w")
+    outfile.write(header_line)
     for r in smoothedData:
         Line = '\t'.join(r) + '\n'
         outfile.write(Line)
     outfile.close()
+
+    os.remove(read_counts_path)
 
     return outfile_path
 

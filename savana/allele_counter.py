@@ -8,21 +8,21 @@ Carolin Sauer
 
 from multiprocessing import Pool
 from multiprocessing import cpu_count
-import argparse
-import timeit
 import cyvcf2
 import pysam
 import pybedtools
-import math
 import os
+import glob
+import math
 
-def extract_hets(phased_vcf):
+
+def extract_hets(phased_vcf, window):
     '''
-    Extracts heterozygous SNPs from phased.vcf (e.g. from matched normal bam).
+    Extracts heterozygous SNPs from phased.vcf (i.e. from matched normal bam).
     '''
-    print(f"    Extracting phased heterozygous SNPs from {phased_vcf} ...")
+    print(f"    ... Extracting heterozygous SNPs from {phased_vcf} ... ")
     vcf_reader = cyvcf2.VCF(phased_vcf)
-    hets = []
+    hets_dict = {}
     # iterate through variants
     for variant in vcf_reader:
         # check if variant is a SNP
@@ -31,163 +31,237 @@ def extract_hets(phased_vcf):
             for s_idx, gt in enumerate(variant.genotypes):
                 # only get heterozygous snps
                 if gt[0] != gt[1]:
-                    # print(s_idx, gt)
-                    # sample = vcf_reader.samples[s_idx]
                     ps = int(variant.format('PS')[s_idx]) if 'PS' in variant.FORMAT else None
                     gt_str = f"{gt[0]}|{gt[1]}" if gt[2] == 1 else f"{gt[0]}/{gt[1]}"
-                    # dp = int(variant.format('DP')[s_idx]) if 'DP' in variant.FORMAT else None
-                    # ad = int(variant.format('AD')[s_idx]) if 'AD' in variant.FORMAT else None
-                    var_out = [variant.CHROM,str(variant.POS),str(variant.POS),variant.REF,variant.ALT[0],gt_str,str(ps)]
-                    hets.append(var_out)
-    return hets
+                    CHROM=variant.CHROM
+                    key=f"{str(variant.POS)}_{str(variant.REF)}"
+                    var_out = [variant.ALT[0],gt_str,str(ps)]
+                    # nested dictionary - by chromosome and by position (in 100k increments)
+                    pos_cat = math.floor(int(variant.POS)/window) * window
+                    if (CHROM not in hets_dict):
+                        hets_dict[CHROM] = {}
+                        if (pos_cat not in hets_dict[CHROM]):
+                            hets_dict[CHROM][pos_cat] = {}                          
+                            hets_dict[CHROM][pos_cat][key] = var_out
+                    elif (pos_cat not in hets_dict[CHROM]):
+                        hets_dict[CHROM][pos_cat] = {} 
+                        hets_dict[CHROM][pos_cat][key] = var_out
+                    else: 
+                        hets_dict[CHROM][pos_cat][key] = var_out
+    print(f"    ... Heterozygous SNPs from {phased_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
+    return hets_dict
 
-def chunkify_bed(bed_file, chunk_size):
+def process_allele_counts(allele_counts_path, hets_dict, window):
     '''
-    Divides bed file into chunks based on threads available for multiprocessing.
+    Extracts and process allele counts for heterozygous SNPs dictionary.
     '''
-    chunks = []
-    current_chunk = []
-    for i, feature in enumerate(bed_file):
-        current_chunk.append(feature)
-        if (i + 1) % chunk_size == 0:
-            chunks.append(pybedtools.BedTool(current_chunk))
-            current_chunk = []
-    if current_chunk:
-        chunks.append(pybedtools.BedTool(current_chunk))
-    return chunks
+    ac_bed = pybedtools.BedTool(allele_counts_path)
+    bed_out = []
+    for site in ac_bed:
+        chrom,pos,ref,dp= site[0], site[2], site[3], site[9]
+        bases = { 'A': site[4], 'C': site[5], 'G': site[6], 'T': site[7], 'N': site[8]}
+        key=f"{pos}_{ref}"
+        pos_cat = math.floor(int(pos)/window) * window # same key as above
+        # try:
+        #     hets_dict[chrom][pos_cat][key]
+        #     pass
+        # except:
+        #     continue
+        if chrom not in hets_dict.keys():
+            continue
+        if pos_cat not in hets_dict[chrom].keys():
+            continue
+        if key not in hets_dict[chrom][pos_cat].keys(): 
+            continue
+        key_out=hets_dict[chrom][pos_cat][key]
+        alt,gt,ps=key_out[0],key_out[1],key_out[2]
+        # estimate AFs
+        AF_0 = float(bases[ref]) / float(dp)
+        AF_1 = float(bases[alt]) / float(dp)
+        # define output list
+        out = [chrom, pos, pos, ref, alt, bases['A'],bases['C'],bases['G'],bases['T'],bases['N'], str(AF_0), str(AF_1), gt, ps]
+        bed_out.append(out)
+    return bed_out
 
-def allele_count(curr_chunk, sites, bam, allele_mapq, allele_min_reads):
-    '''
-    Count alleles across heterozygous SNP positions from phased normal bam
-    '''
-    print(f"    Read counting {curr_chunk} ...")
-    # open tumour bam
-    with pysam.AlignmentFile(bam, "rb") as bamfile:
-        list_out = []
-        for site in sites:
-            # print(site)
-            dict_out = {}
-            # if len(site[0])==len(chr_now):
-            #     chr = site[0];#[3];
-            # else:
-            #     chr = site[0]#[3:5];
-            # if chr != chr_now:
-            #     continue
-            # chr2    61791980    61791980    G    A    1|0    58907085
-            chrom = site[0]
-            start = int(site[1])-1
-            end = int(site[2])  # start and end cannot be the same position or otherwise the fetching does not work
-            ref = site[3]
-            alt = site[4]
-            GT = site[5]
-            PS = site[6]
+# the following five functions were adapted and taken from Fran Muyas
+def collect_result(result):
+    if (result[1] != ''):
+        VARIANTS = result[1]
+        OUT = result[0]
+        out = open(OUT,'w')
+        out.write(VARIANTS)
+        out.close()
 
-            reads = [
-                read for read in bamfile.fetch(
-                    chrom,
-                    start,
-                    end,
-                    multiple_iterators=True
-                )
-                ]
-            # filter reads
-            reads = [
-                read for read in reads if
-                read.mapping_quality >= allele_mapq and not read.is_secondary and not read.is_supplementary
-                ]
-            # perform base counting
-            try:
-                if len(reads) >= allele_min_reads:
-                    key_now = f"{chr}_{start}_{end}_{ref}_{alt}"
-                    # key_now = "{}\t{}\t{}\t{}\t{}".format(chr, start, end, ref ,alt)
-                    for read in reads:
-                        read_sequence = read.seq
+def concatenate_sort_temp_files_and_write(out_file, tmp_dir):
+    # Get file paths of temp files
+    print("    ... Concatenating temp files into interim allele count results ... ")
+    all_files = glob.glob(tmp_dir + '/*.hetsnps_allelecounts.temp')
+    # Load temp files
+    if (len(all_files) > 0):
+        # Organise files in dictionaries of chromosomes and start positions
+        Dictionary_of_files = {}
+        for filename in all_files:
+            basename = os.path.basename(filename)
+            basename = basename.split(".")
+            # positions
+            coordinates = basename[-3]
+            CHROM, START, END = coordinates.split("__")
+            START = int(START)
+            if (CHROM not in Dictionary_of_files):
+                Dictionary_of_files[CHROM] = {}
+                Dictionary_of_files[CHROM][START] = filename
+            else:
+                Dictionary_of_files[CHROM][START] = filename
+        ## Write to final output file
+        out = open(out_file,'w')
+        # Header = ['#CHROM', 'Start', 'End','REF', 'A', 'C', 'G', 'T', 'N', 'DP']
+        # Header = '\t'.join(Header) + '\n'
+        # out.write(Header)
+        # Move through filenames by sorted coordinates
+        for chrom in sorted(Dictionary_of_files.keys()):
+            for start in sorted(Dictionary_of_files[chrom].keys()):
+                filename = Dictionary_of_files[chrom][start]
+                with open(filename, 'r') as f:
+                    out.write(f.read())
+                    out.write('\n')
+                # Remove temp file
+                os.remove(filename)
+        out.close()
+    else:
+        # If temp files not found, print message
+        print ('No temporary files found')
 
-                        aligned_pos = read.get_reference_positions(
-                            full_length=True
-                        )
-                        try:
-                            idx = aligned_pos.index(start)
-                            #DP+=1
-                            snp_read = read_sequence[idx]
-                            if key_now in dict_out: #.has_key(key_now):
-                                dict_out[key_now][snp_read] = dict_out[key_now][snp_read] + 1
-                            else:
-                                dict_out[key_now]={"A":0, "C":0, "G":0, "T":0, "N":0}
-                                dict_out[key_now][snp_read] = dict_out[key_now][snp_read] + 1
-                        except:
-                            continue
-                    DP = dict_out[key_now]["A"] + dict_out[key_now]["C"] + dict_out[key_now]["G"] + dict_out[key_now]["T"]
-                    if GT == "0|1":
-                        AF_0 = dict_out[key_now][ref] / DP
-                        AF_1 = dict_out[key_now][alt] / DP
-                    if GT == "1|0":
-                        AF_0 = dict_out[key_now][alt] / DP
-                        AF_1 = dict_out[key_now][ref] / DP
-                    #print("{} {}".format(AF_0, AF_1))
-                    dict_out[key_now]["AF_0"] = AF_0
-                    dict_out[key_now]["AF_1"] = AF_1
+def MakeWindows(CONTIG, FASTA, window):
+    inFasta = pysam.FastaFile(FASTA)	
+    # Generate bed file based on all coordenates from reference fasta file
+    # only allow canonical contigs -- might update to parameters later... 
+    contigs = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','X','Y']
+    ref_contigs = inFasta.references
+    if 'chr1' in ref_contigs:
+        contigs = [f'chr{x}' for x in contigs]   
+    if (CONTIG != 'all'):
+        CONTIG_Names = [contigs[(int(x)-1)] for x in CONTIG]
+    else:
+        CONTIG_Names = contigs
+    # print(CONTIG_Names)
+    LIST = [ (x, 1, inFasta.get_reference_length(x)) for x in CONTIG_Names]
+    # print(LIST)
+    a = pybedtools.BedTool(LIST)
+    # final bed to be used for allele counting with windows
+    final_bed = a.window_maker(a,w=window)
+    inFasta.close()
+    return(final_bed)
 
-                    out = [chrom, str(start), str(end), ref, alt, str(dict_out[key_now]["A"]), str(dict_out[key_now]["C"]), str(dict_out[key_now]["G"]), str(dict_out[key_now]["T"]), str(dict_out[key_now]["N"]) , str(dict_out[key_now]["AF_0"]), str(dict_out[key_now]["AF_1"]), GT, str(PS)]
+def BaseCount(LIST):
+    Bases=['A','C','G','T','N']
+    # Dictinary with base counts
+    NUCLEOTIDES = { 'A': 0, 'C': 0, 'G': 0, 'T': 0, 'N': 0}
+    # Update dictionary counts
+    for x in LIST:
+        if x.upper() in Bases:
+            NUCLEOTIDES[x.upper()] += 1
+    return (NUCLEOTIDES)
 
-                list_out.append(out)
-            except:
-                continue
-    return(list_out)
-
+def run_interval(interval, BAM, FASTA, MQ, MIN_COV, tmp_dir):
+    # Coordinates to analyse
+    CHROM  =  interval[0]
+    START = int(interval[1])
+    END = int(interval[2])
+    # Get pileup read counts from coordinates
+    bam = pysam.AlignmentFile(BAM)
+    i = bam.pileup(CHROM, START, END, min_mapping_quality = MQ, ignore_overlaps = False)
+    # Load reference file. Mandatory to be done inside function to avoid overlap problems during multiprocessing
+    inFasta = pysam.FastaFile(FASTA)
+    # Run it for each position in pileup
+    POSITIONS = []
+    for p in i:
+        POS=p.pos
+        if POS >= START and POS < END:
+            # Get reference base from fasta file
+            ref_base = inFasta.fetch(CHROM, POS, POS+1).upper()
+            # Get coverage
+            DP = p.get_num_aligned()
+            # Run only if coverage is more than minimum (arg parameter)
+            if (DP >= MIN_COV and ref_base != 'N'):
+                # Get pileup list
+                PILEUP_LIST = p.get_query_sequences(mark_matches=True, add_indels=True)
+                BASE_COUNTS = BaseCount(PILEUP_LIST)
+                # only include output if ALT != REF
+                total_count = sum(BASE_COUNTS.values())
+                if BASE_COUNTS[ref_base] + BASE_COUNTS['N'] < total_count:
+                    # Pysam provides a 0-based coordinate. We must sum 1 to this value
+                    POS_print = POS + 1
+                    # Lines to print
+                    LINE_0 = '\t'.join([str(BASE_COUNTS['A']), str(BASE_COUNTS['C']), str(BASE_COUNTS['G']), str(BASE_COUNTS['T']), str(BASE_COUNTS['N'])])  
+                    LINE_1 = '\t'.join([str(CHROM), str(POS_print), str(POS_print), str(ref_base), LINE_0 , str(total_count)])
+                    # Save results in list of positions
+                    POSITIONS.append(LINE_1)   
+    inFasta.close()
+    bam.close()
+    # Return list of positions
+    ID = '__'.join([str(CHROM), str(START), str(END)])
+    out_temp = tmp_dir + '/' + ID + '.hetsnps_allelecounts.temp'
+    return([out_temp,'\n'.join(POSITIONS)])
 
 #----
-# 3. Prepare input and run allele counter across heterozygous SNPs
+# Prepare input and run allele counter across heterozygous SNPs
 #----
-def perform_allele_counting(outdir, sample, phased_vcf, tumour, allele_mapq, allele_min_reads, threads):
-    """ extract heterozygous SNPs """
+def perform_allele_counting(outdir, sample, contigs, fasta_file_path, phased_vcf, tumour, ac_window, allele_mapq, allele_min_reads, tmp_dir, threads):
+    """ extract allele counts for heterozygous SNPs """
     # check and define threads
     new_threads = min(threads, cpu_count())
     print(f"... Allele counter will use threads = {new_threads}. (threads = {threads} defined; threads = {cpu_count()} available) ...")
     threads = new_threads
-    hets_bed_path = f"{outdir}/{sample}_phased_het_snps.bed"
-    outfile = open(hets_bed_path, "w")
-    het_snps = extract_hets(phased_vcf)
-    for r in het_snps:
-        Line = '\t'.join(r) + '\n'
-        outfile.write(Line)
-    outfile.close()
-
-    ## RUN IN CHUNKS TO SPEED UP
-    # Define bed_file chunks
-    bed_file =  pybedtools.BedTool(hets_bed_path)
-    bed_length = sum(1 for _ in bed_file)
-    chunk_size = bed_length // threads + (bed_length % threads > 0)
-    print(f"    splitting bed file into n = {math.ceil(bed_length / chunk_size)} chunks ...")
-    # Split the BED file into chunks
-    chunks = chunkify_bed(bed_file, chunk_size)
-
-    # only use multiprocessing if more than 1 thread available/being used.
-    if threads == 1:
-        # loop through chromosomes
-        print("multithreading skipped.")
-        allele_counts = []
-        for idx,bed_chunk in enumerate(chunks):
-            curr_chunk = f"chunk {idx+1}"
-            allele_counts_chunk = allele_count(curr_chunk, bed_chunk, tumour, allele_mapq, allele_min_reads)
-            allele_counts.append(allele_counts_chunk)
-        allele_counts = [x for xs in allele_counts for x in xs]
-
-    else:
-        print(f"multithreading using {threads} threads.")
-        args_in = [[str(f"chunk {idx+1}"),bed_chunk,tumour,allele_mapq,allele_min_reads] for idx,bed_chunk in enumerate(chunks)]
-        with Pool(processes=threads) as pool:
-            allele_counts = [x for xs in list(pool.starmap(allele_count, args_in)) for x in xs]
-
     #----
-    # 4. Get results and write out
+    # 1. Create bed file and windows for allele counting
+    #----
+    print(f"    ... splitting helper bed into windows for allele counting ...")
+    bed = MakeWindows(contigs, fasta_file_path, ac_window)
+    #----
+    # 2. Multiprocess and run bed bins in parallel
+    #----
+    print(f"    ... Allele counting ...")
+    if (threads > 1):
+        pool = Pool(threads)
+        # Use loop to parallelize
+        for row in bed:
+            # This funtion writes out temp files
+            pool.apply_async(run_interval, args=(row, tumour, fasta_file_path, allele_mapq, allele_min_reads, tmp_dir), callback=collect_result)
+        # Close Pool and let all the processes complete    
+        pool.close()
+        pool.join()
+        print("         ... interim finished...")
+    else:
+        for row in bed:
+            # This funtion writes in temp files the results
+            collect_result(run_interval(row, tumour, fasta_file_path, allele_mapq, allele_min_reads, tmp_dir))
+    #----
+    # 3. Get interim results and write out
+    #----
+    # print(f"    ... Concatenating temp files into interim allele count results ... ")
+    out_path_interim = f"{outdir}/{sample}_allele_counts_hetSNPs_INTERIM.bed"
+    concatenate_sort_temp_files_and_write(out_path_interim, tmp_dir)
+    #----
+    # 4. Generate dictionary of heterozygous SNPs from normal VCF
+    #----
+    # print(f"    ... Extracting heterozygous SNPs from {phased_vcf} ... ")
+    het_snps = extract_hets(phased_vcf, ac_window)
+    # print(f"    ... Heterozygous SNPs from {phased_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
+    #----
+    # 5. Extract allele counts for hetSNPs
+    #----
+    allele_counts_final = process_allele_counts(out_path_interim, het_snps, ac_window)
+    #----
+    # 6. Get results and write out
     #----
     out_path = f"{outdir}/{sample}_allele_counts_hetSNPs.bed"
     outfile = open(out_path, "w")
-    for r in allele_counts:
-        Line = '\t'.join(r) + '\n'
+    for row in allele_counts_final:
+        Line = '\t'.join(row) + '\n'
         outfile.write(Line)
     outfile.close()
+    # remove interim result bed file
+    os.remove(out_path_interim)
 
     return out_path
 

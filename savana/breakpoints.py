@@ -472,16 +472,16 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 		try:
 			# record start/end in read incrementer
 			start_bin = floor((read.reference_start)/coverage_binsize)
-			end_bin = floor((read.reference_end+1)/coverage_binsize)
+			end_bin = floor((read.reference_end)/coverage_binsize)
 			# swap if we need to
 			start_bin, end_bin = (end_bin, start_bin) if start_bin > end_bin else (start_bin, end_bin)
-			for i in range(start_bin, end_bin+1):
+			for i in range(start_bin, end_bin):
 				contig_coverage_array[haplotype][i] += 1
 
 		except IndexError as _:
 			print(f'Unable to update coverage for contig {contig}')
-			print(f'Attempting to update bins {floor((read.reference_start-1)/coverage_binsize)} and {floor((read.reference_end-1)/coverage_binsize)}')
-			print(f'Length of array {len(contig_coverage_array)}, Read {read.reference_start} to {read.reference_end}')
+			print(f'Attempting to update bins {start_bin} and {end_bin}')
+			print(f'Length of array {len(contig_coverage_array[haplotype])}, Read {read.reference_start} to {read.reference_end}')
 
 		if read.mapping_quality < mapq:
 			continue # discard if mapping quality lower than threshold

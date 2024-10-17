@@ -99,11 +99,16 @@ After installing, SAVANA can be run on long-read data with a minumum set of argu
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a phased VCF for the germline sample (generated using whatshap - see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a phased VCF for the germline sample (see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
 ```
-> Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead.
+Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. 
+Additionally, if you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> file instead of the phased VCF using the `--allele_counts_het_snps` flag. 
+Example command to run savana for both of the above:
+```
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --allele_counts_het_snps <allele_counts_hetSNPs.bed> --no_blacklist
+```
 
 ### Quickstart
 
@@ -142,7 +147,7 @@ Argument|Description
 --cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
 --cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
 --threads| Number of threads to use (default is maximum available)
---cna_threads| Number of threads to use for CNA calling (default is to use `--threads`)
+--cna_threads| Number of threads to use for CNA calling (default is maximum available)
 --ref_index| Full path to reference genome fasta index (ref path + ".fai" used by default)
 --single_bnd| Report single breakend variants in addition to standard types (False by default)
 --single_bnd_min_length| Minimum length of single breakend to consider (default=100)
@@ -155,20 +160,22 @@ Argument|Description
 --coverage_binsize | Length used for coverage bins (default=5)
 --chunksize | Chunksize to use when splitting genome for parallel analysis (default=1000000)
 *CNA Algorithm Arguments*
+--tmpdir| Temp directory for allele counting temp files (defaults to outdir)
 --allele_counts_het_snps| If allele counting has already been performed provide the path for the allele counts of heterozygous SNPs to skip this step
---allele_mapq|    Mapping quality threshold for reads to be included in the allele counting (default = 0)
+--allele_mapq|    Mapping quality threshold for reads to be included in the allele counting (default = 5)
 --allele_min_reads|    Minimum number of reads required per het SNP site for allele counting (default = 10)
+--ac_window| Window size for allele counting to parallelise (default = 1000000)
 --cn_binsize|  Bin window size in kbp (default=10)
 --blacklist| Path to the blacklist file
 --breakpoints| Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis
---chromosomes| Chromosomes to analyse. To run on all chromosomes leave unspecified (default). To run on a subset of chromosomes only specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "-c 1 4 23 24" to run chromosomes 1, 4, X and Y
+--chromosomes| Chromosomes to analyse. To run on all chromosomes leave unspecified (default). To run on a subset of chromosomes only specify the chromosome numbers separated by spaces. For x and y chromosomes, use 23 and 24, respectively.  E.g. use "--chromosomes 1 4 23 24" to run chromosomes 1, 4, X and Y
 --readcount_mapq| Mapping quality threshold for reads to be included in the read counting (default = 5)
 --no_blacklist| Don't use a blacklist
 --bl_threshold| Percentage overlap between bin and blacklist threshold to tolerate for read counting (default = 5). Please specify percentage threshold as integer, e.g. "-t 5". Set "-t 0" if no overlap with blacklist is to be tolerated
 --no_basesfilter| Do not filter bases
 --bases_threshold| Percentage of known bases per bin required for read counting (default = 75). Please specify percentage threshold as integer, e.g. "-bt 95"
---smoothing_level|   Size of neighbourhood for smoothing
---trim| Trimming percentage to be used
+--smoothing_level|   Size of neighbourhood for smoothing (default = 10)
+--trim| Trimming percentage to be used (0.025)
 --min_segment_size|    Minimum size for a segement to be considered a segment (default = 5)
 --shuffles|    Number of permutations (shuffles) to be performed during CBS (default = 1000)
 --p_seg| p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05)
@@ -181,12 +188,14 @@ Argument|Description
 --max_cellularity| Maximum cellularity to be considered for copy number fitting. If hetSNPs allele counts are provided this is estimated during copy number fitting. Alternatively a purity value can be provided if the purity of the sample is already known
 --cellularity_step| Cellularity step size for grid search space used during for copy number fitting (default = 0.01)
 --cellularity_buffer| Cellularity buffer to define purity grid search space during copy number fitting (default = 0.1)
+--overrule_cellularity| Set to sample`s purity if known. This value will overrule the cellularity estimated using hetSNP allele counts (not used by default)
 --distance_function| Distance function to be used for copy number fitting. choices=[RMSD, MAD] (default = RMSD)
 --distance_filter_scale_factor| Distance filter scale factor to only include solutions with distances < scale factor * min(distance)
 --distance_precision|   Number of digits to round distance functions to (default = 3)
 --max_proportion_zero| Maximum proportion of fitted copy numbers to be tolerated in the zero or negative copy number state (default = 0.1)
 --min_proportion_close_to_whole_number| Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit (default = 0.5)
 --max_distance_from_whole_number| Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer (default = 0.25)
+--main_cn_step_change| Max main copy number step change across genome to be considered for a given solution
 --min_ps_size|   Minimum size (number of SNPs) for phaseset to be considered for purity estimation (default = 10)
 --min_ps_length|   Minimum length (bps) for phaseset to be considered for purity estimation (default = 500000)
 *Additional Arguments*
@@ -271,7 +280,7 @@ To enable the examination of inserted sequence, `{sample}.inserted_sequences.fa`
 ### Output Files CNA Algorithm
 
 #### Raw read counts TSV
-`{sample}_{cn_binsize}_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered read counts (`{sample}_{cn_binsize}_read_counts_filtered.tsv`) and the, if provided, matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`).
+`{sample}_{cn_binsize}_raw_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered and matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`).
 
 #### Segmented log2r relative copy number TSV
 `{sample}_{cn_binsize}_read_counts_mnorm_log2r_segmented.tsv` contains the final relative copy number (log2r) data post CBS segmentation. This includes the log2r relative copy number for each bin across the reference genome, as well as the segment IDs and according segmented log2r relative copy number values.
@@ -285,7 +294,7 @@ The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_ab
 ## Phasing Information
 ### Generating Phased VCF
 
-We recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command:
+We recommend using [LongPhase](https://github.com/twolinin/longphase) or [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command:
 
 ```
 whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <germline_snps.vcf> <normal-file>
@@ -295,7 +304,7 @@ Germline SNPs (`<germline_snps.vcf>`) can for example be obtained using [Clair3]
 
 ### Generating Phased BAMs
 
-Again, we recommend using [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) for tagging sequencing reads by haplotype to generate phased BAMs (see example code below) using the `<phased.vcf.gz>` obtained in the previous step.
+Again, we recommend using [LongPhase](https://github.com/twolinin/longphase) or [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) for tagging sequencing reads by haplotype to generate phased BAMs (see example code below) using the `<phased.vcf.gz>` obtained in the previous step.
 
 ```
 whatshap haplotag --ignore-read-groups -o <phased_tumour.bam> --reference <ref-fasta> <phased.vcf.gz> <tumour-file> && samtools index <phased_tumour.bam>
