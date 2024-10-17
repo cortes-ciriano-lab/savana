@@ -152,6 +152,8 @@ def smooth_copy_number(outdir, read_counts_path, smoothing_level, trim):
         outfile.write(Line)
     outfile.close()
 
+    os.remove(read_counts_path)
+
     return outfile_path
 
 if __name__ == "__main__":

@@ -329,9 +329,10 @@ def relative_to_absolute_minor_total_CN(chrom, rel_copy_number_segments, allele_
         if len(afs) < 1:
             print(f'        BAF and minor allele copy number cannot be estimated for segment {sid}... Total absolute copy number estimated only.')
             minorCN = ''
+            baf_mean = ''
             totalCN = round(relative_to_absolute_CN(rcn, fitted_purity, fitted_ploidy),4)
             x[-1] = totalCN if totalCN > 0 else 0
-            x.append(minorCN)
+            # x.append(minorCN)
         elif len(afs) >= 1:
             baf_mean = 0.5 + statistics.mean(afs)
             CN_a = (fitted_purity - 1 + (rcn*(1-baf_mean)*(2*(1-fitted_purity)+fitted_purity*fitted_ploidy))) / fitted_purity
@@ -339,7 +340,7 @@ def relative_to_absolute_minor_total_CN(chrom, rel_copy_number_segments, allele_
             minorCN = round(min(CN_a,CN_b),4) if round(min(CN_a,CN_b),4) > 0 else 0
             totalCN = round((CN_a + CN_b),4) if round((CN_a + CN_b),4) > 0 else 0
             x[-1] = totalCN 
-            x.append(minorCN)
+        x.extend(minorCN,baf_mean,len(afs))
         acn_minor_major.append(x)
     return acn_minor_major
 

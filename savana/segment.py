@@ -354,6 +354,8 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
     # # ax.tick_params(axis='x', rotation=45)
     # ax.get_figure().savefig(f'{outdir}/{prefix}_segmented_CNprofile.png')
 
+    os.remove(smoothened_cn_path)
+
     return segmented_outpath
 
 if __name__ == '__main__':
