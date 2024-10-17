@@ -87,6 +87,7 @@ def estimate_cellularity(phasesets_dict, ps_summary):
 def process_log2r_input(log2r_cn_path):
     rel_copy_number = []
     with open(log2r_cn_path, "r") as file:
+        next(file)
         for line in file:
             fields = line.strip().split("\t")
             chrom,start,end,seg_id = fields[1],int(fields[2]),int(fields[3]),fields[-2]
