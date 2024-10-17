@@ -340,7 +340,7 @@ def relative_to_absolute_minor_total_CN(chrom, rel_copy_number_segments, allele_
             minorCN = round(min(CN_a,CN_b),4) if round(min(CN_a,CN_b),4) > 0 else 0
             totalCN = round((CN_a + CN_b),4) if round((CN_a + CN_b),4) > 0 else 0
             x[-1] = totalCN 
-        x.extend(minorCN,baf_mean,len(afs))
+        x.extend((minorCN,baf_mean,len(afs)))
         acn_minor_major.append(x)
     return acn_minor_major
 
