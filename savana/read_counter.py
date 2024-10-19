@@ -31,9 +31,6 @@ def count_reads_in_curr_bin(bam, chrom, start, end, readcount_mapq):
 def binned_read_counting(curr_chunk, bed_chunk, alns, nmode, blacklisting, bl_threshold, bases_filter, bases_threshold, readcount_mapq):
     print(f"    Read counting {curr_chunk} ...")
 
-    # bam_T = alns['tumour']
-    # bam_N = alns['normal'] if nmode == "mnorm" and len(alns) == 2 else None
-
     # Open the BAM file using pysam
     bam_T = pysam.AlignmentFile(alns['tumour'], "rb")
     bam_N = pysam.AlignmentFile(alns['normal'], "rb") if nmode == "mnorm" and len(alns) == 2 else None
@@ -75,7 +72,10 @@ def binned_read_counting(curr_chunk, bed_chunk, alns, nmode, blacklisting, bl_th
         #     chr_read_counts.append([bin_name, chrom, str(start), str(end), str(bases), str(use), str(chunk_read_count_T), str(chunk_read_count_N)])
         # elif nmode != "mnorm" and len(aln_files) == 1:
         #     chr_read_counts.append([bin_name, chrom, str(start), str(end), str(bases), str(use), str(chunk_read_count_T)])
-        chr_read_counts.append([bin_name, chrom, str(start), str(end), str(bases), str(use), str(chunk_read_count_T), str(chunk_read_count_N)])
+        if blacklisting == True:
+            chr_read_counts.append([bin_name, chrom, str(start), str(end), str(bases), str(blacklist), str(use), str(chunk_read_count_T), str(chunk_read_count_N)])
+        else:
+            chr_read_counts.append([bin_name, chrom, str(start), str(end), str(bases), str(use), str(chunk_read_count_T), str(chunk_read_count_N)])
 
     # Close BAM file and return out
     bam_T.close()
@@ -94,8 +94,8 @@ def filter_and_normalise(nmode, countData):
         for r in normalised_counts:
             r[-2] = str(math.log2(int(r[-2])/med_self)) # median normalise readcounts
             del r[-1]
-    elif nmode == "pon":
-        print("This function is yet to be implemented...")
+    # elif nmode == "pon":
+    #     print("This function is yet to be implemented...")
     elif nmode == "mnorm":
         filtered_counts = [x for x in countData if x[-3] == 'True' and int(x[-2]) != 0 and int(x[-1]) != 0]
         cov_scaler = statistics.median([math.log2(int(x[-2])/int(x[-1])) for x in filtered_counts])
@@ -122,7 +122,7 @@ def chunkify_bed(bed_file, chunk_size):
         chunks.append(pybedtools.BedTool(current_chunk))
     return chunks
 
-def count_reads(outdir, tumour, normal, panel_of_normals, sample, bin_annotations_path, readcount_mapq, blacklisting, bl_threshold, bases_filter, bases_threshold, threads):
+def count_reads(outdir, tumour, normal, sample, bin_annotations_path, readcount_mapq, blacklisting, bl_threshold, bases_filter, bases_threshold, threads):
     """ Perform binned read counting on bam file/files per chromosome """
 
     # check and define threads
@@ -136,12 +136,12 @@ def count_reads(outdir, tumour, normal, panel_of_normals, sample, bin_annotation
                 'tumour': tumour,
                 'normal': normal
             }
-    elif panel_of_normals is not None:
-        nmode = "pon" #panel of normals will be used for logR normalisation
-        aln_files = {
-                'tumour': tumour
-            }
-    elif normal is None and panel_of_normals is None:
+    # elif panel_of_normals is not None:
+    #     nmode = "pon" #panel of normals will be used for logR normalisation
+    #     aln_files = {
+    #             'tumour': tumour
+    #         }
+    elif normal is None: #and panel_of_normals is None:
         nmode = "self"
         aln_files = {
                 'tumour': tumour
@@ -180,20 +180,32 @@ def count_reads(outdir, tumour, normal, panel_of_normals, sample, bin_annotation
     #----
     # 4. Get results and write out
     #----
-    outfile = open(f"{outdir}/{sample}_read_counts.tsv", "w")
+    outfile = open(f"{outdir}/{sample}_raw_read_counts.tsv", "w")
+    if blacklisting == True:
+        header=['bin', 'chromosome','start','end','known_bases', 'overlap_blacklist', 'use_bin', 'tumour_read_count', 'normal_read_count']
+    else: 
+        header=['bin', 'chromosome','start','end','perc_known_bases', 'use_bin', 'tumour_read_count', 'normal_read_count']
+    outfile.write('\t'.join(header)+'\n')
     for r in countData:
         Line = '\t'.join(r) + '\n'
         outfile.write(Line)
     outfile.close()
 
-    outfile2 = open(f"{outdir}/{sample}_read_counts_filtered.tsv", "w")
-    for r in filtered_counts:
-        Line = '\t'.join(r) + '\n'
-        outfile2.write(Line)
-    outfile2.close()
+    
+    
+    # outfile2 = open(f"{outdir}/{sample}_read_counts_filtered.tsv", "w")
+    # for r in filtered_counts:
+    #     Line = '\t'.join(r) + '\n'
+    #     outfile2.write(Line)
+    # outfile2.close()
 
     log2_ratio_readcounts_path = f"{outdir}/{sample}_read_counts_{nmode}_log2r.tsv"
     outfile3 = open(log2_ratio_readcounts_path, "w")
+    if blacklisting == True:
+        header=['bin', 'chromosome','start','end','known_bases', 'overlap_blacklist', 'use_bin', 'log2r_copynumber']
+    else: 
+        header=['bin', 'chromosome','start','end','perc_known_bases', 'use_bin', 'log2r_copynumber']
+    outfile3.write('\t'.join(header)+'\n')
     for r in normalised_counts:
         Line = '\t'.join(r) + '\n'
         outfile3.write(Line)

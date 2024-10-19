@@ -15,7 +15,7 @@ from time import time
 from datetime import datetime
 import argparse
 
-__version__ = "1.2.2"
+__version__ = "1.2.3"
 
 samflag_desc_to_number = {
 	"BAM_CMATCH": 0, # M
@@ -336,12 +336,15 @@ def time_function(desc, checkpoints, time_str, final=False):
 	print(formatted_time)
 	return
 
-def check_outdir(args_outdir, illegal=None):
+def check_outdir(args_outdir, args_overwrite, illegal=None):
 	# create output dir if it doesn't exist
 	outdir = os.path.join(os.getcwd(), args_outdir)
 	if not os.path.exists(outdir):
 		print(f'Creating directory {outdir} to store results')
 		os.mkdir(outdir)
+	if args_overwrite:
+		# don't check for files, overwrite them
+		return outdir
 	if not illegal:
 		# throw error if ANY files present
 		if os.listdir(outdir):
@@ -353,6 +356,35 @@ def check_outdir(args_outdir, illegal=None):
 				sys.exit(f'Output directory "{outdir}" already exists and contains {illegal} files which may be overwritten. Please remove the files or supply a different directory name.')
 
 	return outdir
+
+def check_tmpdir(args_tmpdir, outdir, args_overwrite, illegal=None):
+	# create output dir if it doesn't exist
+	print(outdir)
+	print(args_overwrite)
+	tmpdir = os.path.join(outdir, args_tmpdir)
+	if not os.path.exists(tmpdir):
+		print(f'Creating directory {tmpdir} to store temp files during hetSNP allele counting')
+		os.mkdir(tmpdir)
+	if args_overwrite:
+		# don't check for files, overwrite them
+		return tmpdir
+	if not illegal:
+		# throw error if ANY files present
+		if os.listdir(tmpdir):
+			sys.exit(f'Temp directory "{tmpdir}" already exists and contains files. Please remove the files or supply a different directory name.')
+	else:
+		# check if illegal files exist in outdir
+		for f in os.listdir(tmpdir):
+			if f.endswith(illegal):
+				sys.exit(f'Temp directory "{tmpdir}" already exists and contains {illegal} files which may be overwritten. Please remove the files or supply a different directory name.')
+
+	return tmpdir
+
+def clean_tmpdir(args_tmpdir, outdir):
+	tmpdir = os.path.join(outdir, args_tmpdir)
+	# remove tmpdir if empty
+	if not os.listdir(tmpdir):
+		os.rmdir(tmpdir)
 
 # credit to stackoverflow: https://stackoverflow.com/questions/55324449/how-to-specify-a-minimum-or-maximum-float-value-with-argparse
 def float_range(mini,maxi):
