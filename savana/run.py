@@ -104,7 +104,7 @@ def generate_annotate_depth_tasks(called_breakpoints, args):
 	tasks = []
 	task_id_counter = 0
 	total_breakpoints = sum(len(bps) for bps in called_breakpoints.values())
-	split = max(floor(total_breakpoints/(args.threads*10)), 1)
+	split = max(floor(total_breakpoints/(args.threads)), 1)
 	spare_breakpoints = []
 	for _, breakpoints in called_breakpoints.items():
 		if len(breakpoints) > split:
