@@ -371,12 +371,24 @@ def classify_pacbio(args, checkpoints, time_str):
 
 	# increase min support and AF for PacBio (not below supplied mins)
 	pacbio_min_support = max(7, args.min_support)
-	pacbio_min_af = max(0.15, args.min_af)
+	pacbio_min_af = max(0.10, args.min_af)
 	print(f'Using PacBio minimum support filters of {pacbio_min_support} reads and {pacbio_min_af} allele-fracion')
 
 	if args.predict_germline:
 		print('Germline PacBio filters not yet implemented.')
 
+	input_vcf = cyvcf2.VCF(args.vcf)
+	pass_dict = {}
+	for variant in input_vcf:
+		variant_id = variant.ID
+		passed_somatic = pacbio_pass_somatic(variant, pacbio_min_support, pacbio_min_af)
+		# update the pass dictionary
+		pass_dict[variant_id] = passed_somatic
+		if passed_somatic:
+			# update mate as well
+			pass_dict[variant.INFO.get('MATEID', None)] = passed_somatic
+
+	# now that everything and mate has been passed, output files
 	input_vcf = cyvcf2.VCF(args.vcf)
 	desc_string = str('Variant class prediction using PacBio filters')
 	input_vcf.add_info_to_header({
@@ -396,14 +408,15 @@ def classify_pacbio(args, checkpoints, time_str):
 	if args.germline_output:
 		print('Germline PacBio filters not yet implemented.')
 		#germline_vcf = cyvcf2.Writer(args.germline_output, input_vcf)
-	pass_dict = {}
+	out_vcf = cyvcf2.Writer(args.output, input_vcf)
+	if args.somatic_output:
+		somatic_vcf = cyvcf2.Writer(args.somatic_output, input_vcf)
+	if args.germline_output:
+		print('Germline PacBio filters not yet implemented.')
+		#germline_vcf = cyvcf2.Writer(args.germline_output, input_vcf)
 	for variant in input_vcf:
 		variant_id = variant.ID
-		passed_somatic = pacbio_pass_somatic(variant, pacbio_min_support, pacbio_min_af)
-		mate_passed_somatic = pass_dict.get(variant.INFO.get('MATEID', None), False)
-		# update the pass dictionary
-		pass_dict[variant_id] = passed_somatic
-		if passed_somatic or mate_passed_somatic:
+		if pass_dict[variant.ID]:
 			# update the INFO field
 			variant.INFO['CLASS'] = 'SOMATIC'
 			if args.somatic_output:
@@ -412,7 +425,6 @@ def classify_pacbio(args, checkpoints, time_str):
 		else:
 			variant.FILTER = 'FAIL'
 		out_vcf.write_record(variant)
-
 	out_vcf.close()
 	if args.somatic_output:
 		somatic_vcf.close()
