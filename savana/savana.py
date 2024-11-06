@@ -45,8 +45,6 @@ def savana_run(args):
     # set number of threads to cpu count if none set
     if not args.threads:
         args.threads = cpu_count()
-    if not args.cna_threads:
-        args.cna_threads = cpu_count()
     # check if files are bam or cram (must have indices)
     if args.tumour.endswith('bam') and args.normal.endswith('bam'):
         args.is_cram = False
