@@ -39,8 +39,7 @@ FEATURES_TO_DROP = [
 	'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
 	'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
 	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID', 'DISTANCE_TO_MATCH',
-	'CLASS','REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
-	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN',
+	'CLASS', 'REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
 	'TUMOUR_PS', 'TUMOUR_ALT_HP', 'NORMAL_PS', 'NORMAL_ALT_HP', 'TUMOUR_TOTAL_HP_AT', 'NORMAL_TOTAL_HP_AT'
 ]
 
@@ -48,10 +47,10 @@ def format_data(data_matrix):
 	""" parse columns, do conversions, one-hot-encoding """
 	# split the DP tuples
 	# this was solution to strange pandas error if comes up again:
-	tumour_dp_before = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
-	tumour_dp_before.columns = ['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']
-	data_matrix = pd.concat([data_matrix, tumour_dp_before], axis=1)
-	#data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	#tumour_dp_before = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	#tumour_dp_before.columns = ['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']
+	#data_matrix = pd.concat([data_matrix, tumour_dp_before], axis=1)
+	data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
 	data_matrix[['TUMOUR_DP_AT_0', 'TUMOUR_DP_AT_1']] = data_matrix['TUMOUR_DP_AT'].apply(pd.Series)
 	data_matrix[['TUMOUR_DP_AFTER_0', 'TUMOUR_DP_AFTER_1']] = data_matrix['TUMOUR_DP_AFTER'].apply(pd.Series)
 	data_matrix[['NORMAL_DP_BEFORE_0', 'NORMAL_DP_BEFORE_1']] = data_matrix['NORMAL_DP_BEFORE'].apply(pd.Series)
@@ -68,6 +67,31 @@ def format_data(data_matrix):
 		# split the HP tuples
 		data_matrix[['TUMOUR_TOTAL_HP_1_COUNT', 'TUMOUR_TOTAL_HP_2_COUNT', 'TUMOUR_TOTAL_HP_NA_COUNT']] = data_matrix['TUMOUR_TOTAL_HP_AT'].apply(pd.Series)
 		data_matrix[['NORMAL_TOTAL_HP_1_COUNT', 'NORMAL_TOTAL_HP_2_COUNT', 'NORMAL_TOTAL_HP_NA_COUNT']] = data_matrix['NORMAL_TOTAL_HP_AT'].apply(pd.Series)
+	# add feature that indicates whether the phasing is in conflict
+	# as well, calculate the percentage of supporting reads that are phased
+	if 'TUMOUR_ALT_HP' in data_matrix:
+		data_matrix['TUMOUR_PHASING_CONFLICT'] = np.where(
+			(data_matrix['TUMOUR_ALT_HP_1_COUNT'] > 0) & (data_matrix['TUMOUR_ALT_HP_2_COUNT'] > 0),
+			True,
+			False
+		)
+		data_matrix['TUMOUR_PROP_ALT_READS_PHASED'] = (data_matrix['TUMOUR_ALT_HP_1_COUNT'] + data_matrix['TUMOUR_ALT_HP_2_COUNT'] + 1)/(data_matrix['TUMOUR_ALN_SUPPORT'] + 1)
+		data_matrix["TUMOUR_MAJOR_HP_COUNT"] = data_matrix[["TUMOUR_ALT_HP_1_COUNT", "TUMOUR_ALT_HP_2_COUNT"]].max(axis=1)
+		data_matrix["TUMOUR_MINOR_HP_COUNT"] = data_matrix[["TUMOUR_ALT_HP_1_COUNT", "TUMOUR_ALT_HP_2_COUNT"]].min(axis=1)
+		data_matrix['TUMOUR_PHASING_RATIO'] = (data_matrix['TUMOUR_MAJOR_HP_COUNT']+1)/(data_matrix['TUMOUR_MAJOR_HP_COUNT']+data_matrix['TUMOUR_MINOR_HP_COUNT']+1)
+		data_matrix['TUMOUR_PHASING_CONFIDENCE'] = (data_matrix['TUMOUR_MAJOR_HP_COUNT'] + 1)/(data_matrix['TUMOUR_MAJOR_HP_COUNT'] + data_matrix['TUMOUR_MINOR_HP_COUNT'] + 1) * data_matrix['TUMOUR_PROP_ALT_READS_PHASED']
+	if 'NORMAL_ALT_HP' in data_matrix:
+		data_matrix['NORMAL_PHASING_CONFLICT'] = np.where(
+			(data_matrix['NORMAL_ALT_HP_1_COUNT'] > 0) & (data_matrix['NORMAL_ALT_HP_2_COUNT'] > 0),
+			True,
+			False
+		)
+		data_matrix['NORMAL_PROP_ALT_READS_PHASED'] = (data_matrix['NORMAL_ALT_HP_1_COUNT'] + data_matrix['NORMAL_ALT_HP_2_COUNT'] + 1)/(data_matrix['NORMAL_ALN_SUPPORT'] + 1)
+		data_matrix["NORMAL_MAJOR_HP_COUNT"] = data_matrix[["NORMAL_ALT_HP_1_COUNT", "NORMAL_ALT_HP_2_COUNT"]].max(axis=1)
+		data_matrix["NORMAL_MINOR_HP_COUNT"] = data_matrix[["NORMAL_ALT_HP_1_COUNT", "NORMAL_ALT_HP_2_COUNT"]].min(axis=1)
+		data_matrix['NORMAL_PHASING_RATIO'] = (data_matrix['NORMAL_MAJOR_HP_COUNT']+1)/(data_matrix['NORMAL_MAJOR_HP_COUNT']+data_matrix['NORMAL_MINOR_HP_COUNT']+1)
+		data_matrix['NORMAL_PHASING_CONFIDENCE'] = (data_matrix['NORMAL_MAJOR_HP_COUNT'] + 1)/(data_matrix['NORMAL_MAJOR_HP_COUNT'] + data_matrix['NORMAL_MINOR_HP_COUNT'] + 1) * data_matrix['NORMAL_PROP_ALT_READS_PHASED']
+
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
 	data_matrix['TUMOUR_DP_AT_1'] = data_matrix['TUMOUR_DP_AT_1'].fillna(data_matrix['TUMOUR_DP_AT_0'])
@@ -78,6 +102,11 @@ def format_data(data_matrix):
 	data_matrix['TUMOUR_AF_1'] = data_matrix['TUMOUR_AF_1'].fillna(data_matrix['TUMOUR_AF_0'])
 	data_matrix['NORMAL_AF_1'] = data_matrix['NORMAL_AF_1'].fillna(data_matrix['NORMAL_AF_0'])
 	data_matrix.replace([np.inf, -np.inf], -1, inplace=True)
+	# add ratios for copy number change
+	data_matrix['NORMAL_DP_CHANGE_RATIO_0'] = (data_matrix['NORMAL_DP_BEFORE_0']+1)/(data_matrix['NORMAL_DP_AFTER_0']+1)
+	data_matrix['TUMOUR_DP_CHANGE_RATIO_0'] = (data_matrix['TUMOUR_DP_BEFORE_0']+1)/(data_matrix['TUMOUR_DP_AFTER_0']+1)
+	data_matrix['NORMAL_DP_CHANGE_RATIO_1'] = (data_matrix['NORMAL_DP_BEFORE_1']+1)/(data_matrix['NORMAL_DP_AFTER_1']+1)
+	data_matrix['TUMOUR_DP_CHANGE_RATIO_1'] = (data_matrix['TUMOUR_DP_BEFORE_1']+1)/(data_matrix['TUMOUR_DP_AFTER_1']+1)
 	# create std_dev/mean_size ratio columns
 	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STARTS_STD_DEV']/(data_matrix['ORIGIN_EVENT_SIZE_MEAN']+1.0)
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STARTS_STD_DEV']/(data_matrix['END_EVENT_SIZE_MEAN']+1.0)

@@ -101,6 +101,24 @@ def savana_classify(args):
     elif args.custom_params:
         classify.classify_by_params(args, checkpoints, time_str)
     elif args.custom_model:
+        # using a model - check whether has been un-tarred
+        import tarfile
+        if tarfile.is_tarfile(args.custom_model):
+            # see if untarred file exists without tar.gz extension
+            untar_model = '.'.join(args.custom_model.split('.')[:-2])
+            if os.path.isfile(untar_model):
+                print(f'Using untarred model path at {untar_model}')
+                args.custom_model = untar_model
+            else:
+                print(f'Will untar {args.custom_model} to {untar_model}')
+                tar = tarfile.open(args.custom_model, "r:gz")
+                model_dir = os.path.dirname(args.custom_model)
+                tar.extractall(model_dir)
+                tar.close()
+                args.custom_model = untar_model
+        elif not os.path.isfile(args.custom_model):
+            print(f'Unable to locate model at {args.custom_model} - please check installation')
+            return
         classify.classify_by_model(args, checkpoints, time_str)
     elif args.pb:
         classify.classify_pacbio(args, checkpoints, time_str)
