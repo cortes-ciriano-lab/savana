@@ -49,7 +49,8 @@ def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 		task_arg_dict['buffer'],
 		task_arg_dict['length'],
 		task_arg_dict['depth'],
-		task_arg_dict['contig']
+		task_arg_dict['contig'],
+		task_arg_dict['tumour_only']
 	)
 	task_tracker[task_arg_dict['task_id']] = 1
 	conn.send((breakpoints, contig))
@@ -147,6 +148,7 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 			'buffer': args.end_buffer,
 			'length': args.length,
 			'depth': args.min_support,
+			'tumour_only': args.tumour_only,
 			'task_id': task_id_counter
 		})
 		task_id_counter += 1

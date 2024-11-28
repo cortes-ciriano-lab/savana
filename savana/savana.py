@@ -36,7 +36,8 @@ logo = """
 """
 
 def savana_run(args):
-    """ main function for SAVANA """
+    """ identify raw breakpoints """
+    args.tumour_only = False
     if not args.sample:
         # set sample name to default if req.
         args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
@@ -122,12 +123,9 @@ def savana_classify(args):
         classify.classify_by_model(args, checkpoints, time_str)
     elif args.pb:
         classify.classify_pacbio(args, checkpoints, time_str)
-    else:
+    elif args.ont:
         # using a model - perform logic to determine which one
-        if args.ont and not args.predict_germline:
-            model_base = 'ont-somatic'
-        elif args.ont and args.predict_germline:
-            model_base = 'ont-germline'
+        model_base = 'ont-somatic' if not args.predict_germline else 'ont-germline'
         # check whether the model has been un-tarred
         models_dir = os.path.join(os.path.dirname(__file__), 'models')
         model_path = os.path.join(models_dir, model_base)
@@ -188,7 +186,7 @@ def savana_train(args):
     elif args.load_matrix:
         # load data matrix from pickle file
         data_matrix = train.load_matrix(args)
-    features, target = train.prepare_data(data_matrix, germline_class=args.germline_class)
+    features, target = train.prepare_data(data_matrix, germline_class=args.germline_class, tumour_only=args.tumour_only)
     print('Done preparing data.')
     classifier = train.cross_conformal_classifier(features, target, outdir, args.test_split, args.threads)
     train.save_model(args, classifier, outdir)
@@ -241,6 +239,49 @@ def savana_cna(args, as_workflow=False):
     # cleanup tmpdir
     helper.clean_tmpdir(args.tmpdir, outdir)
     helper.time_function("Total time to perform copy number calling", checkpoints, time_str, final=True)
+
+def savana_tumour_only(args):
+    """ identify raw breakpoints - without matched normal """
+    args.tumour_only = True
+    if not args.sample:
+        # set sample name to default if req.
+        args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
+    print(f'Running as sample {args.sample}')
+    outdir = helper.check_outdir(args.outdir, args.overwrite, illegal='.vcf')
+    # set number of threads to cpu count if none set
+    if not args.threads:
+        args.threads = cpu_count()
+    # check if files are bam or cram (must have indices)
+    if args.tumour.endswith('bam'):
+        args.is_cram = False
+        aln_files = {
+            'tumour': pysam.AlignmentFile(args.tumour, "rb")
+        }
+    elif args.tumour.endswith('cram'):
+        args.is_cram = True
+        aln_files = {
+            'tumour': pysam.AlignmentFile(args.tumour, "rc")
+        }
+    else:
+        sys.exit('Unrecognized file extension. Tumour files must be BAM/CRAM')
+
+    # confirm ref and ref fasta index exist
+    if not os.path.exists(args.ref):
+        sys.exit(f'Provided reference: "{args.ref}" does not exist. Please provide full path')
+    elif args.ref_index and not os.path.exists(args.ref_index):
+        sys.exit(f'Provided reference fasta index: "{args.ref_index}" does not exist. Please provide full path')
+    elif not os.path.exists(f'{args.ref}.fai'):
+        sys.exit(f'Default reference fasta index: "{args.ref}.fai" does not exist. Please provide full path')
+    else:
+        args.ref_index = f'{args.ref}.fai' if not args.ref_index else args.ref_index
+        print(f'Found {args.ref_index} to use as reference fasta index')
+    # initialize timing
+    checkpoints = [time()]
+    time_str = []
+    # run SAVANA processes
+    checkpoints, time_str = run.spawn_processes(args, aln_files, checkpoints, time_str, outdir)
+    # finish timing
+    helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
 
 def savana_main(args):
     """ default workflow for savana: savana_run, savana_classify, savana_evaluate, savana_cna """
@@ -306,7 +347,7 @@ def parse_args(args):
     run_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
     run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
     run_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=5, help='Convert supplementary alignments below this threshold to single breakend (default=5, must not exceed --mapq argument)')
-    run_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+    run_parser.add_argument('--debug', action='store_true', help='output extra debugging info and files')
     run_parser.add_argument('--chunksize', nargs='?', type=int, default=100000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
     run_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
     run_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
@@ -328,6 +369,7 @@ def parse_args(args):
     group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
     group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
     group.add_argument('--legacy', action='store_true', help='Legacy lenient/strict filtering')
+    classify_parser.add_argument('-to','--tumour_only', action='store_true', help='Classifying tumour-only data')
     classify_parser.add_argument('--output', nargs='?', type=str, required=True, help='Output VCF with PASS columns and CLASS added to INFO')
     classify_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS somatic variants')
     classify_parser.add_argument('--germline_output', nargs='?', type=str, required=False, help='Output VCF containing only PASS germline variants')
@@ -357,9 +399,9 @@ def parse_args(args):
     train_parser.add_argument('--recursive', action='store_true', help='Search recursively through input folder for input VCFs (default only one-level deep)')
     group.add_argument('--load_matrix', nargs='?', type=str, required=False, help='Pre-loaded pickle file of VCFs')
     train_parser.add_argument('--save_matrix', nargs='?', type=str, required=False, help='Output pickle file for data matrix of VCFs')
-    train_parser.add_argument('--downsample', nargs='?', type=float, default=0.1, help='Fraction to downsample majority class by (default=0.1)')
     train_parser.add_argument('--test_split', nargs='?', type=float, default=0.2, help='Fraction of data to use for test (default=0.2)')
     train_parser.add_argument('--germline_class', action='store_true', help='Train the model to predict germline and somatic variants (GERMLINE label must be present)')
+    train_parser.add_argument('-to','--tumour_only', action='store_true', help='Training a model on tumour-only data')
     train_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     train_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
     train_parser.add_argument('--threads', nargs='?', type=int, default=16, const=0, help='Number of threads to use')
@@ -418,6 +460,31 @@ def parse_args(args):
     cna_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
     cna_parser.set_defaults(func=savana_cna)
 
+    # tumour only parser
+    to_parser = subparsers.add_parser("to", help="identify somatic SVs without normal sample")
+    to_parser.add_argument('-t','--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
+    to_parser.add_argument('-r', '--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
+    to_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
+    to_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider. See example at example/contigs.chr.hg38.txt (optional, default=All)")
+    to_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
+    to_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='Minimum MAPQ to consider a read mapped (default=5)')
+    to_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
+    to_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
+    to_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
+    to_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
+    to_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
+    to_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
+    to_parser.add_argument('-s','--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
+    to_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
+    to_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
+    to_parser.add_argument('--single_bnd_max_mapq', nargs='?', type=int, default=5, help='Convert supplementary alignments below this threshold to single breakend (default=5, must not exceed --mapq argument)')
+    to_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
+    to_parser.add_argument('--chunksize', nargs='?', type=int, default=100000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
+    to_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
+    to_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
+    to_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
+    to_parser.set_defaults(func=savana_tumour_only)
+
     try:
         global_parser.exit_on_error = False
         subparser = global_parser.parse_args().command if not args else global_parser.parse_args(args).command
@@ -428,7 +495,7 @@ def parse_args(args):
     if not subparser:
         # arguments for default, main savana process: run, classify, evaluate
         global_parser.add_argument('-t', '--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-        global_parser.add_argument('-n','--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
+        global_parser.add_argument('-n','--normal', nargs='?', type=str, required=False, help='Normal BAM file (must have index)')
         global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
         global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
         global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
