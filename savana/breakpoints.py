@@ -633,7 +633,7 @@ def count_labels_and_phase(source_breakpoints):
 
 	return read_counts, aln_counts, [start_phase, end_phase]
 
-def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
+def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom, tumour_only=False):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same start chromosome!
 	#TODO: refactor. this works but it's ugly and overcomplicated
@@ -674,7 +674,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 								consensus_source = "/".join(sorted(event_info['sources'].keys()))
 								breakpoints_for_end_chrom.append(ConsensusBreakpoint(
 									[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-									consensus_source, start_cluster, None, [ins_read_counts, ins_aln_counts, ins_phasing_counts, total_read_counts], "<INS>", event_info['inserts']))
+									consensus_source, start_cluster, None, [ins_read_counts, ins_aln_counts, ins_phasing_counts, total_read_counts], "<INS>", tumour_only, event_info['inserts']))
 							else:
 								# separate here by bp_notation
 								sorted_breakpoints = {}
@@ -697,7 +697,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 									if max(len(count) for count in sbnd_read_counts.values()) >= min_support:
 										breakpoints_for_end_chrom.append(ConsensusBreakpoint(
 											[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-											consensus_source, start_cluster, None, [sbnd_read_counts, sbnd_aln_counts, sbnd_phasing_counts, total_read_counts], notation_type, event_info['inserts']))
+											consensus_source, start_cluster, None, [sbnd_read_counts, sbnd_aln_counts, sbnd_phasing_counts, total_read_counts], notation_type, tumour_only, event_info['inserts']))
 				# now deal with other breakpoint notation types
 				# reverse start/end in order to re-cluster
 				flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints if b.breakpoint_notation not in ["<INS>", "+", "-"]]
@@ -732,7 +732,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							consensus_source = "/".join(sorted(source.keys()))
 							new_breakpoint = ConsensusBreakpoint(
 								[{'chr': start_cluster.chr, 'loc': median_start}, {'chr': end_chrom_cluster.chr, 'loc': median_end}],
-								consensus_source, start_cluster, end_chrom_cluster, [read_counts, aln_counts, phasing_counts, total_read_counts], bp_type)
+								consensus_source, start_cluster, end_chrom_cluster, [read_counts, aln_counts, phasing_counts, total_read_counts], bp_type, tumour_only)
 							if new_breakpoint.sv_length >= min_length or (new_breakpoint.start_chr != new_breakpoint.end_chr and new_breakpoint.sv_length == 0):
 								breakpoints_for_end_chrom.append(new_breakpoint)
 
@@ -758,10 +758,13 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """
 	for bp in breakpoints:
-		bp.phased_local_depths = {
-			'tumour': [{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]}],
-			'normal': [{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]}]
-		}
+		bp.phased_local_depths = {}
+		for label in shared_cov_arrays.keys():
+			bp.phased_local_depths[label] = [
+				{1: [0,0], 2: [0,0], None: [0,0]}, # before
+				{1: [0,0], 2: [0,0], None: [0,0]}, # at
+				{1: [0,0], 2: [0,0], None: [0,0]} # after
+			]
 		haplotypes = [1, 2, None]
 		for label in bp.phased_local_depths.keys():
 			for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):

@@ -282,34 +282,68 @@ def generate_vcf_header(args, example_breakpoint):
 			cmd_string+=f' --{arg} {value}'
 	cmd_string+='"'
 	# add info fields
+	# TODO: tumour only - there has to be a better way to do this
 	vcf_header_str.extend([
 		cmd_string,
 		f'##reference={args.ref}',
 		'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
 		'##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
-		'##INFO=<ID=MATEID,Number=1,Type=String,Description="ID of mate breakends">',
-		'##INFO=<ID=NORMAL_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal reads">',
-		'##INFO=<ID=TUMOUR_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour reads">',
-		'##INFO=<ID=NORMAL_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal alignments">',
+		'##INFO=<ID=MATEID,Number=1,Type=String,Description="ID of mate breakends">'
+		])
+	if not args.tumour_only:
+		vcf_header_str.extend([
+			'##INFO=<ID=NORMAL_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal reads">'
+			])
+	vcf_header_str.extend([
+		'##INFO=<ID=TUMOUR_READ_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour reads">'
+	])
+	if not args.tumour_only:
+		vcf_header_str.extend([
+			'##INFO=<ID=NORMAL_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting normal alignments">'
+		])
+	vcf_header_str.extend([
 		'##INFO=<ID=TUMOUR_ALN_SUPPORT,Number=1,Type=Integer,Description="Number of SV supporting tumour alignments">',
 		'##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Length of the SV">',
 		'##INFO=<ID=TUMOUR_DP_BEFORE,Number=2,Type=Integer,Description="Local tumour depth in bin before the breakpoint(s) of an SV">',
 		'##INFO=<ID=TUMOUR_DP_AT,Number=2,Type=Integer,Description="Local tumour depth in bin at the breakpoint(s) of an SV">',
-		'##INFO=<ID=TUMOUR_DP_AFTER,Number=2,Type=Integer,Description="Local tumour depth in bin after the breakpoint(s) of an SV">',
-		'##INFO=<ID=NORMAL_DP_BEFORE,Number=2,Type=Integer,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
-		'##INFO=<ID=NORMAL_DP_AT,Number=2,Type=Integer,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
-		'##INFO=<ID=NORMAL_DP_AFTER,Number=2,Type=Integer,Description="Local normal depth in bin after the breakpoint(s) of an SV">',
-		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">',
-		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">',
+		'##INFO=<ID=TUMOUR_DP_AFTER,Number=2,Type=Integer,Description="Local tumour depth in bin after the breakpoint(s) of an SV">'
+	])
+	if not args.tumour_only:
+		vcf_header_str.extend([
+			'##INFO=<ID=NORMAL_DP_BEFORE,Number=2,Type=Integer,Description="Local normal depth in bin before the breakpoint(s) of an SV">',
+			'##INFO=<ID=NORMAL_DP_AT,Number=2,Type=Integer,Description="Local normal depth in bin at the breakpoint(s) of an SV">',
+			'##INFO=<ID=NORMAL_DP_AFTER,Number=2,Type=Integer,Description="Local normal depth in bin after the breakpoint(s) of an SV">'
+		])
+	vcf_header_str.extend([
+		'##INFO=<ID=TUMOUR_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of tumour variant-supporting reads to tumour read depth (DP) at breakpoint">'
+	])
+	if not args.tumour_only:
+		vcf_header_str.extend([
+		'##INFO=<ID=NORMAL_AF,Number=2,Type=Float,Description="Allele-fraction (AF) of normal variant-supporting reads to normal read depth (DP) at breakpoint">'
+		])
+	vcf_header_str.extend([
 		'##INFO=<ID=BP_NOTATION,Number=1,Type=String,Description="+- notation format of variant (same for paired breakpoints)">',
 		'##INFO=<ID=SOURCE,Number=1,Type=String,Description="Source of evidence for a breakpoint - CIGAR (INS, DEL, SOFTCLIP), SUPPLEMENTARY or mixture">',
-		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">',
-		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">',
+		'##INFO=<ID=CLUSTERED_READS_TUMOUR,Number=1,Type=Integer,Description="Total number of tumour reads clustered at this location of any SV type">'
+		])
+	if not args.tumour_only:
+		vcf_header_str.extend([
+		'##INFO=<ID=CLUSTERED_READS_NORMAL,Number=1,Type=Integer,Description="Total number of normal reads clustered at this location of any SV type">'
+		])
+	vcf_header_str.extend([
 		'##INFO=<ID=TUMOUR_ALT_HP,Number=3,Type=Integer,Description="Counts of SV-supporting reads belonging to each haplotype in the tumour sample (1/2/NA)">',
-		'##INFO=<ID=TUMOUR_PS,Number=.,Type=String,Description="List of unique phase sets from the tumour supporting reads">',
-		'##INFO=<ID=NORMAL_ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype in the normal sample (1/2/NA)">',
-		'##INFO=<ID=NORMAL_PS,Number=.,Type=String,Description="List of unique phase sets from the normal supporting reads">',
-		'##INFO=<ID=TUMOUR_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA)">',
+		'##INFO=<ID=TUMOUR_PS,Number=.,Type=String,Description="List of unique phase sets from the tumour supporting reads">'
+	])
+	if not args.tumour_only:
+		vcf_header_str.extend([
+			'##INFO=<ID=NORMAL_ALT_HP,Number=3,Type=Integer,Description="Counts of reads belonging to each haplotype in the normal sample (1/2/NA)">',
+			'##INFO=<ID=NORMAL_PS,Number=.,Type=String,Description="List of unique phase sets from the normal supporting reads">'
+		])
+	vcf_header_str.extend([
+		'##INFO=<ID=TUMOUR_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the tumour sample (1/2/NA)">'
+	])
+	if not args.tumour_only:
+		vcf_header_str.extend([
 		'##INFO=<ID=NORMAL_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA)">'
 	])
 	# add the stat info fields

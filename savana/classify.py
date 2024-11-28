@@ -224,7 +224,7 @@ def classify_legacy(args, checkpoints, time_str):
 	""" classify using legacy lenient/strict filters """
 	header, data = train.read_vcf(args.vcf)
 	data_matrix = pd.DataFrame(data, columns=header)
-	data_matrix = train.format_data(data_matrix)
+	data_matrix = train.format_data(data_matrix, args.tumour_only)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
 	strict_ids = {}
@@ -298,7 +298,7 @@ def classify_by_params(args, checkpoints, time_str):
 	# read VCF into a dataframe, classify using a parameter JSON
 	header, data = train.read_vcf(args.vcf)
 	data_matrix = pd.DataFrame(data, columns=header)
-	data_matrix = train.format_data(data_matrix)
+	data_matrix = train.format_data(data_matrix, args.tumour_only)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
 	# Read in the if/else statements and apply them
@@ -472,7 +472,7 @@ def classify_by_model(args, checkpoints, time_str):
 
 	header, data = train.read_vcf(args.vcf)
 	data_matrix = pd.DataFrame(data, columns=header)
-	data_matrix = train.format_data(data_matrix)
+	data_matrix = train.format_data(data_matrix, args.tumour_only)
 	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
 	loaded_model = pickle.load(open(args.custom_model, "rb"))
@@ -518,7 +518,7 @@ def classify_by_model(args, checkpoints, time_str):
 				variant_classes[variant_id] = 4
 				if variant_mate_id: # reject mate as well
 					variant_classes[variant_mate_id] = 4
-			elif variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']:
+			elif not args.tumour_only and (variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']):
 				variant_classes[variant_id] = 4
 				if variant_mate_id: # reject mate as well
 					variant_classes[variant_mate_id] = 4
@@ -538,11 +538,11 @@ def classify_by_model(args, checkpoints, time_str):
 					variant_classes[variant_mate_id] = 1
 		elif variant_class == 2 and variant_mate_class == 2:
 			# check against hard filters that override prediction
-			if variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support:
+			if not args.tumour_only and (variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support):
 				variant_classes[variant_id] = 4
 				if variant_mate_id: # reject mate as well
 					variant_classes[variant_mate_id] = 4
-			elif variant.INFO['NORMAL_AF'] < args.min_af:
+			elif not args.tumour_only and (variant.INFO['NORMAL_AF'] < args.min_af):
 				variant_classes[variant_id] = 5
 				if variant_mate_id: # reject mate as well
 					variant_classes[variant_mate_id] = 5
