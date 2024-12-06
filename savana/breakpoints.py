@@ -26,7 +26,7 @@ from pympler import muppy, summary, refbrowser
 #helper.conditionally_decorate(profile, True)
 """
 
-def get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq):
+def get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq, keep_inv_artefact):
 	""" reconstruct the breakpoints from the supplementary alignments """
 	breakpoint_pairs = []
 	cigar_tuples = read.cigartuples
@@ -153,13 +153,32 @@ def get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, s
 			breakpoint_pairs[i][1]['query_pos_start'] = curr_start['query_pos_end']
 
 	# once all pairs completed, create breakpoints for each edge
-	return create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set)
+	return create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set, keep_inv_artefact)
 
-def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set):
+def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set, keep_inv_artefact):
 	supplementary_breakpoints = []
 	index = 0 # track manually to allow skipping/merging
+
 	while index < len(breakpoint_pairs):
 		curr_start, curr_end = breakpoint_pairs[index]
+		if not keep_inv_artefact:
+			# remove foldback inversion artefacts
+			if curr_start['chr'] == curr_end['chr'] and curr_start['region_mapped'] and curr_end['region_mapped']:
+				# have to be on same chromosome and both mapped
+				if (curr_start['bp_notation']+curr_end['bp_notation']) in ['--','++']:
+					# must be an inverted bp
+					if abs(curr_start['loc']-curr_end['loc']) <= 200:
+						# must map back within 200bp of self
+						index += 1
+						continue
+						"""
+						print("FB INV ARTEFACT DETECTED")
+						print(read.query_name)
+						print(curr_start)
+						print(curr_end)
+						print(f'Full bp pairs:')
+						print(breakpoint_pairs)
+						"""
 		# don't create breakpoints for irrelevant contigs
 		if curr_start['chr'] not in contig_order or curr_end['chr'] not in contig_order:
 			index += 1
@@ -458,7 +477,7 @@ def get_phasing_from_read(read):
 
 	return haplotype, phase_set
 
-def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, keep_inv_artefact, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
@@ -493,7 +512,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 		chimeric_regions = helper.get_chimeric_regions(read)
 		if chimeric_regions:
 			#TODO: can also test getting chimeric regions in this function and returning immediately if none
-			chimeric_breakpoints = get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq)
+			chimeric_breakpoints = get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq, keep_inv_artefact)
 			for bp in chimeric_breakpoints:
 				potential_breakpoints.setdefault(bp.start_chr,[]).append(bp)
 		# look for insertions and deletions in the CIGAR
