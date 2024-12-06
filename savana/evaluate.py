@@ -205,10 +205,9 @@ def evaluate_vcf(args, checkpoints, time_str):
 			'start_loc': variant.start,
 			'length': variant.INFO.get('SVLEN'),
 			'type': variant.INFO.get('SVTYPE'),
+			'tumour_support': int(variant.INFO.get('TUMOUR_READ_SUPPORT')),
+			'normal_support': int(variant.INFO.get('NORMAL_READ_SUPPORT')),
 			'within_buffer': []})
-		if args.by_support:
-			input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
-			input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 		for compare_variant in compare_set:
 			if compare_variant['start_chr'] == variant_chrom:
 				distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
@@ -224,6 +223,8 @@ def evaluate_vcf(args, checkpoints, time_str):
 				'start_loc': variant.INFO.get('END'),
 				'length': variant.INFO.get('SVLEN'),
 				'type': variant.INFO.get('SVTYPE'),
+				'tumour_support': int(variant.INFO.get('TUMOUR_READ_SUPPORT')),
+				'normal_support': int(variant.INFO.get('NORMAL_READ_SUPPORT')),
 				'within_buffer': []})
 			if args.by_support:
 				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
@@ -243,16 +244,16 @@ def evaluate_vcf(args, checkpoints, time_str):
 				'start_loc': variant.INFO.get('END2'),
 				'length': variant.INFO.get('SVLEN'),
 				'type': variant.INFO.get('SVTYPE'),
+				'tumour_support': int(variant.INFO.get('TUMOUR_READ_SUPPORT')),
+				'normal_support': int(variant.INFO.get('NORMAL_READ_SUPPORT')),
 				'within_buffer': []})
-			if args.by_support:
-				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
-				input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 			for compare_variant in compare_set:
 				if compare_variant['start_chr'] == variant_chrom:
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
 					if distance <= args.overlap_buffer:
-						compare_variant['within_buffer'].append((input_variants[-1], distance))
-						input_variants[-1]['within_buffer'].append((compare_variant, distance))
+						compare_variant['within_buffer'].append([input_variants[-1], distance])
+						input_variants[-1]['within_buffer'].append([compare_variant, distance])
+
 
 	# label input variants with matched somatic/germline
 	compare_variants_used = {}
@@ -261,7 +262,7 @@ def evaluate_vcf(args, checkpoints, time_str):
 	for variant in input_variants:
 		variant['validated'] = False
 		closest_variant = None
-		closest_value = None
+		closest_value = [None,None]
 		for compare_variant, distance in variant['within_buffer']:
 			# check how many times this variant has been used as a label
 			used_count = len(compare_variants_used.get(compare_variant['id'],[]))
@@ -272,21 +273,21 @@ def evaluate_vcf(args, checkpoints, time_str):
 				continue
 			if args.by_support:
 				# tie-break using support - default to zero to prevent no-support match
-				closest_value = 0 if not closest_value else closest_value
-				if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value and variant['normal_support'] == 0:
+				closest_value[0] = 0 if not closest_value[0] else closest_value[0]
+				if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value[0] and variant['normal_support'] == 0:
 					closest_variant = compare_variant
-					closest_value = variant['tumour_support']
-				elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value:
+					closest_value = [variant['tumour_support'], distance]
+				elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value[0]:
 					closest_variant = compare_variant
-					closest_value = variant['normal_support']
+					closest_value = [variant['normal_support'], distance]
 			elif args.by_distance:
 				# tie-break by closest variant
-				if closest_value is None or distance < closest_value:
+				if closest_value[1] is None or distance < closest_value[1]:
 					closest_variant = compare_variant
-					closest_value = distance
+					closest_value = [variant['tumour_support'], distance]
 		if closest_variant:
 			compare_variants_used.setdefault(closest_variant['id'], []).append(variant['id'])
-			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'], closest_value)
+			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'], closest_value[1])
 
 	# edit input_vcf to include LABEL in header
 	input_vcf = cyvcf2.VCF(args.input)
