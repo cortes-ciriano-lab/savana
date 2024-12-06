@@ -34,8 +34,9 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
 		else:
 			stack[-1].add(bp)
 
-	# require two supporting reads per cluster
-	filtered_stack = [cluster for cluster in stack if len(cluster.supporting_reads) >= 2]
+	# require three supporting reads per cluster & remove normal-only clusters
+	#TODO: for gemline don't want this
+	filtered_stack = [cluster for cluster in stack if len(cluster.supporting_reads) >= 3 and not all([bp.label == 'normal' for bp in cluster.breakpoints])]
 
 	return chrom, filtered_stack
 
