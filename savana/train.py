@@ -96,6 +96,9 @@ def format_data(data_matrix, tumour_only):
 		data_matrix["NORMAL_MINOR_HP_COUNT"] = data_matrix[["NORMAL_ALT_HP_1_COUNT", "NORMAL_ALT_HP_2_COUNT"]].min(axis=1)
 		data_matrix['NORMAL_PHASING_RATIO'] = (data_matrix['NORMAL_MAJOR_HP_COUNT']+1)/(data_matrix['NORMAL_MAJOR_HP_COUNT']+data_matrix['NORMAL_MINOR_HP_COUNT']+1)
 		data_matrix['NORMAL_PHASING_CONFIDENCE'] = (data_matrix['NORMAL_MAJOR_HP_COUNT'] + 1)/(data_matrix['NORMAL_MAJOR_HP_COUNT'] + data_matrix['NORMAL_MINOR_HP_COUNT'] + 1) * data_matrix['NORMAL_PROP_ALT_READS_PHASED']
+	# feature indicating the proportion of alt reads vs reads clustered to the start location
+	data_matrix['TUMOUR_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['TUMOUR_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_TUMOUR'] + 1)
+	data_matrix['NORMAL_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['NORMAL_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_NORMAL'] + 1)
 
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
@@ -192,7 +195,7 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 	X_reserved_test = X_reserved_test_with_ids.copy(deep=True) # prevent ids from being dropped
 	X_reserved_test = X_reserved_test.iloc[: , 2:]
 
-	training_str = ['TRAINING STATUS\n\n']
+	training_str = ['TRAINING STATS:\n\n']
 	training_str.append(f'Distributions of Training Data:\n')
 	training_str.append(format_value_counts(y_train.value_counts(normalize=False))+'\n')
 	training_str.append(format_value_counts(y_train.value_counts(normalize=True))+'\n')
