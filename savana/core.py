@@ -376,7 +376,7 @@ class PotentialBreakpoint():
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
 		if (breakpoint_notation in ["<INS>", "-", "+"]) and self.start_loc != self.end_loc:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
-		self.spans_cluster = True if (self.start_chr == self.end_chr and abs(self.start_loc - self.end_loc) <= 150) else False
+		self.spans_cluster = True if (self.start_chr == self.end_chr and abs(self.start_loc - self.end_loc) <= 300 and breakpoint_notation not in ["<INS>", "-", "+"]) else False
 		self.breakpoint_notation = breakpoint_notation
 		self.insert_length = len(insert) if insert else 0
 		self.inserted_sequence = zlib.compress(insert.encode()) if insert else None
