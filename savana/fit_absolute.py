@@ -23,8 +23,8 @@ def process_allele_counts(allele_counts_bed_path):
         for line in file:
             fields = line.strip().split("\t")
             A,C,G,T,N = int(fields[5]),int(fields[6]),int(fields[7]),int(fields[8]),int(fields[9])
-            ps_id = f"{fields[0]}_{fields[-1]}" # assign phase sets IDs as same phase set might accur in different chromosomes
-            fields.append(ps_id)
+            #ps_id = f"{fields[0]}_{fields[-1]}" # assign phase sets IDs as same phase set might accur in different chromosomes
+            #fields.append(ps_id)
             DP = A+C+G+T+N
             if DP > 20: # only include het SNPs allele counts with a total depth of > 20.
                 fields.append(DP)
@@ -32,9 +32,9 @@ def process_allele_counts(allele_counts_bed_path):
                 allele_counts.append(fields)
     # columns:"chr", "start", "end","REF", "ALT", "A","C","G","T","N","AF_0","AF_1","GT","PS","ps_id","DP"
     # get unique phase sets to iterate (or multiprocess through)
-    phasesets = list(dict.fromkeys([x[-2] for x in allele_counts]))
+    #phasesets = list(dict.fromkeys([x[-2] for x in allele_counts]))
     file.close()
-    return allele_counts, phasesets
+    return allele_counts #, phasesets
 
 # # def estimate_cellularity_phased_hetSNPs(phasesets,allele_counts,dp_cutoff,min_ps_size=10,min_ps_length=500000):
 # def process_phased_hetSNPs(phasesets, allele_counts, dp_cutoff, min_ps_size=10, min_ps_length=500000):
@@ -69,29 +69,27 @@ def process_seg_SNPs(rel_copy_number_segments, allele_counts, dp_cutoff, min_seg
     '''
     Estimate sample cellularity/purity using allele counts of phased hetSNPs.
     '''
-    
-
     seg_dict = {}
     seg_summary = []
     for seg in rel_copy_number_segments:
-        seg_name, seg_start, seg_end = rel_copy_number_segments[1],rel_copy_number_segments[2],rel_copy_number_segments[3]
+        seg_name, seg_start, seg_end = seg[3],int(seg[1]),int(seg[2])
         # if "None" not in ps:
         # print(seg)
         # subset allele count data to current seg and remove SNPs with AF0/AF1 of 0 or 1
-        ac_seg = [x for x in allele_counts if x[1] >= seg_start and x[2] < seg_end and float(x[10]) != 0 and float(x[10]) != 1 and float(x[11]) != 0 and float(x[11]) != 1]
+        ac_seg = [x for x in allele_counts if int(x[1]) >= seg_start and int(x[2]) < seg_end and float(x[10]) != 0 and float(x[10]) != 1 and float(x[11]) != 0 and float(x[11]) != 1]
         seg_snps = len(ac_seg) # number of SNPs in ps
         if seg_snps < min_seg_size: # skip segs with less than min_seg_size SNPs and remove empty segs
             continue
         else:
             seg_length = max([int(x[2]) for x in ac_seg]) - min([int(x[1]) for x in ac_seg]) # genomic lenght of seg
             seg_depth = statistics.mean([int(x[-1]) for x in ac_seg]) # mean depth of ps
-            # all AFs at all het SNP position within ps
+            # all AFs at all het SNP position within seg
             af = [float(x[10]) for x in ac_seg] + [float(x[11]) for x in ac_seg]
             if seg_snps > min_seg_size and seg_length > min_seg_length and seg_depth < dp_cutoff and cnfitter.is_unimodal(af) == False:
                 seg_bc = cnfitter.bimodality_coefficient(af)
             # if ps_snps > min_ps_size and ps_length > min_ps_length and ps_depth < dp_cutoff and is_unimodal(af) == False:
             #     ps_bc = bimodality_coefficient(af)
-                seg_dict[seg] = ac_seg
+                seg_dict[seg_name] = ac_seg
                 seg_summary.append([seg_name, seg_depth, seg_length, seg_snps, seg_bc])
     return seg_dict, seg_summary
 
@@ -184,15 +182,19 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
     elif allele_counts_bed_path != None:
         print("     ... Allele counts for phased hetSNPs provided and being processed to estimate sample purity ...")
 
-        allele_counts, phasesets = process_allele_counts(allele_counts_bed_path)
+        # allele_counts, phasesets = process_allele_counts(allele_counts_bed_path)
+        allele_counts = process_allele_counts(allele_counts_bed_path)
         # Estimate depth cutoff to exclude potentially amplified/gained regions as those will impact BAF distribution
         ac_mean_depth = statistics.mean([x[-1] for x in allele_counts])
         dp_cutoff = 2 * ac_mean_depth
         # no_hetSNPs = len(allele_counts)
 
-        phasesets_dict, ps_summary = process_phased_hetSNPs(phasesets, allele_counts, dp_cutoff, min_ps_size=min_ps_size, min_ps_length=min_ps_length)
+        rel_copy_number_segments = process_log2r_input(log2r_cn_path)
 
-        cellularity = estimate_cellularity(phasesets_dict, ps_summary)
+        seg_dict, seg_summary = process_seg_SNPs(rel_copy_number_segments, allele_counts, dp_cutoff, min_seg_size=min_ps_size, min_seg_length=min_ps_length)
+        # phasesets_dict, ps_summary = process_phased_hetSNPs(phasesets, allele_counts, dp_cutoff, min_ps_size=min_ps_size, min_ps_length=min_ps_length)
+
+        cellularity = estimate_cellularity(seg_dict, seg_summary)
         digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
         print(f"        estimated cellularity using hetSNPs = {round(cellularity,digs)}.")
         if overrule_cellularity != None:
@@ -206,7 +208,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
     ### Method/principles based on rascal R package: https://www.biorxiv.org/content/10.1101/2021.07.19.452658v1
     #----
 
-    rel_copy_number_segments = process_log2r_input(log2r_cn_path)
+    # rel_copy_number_segments = process_log2r_input(log2r_cn_path)
 
     # Prepare input for copy number fitting
     relative_CN = [x[-1] for x in rel_copy_number_segments]
