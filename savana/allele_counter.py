@@ -16,7 +16,7 @@ import glob
 import math
 
 
-def extract_hets(snp_vcf, g1000_vcf, window):
+def extract_hets(snp_vcf, g1000_vcf, FASTA, window):
     '''
     Extracts heterozygous SNPs from phased.vcf (i.e. from matched normal bam).
     '''
@@ -51,6 +51,44 @@ def extract_hets(snp_vcf, g1000_vcf, window):
                         else: 
                             hets_dict[CHROM][pos_cat][key] = var_out
         print(f"    ... Heterozygous SNPs from {snp_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
+    elif snp_vcf == None and g1000_vcf != None:
+        #check for chromosome annotation in FASTA
+        inFasta = pysam.FastaFile(FASTA)
+        ref_contigs = inFasta.references
+        inFasta.close()
+        chr_annot = True if 'chr1' in ref_contigs else False
+        vcf_dir = os.path.join(os.path.dirname(__file__),'1K_genome_vcf')
+        if g1000_vcf == "1000g_hg38":
+            vcf_path = os.path.join(vcf_dir, 'hg38_g1000_biallelic_AF0.35-0.65.vcf.gz')
+        if g1000_vcf == "1000g_hg19":
+            vcf_path = os.path.join(vcf_dir, 'hg19_g1000_biallelic_AF0.35-0.65.vcf.gz')
+        # if g1000_vcf == "1000g_t2t":
+        #     vcf_path = os.path.join(vcf_dir, 't2t_g1000_biallelic_AF0.35-0.65.vcf.gz')
+        vcf_reader = cyvcf2.VCF(vcf_path)
+        hets_dict = {}
+        # iterate through variants
+        for variant in vcf_reader:
+            # check if variant is a SNP
+            if variant.is_snp:
+                CHROM=variant.CHROM
+                if chr_annot == True:
+                    CHROM=f'chr{CHROM}'
+                key=f"{str(variant.POS)}_{str(variant.REF)}"
+                # var_out = [variant.ALT[0],gt_str,str(ps)]
+                # nested dictionary - by chromosome and by position (in 100k increments)
+                pos_cat = math.floor(int(variant.POS)/window) * window
+                var_out = [variant.ALT[0],f'{CHROM}_{pos_cat}']
+                if (CHROM not in hets_dict):
+                    hets_dict[CHROM] = {}
+                    if (pos_cat not in hets_dict[CHROM]):
+                        hets_dict[CHROM][pos_cat] = {}                          
+                        hets_dict[CHROM][pos_cat][key] = var_out
+                elif (pos_cat not in hets_dict[CHROM]):
+                    hets_dict[CHROM][pos_cat] = {} 
+                    hets_dict[CHROM][pos_cat][key] = var_out
+                else: 
+                    hets_dict[CHROM][pos_cat][key] = var_out
+        print(f"    ... Heterozygous SNPs from {g1000_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
     return hets_dict
 
 def process_allele_counts(allele_counts_path, hets_dict, window):
@@ -248,7 +286,7 @@ def perform_allele_counting(outdir, sample, contigs, fasta_file_path, snp_vcf, g
     # 4. Generate dictionary of heterozygous SNPs from normal VCF
     #----
     # print(f"    ... Extracting heterozygous SNPs from {phased_vcf} ... ")
-    het_snps = extract_hets(snp_vcf, g1000_vcf, ac_window)
+    het_snps = extract_hets(snp_vcf, g1000_vcf, fasta_file_path, ac_window)
     # print(f"    ... Heterozygous SNPs from {phased_vcf} extracted. Extracting allele counts for heterozygous SNPs ...")
     #----
     # 5. Extract allele counts for hetSNPs

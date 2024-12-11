@@ -128,10 +128,10 @@ def generate_bins(outdir, sample, ref, chromosomes, bin_size, blacklist, breakpo
     bin_size = bin_size * int(1000) # in kb
     # check if vcf file was provided
     if breakpoints is not None:
-        binmode = "withVCF"
+        binmode = "_with_SV_breakpoints"
         print(f"... using vcf file: '{breakpoints}' in addition to binning...")
     else:
-        binmode = "standard"
+        binmode = ""
     # a. Extract chormosome info and pass fasta file into chr_in list
     fasta = pysam.FastaFile(ref)
     contigs = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','X','Y']
