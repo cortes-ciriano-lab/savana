@@ -506,7 +506,7 @@ def parse_args(args):
     to_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')
     allele_group_to = to_parser.add_mutually_exclusive_group()
     allele_group_to.add_argument('-v', '--snp_vcf', type=str, help='Path to phased vcf file to extract heterozygous SNPs for allele counting.', required=False)
-    allele_group.add_argument('-vg', '--g1000_vcf', type=str, choices={"1000g_hg38", "1000g_hg19", "1000g_t2t"}, help='Use 1000g biallelic vcf file for allele counting instead of SNP vcf from matched normal. Specify which genome version to use.', required=False)
+    allele_group_to.add_argument('-vg', '--g1000_vcf', type=str, choices={"1000g_hg38", "1000g_hg19", "1000g_t2t"}, help='Use 1000g biallelic vcf file for allele counting instead of SNP vcf from matched normal. Specify which genome version to use.', required=False)
     allele_group_to.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
     to_parser.add_argument('-q', '--allele_mapq', type=int,  default=5, help='Mapping quality threshold for reads to be included in the allele counting (default = 5)', required=False)
     to_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
