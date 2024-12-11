@@ -140,7 +140,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
         # no_hetSNPs = len(allele_counts)
 
         # seg_dict, seg_summary = process_seg_SNPs(rel_copy_number_segments, allele_counts, dp_cutoff, min_seg_size=min_ps_size, min_seg_length=min_ps_length)
-        blocksets_dict, block_summary = process_hetSNPs(blocksets, allele_counts, dp_cutoff, min_ps_size=min_ps_size, min_ps_length=min_ps_length)
+        blocksets_dict, block_summary = process_hetSNPs(blocksets, allele_counts, dp_cutoff, min_block_size=min_block_size, min_block_length=min_block_length)
 
         cellularity = estimate_cellularity(blocksets_dict, block_summary)
         digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
