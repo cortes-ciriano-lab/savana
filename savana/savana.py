@@ -293,7 +293,7 @@ def savana_tumour_only(args):
     # Add back in later once models for tumour only have been trained
     # args.breakpoints = args.somatic_output
 
-    if args.phased_vcf or args.allele_counts_het_snps:
+    if args.snp_vcf or args.g1000_vcf or args.allele_counts_het_snps:
         args.normal = None
         savana_cna(args, True)
 
@@ -510,7 +510,7 @@ def parse_args(args):
     allele_group_to.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
     to_parser.add_argument('-q', '--allele_mapq', type=int,  default=5, help='Mapping quality threshold for reads to be included in the allele counting (default = 5)', required=False)
     to_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
-    to_parser.add_argument('-acw','--ac_window', type=int, default=1000000, help='Window size for allele counting to parallelise (default = 1000000)', required=False)
+    to_parser.add_argument('-acw','--ac_window', type=int, default=1200000, help='Window size for allele counting to parallelise (default = 1200000)', required=False)
     to_parser.add_argument('-w', '--cn_binsize', type=int, default=10, help='Bin window size in kbp', required=False)
     to_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
     to_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
@@ -612,7 +612,7 @@ def parse_args(args):
         allele_group.add_argument('-ac', '--allele_counts_het_snps', type=str, help='Path to allele counts of heterozygous SNPs', required=False)
         global_parser.add_argument('-q', '--allele_mapq', type=int,  default=5, help='Mapping quality threshold for reads to be included in the allele counting (default = 5)', required=False)
         global_parser.add_argument('-mr', '--allele_min_reads', type=int,  default=10, help='Minimum number of reads required per het SNP site for allele counting (default = 10)', required=False)
-        global_parser.add_argument('-acw','--ac_window', type=int, default=1000000, help='Window size for allele counting to parallelise (default = 1000000)', required=False)
+        global_parser.add_argument('-acw','--ac_window', type=int, default=1200000, help='Window size for allele counting to parallelise (default = 1200000)', required=False)
         global_parser.add_argument('-w', '--cn_binsize', type=int, default=10, help='Bin window size in kbp', required=False)
         global_parser.add_argument('-b', '--blacklist', type=str, help='Path to the blacklist file', required=False)
         global_parser.add_argument('-bp', '--breakpoints', type=str, help='Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis', required=False)
