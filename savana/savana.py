@@ -240,7 +240,7 @@ def savana_cna(args, as_workflow=False):
         args.min_ploidy, args.max_ploidy, args.ploidy_step, args.min_cellularity, args.max_cellularity, args.cellularity_step, args.cellularity_buffer, args.overrule_cellularity,
         args.distance_function, args.distance_filter_scale_factor, args.distance_precision,
         args.max_proportion_zero, args.min_proportion_close_to_whole_number, args.max_distance_from_whole_number, args.main_cn_step_change,
-        args.min_ps_size, args.min_ps_length, args.cna_threads)
+        args.min_block_size, args.min_block_length, args.cna_threads)
     helper.time_function("Fit absolute copy number", checkpoints, time_str)
     # cleanup tmpdir
     helper.clean_tmpdir(args.tmpdir, outdir)
@@ -473,8 +473,8 @@ def parse_args(args):
     cna_parser.add_argument('--min_proportion_close_to_whole_number', type=float, default=0.5, help='Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.', required=False)
     cna_parser.add_argument('--max_distance_from_whole_number', type=float, default=0.25, help='Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.', required=False)
     cna_parser.add_argument('--main_cn_step_change', type=int, default=1, help='Max main copy number step change across genome to be considered for a given solution.', required=False)
-    cna_parser.add_argument('--min_ps_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
-    cna_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
+    cna_parser.add_argument('--min_block_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
+    cna_parser.add_argument('--min_block_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
     cna_parser.set_defaults(func=savana_cna)
 
     # tumour only parser
@@ -544,8 +544,8 @@ def parse_args(args):
     to_parser.add_argument('--min_proportion_close_to_whole_number', type=float, default=0.5, help='Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.', required=False)
     to_parser.add_argument('--max_distance_from_whole_number', type=float, default=0.25, help='Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.', required=False)
     to_parser.add_argument('--main_cn_step_change', type=int, default=1, help='Max main copy number step change across genome to be considered for a given solution.', required=False)
-    to_parser.add_argument('--min_ps_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
-    to_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
+    to_parser.add_argument('--min_block_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
+    to_parser.add_argument('--min_block_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
     to_parser.set_defaults(func=savana_tumour_only)
 
     try:
@@ -646,8 +646,8 @@ def parse_args(args):
         global_parser.add_argument('--min_proportion_close_to_whole_number', type=float, default=0.5, help='Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit.', required=False)
         global_parser.add_argument('--max_distance_from_whole_number', type=float, default=0.25, help='Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer.', required=False)
         global_parser.add_argument('--main_cn_step_change', type=int, default=1, help='Max main copy number step change across genome to be considered for a given solution.', required=False)
-        global_parser.add_argument('--min_ps_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
-        global_parser.add_argument('--min_ps_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
+        global_parser.add_argument('--min_block_size', type=int, default=10, help='Minimum size (number of SNPs) for phaseset to be considered for purity estimation.', required=False)
+        global_parser.add_argument('--min_block_length', type=int, default=500000, help='Minimum length (bps) for phaseset to be considered for purity estimation.', required=False)
         global_parser.set_defaults(func=savana_main)
         parsed_args = global_parser.parse_args() if not args else global_parser.parse_args(args)
     else:
