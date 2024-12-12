@@ -104,43 +104,6 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 				used_compare_set_ids.append(within_buffer_compare_variant['id'])
 				break
 
-	"""
-	# mark input set
-	for variant in input_set:
-		variant['validated'] = None
-		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
-		i = 0
-		while not variant['validated'] and i < len(within_buffer_sorted):
-			compare_variant, distance = within_buffer_sorted[i]
-			if compare_variant['id'] not in used_compare_set_ids:
-				variant['validated'] = (compare_variant['id'], distance)
-				# now go validate this variant
-
-				used_compare_set_ids.append(compare_variant['id'])
-			i+=1
-
-	# mark compare sets
-	for variant in compare_set:
-		variant['validated'] = None
-		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
-		if variant['external_id'] == 'gridss45fb_2672h':
-			print(within_buffer_sorted)
-		i = 0
-		while not variant['validated'] and i < len(within_buffer_sorted):
-			input_variant, distance = within_buffer_sorted[i]
-			if variant['external_id'] == 'gridss45fb_2672h':
-				print(input_variant)
-				print(distance)
-				print(input_variant['id'] not in used_input_set_ids)
-			if input_variant['id'] not in used_input_set_ids:
-				variant['validated'] = (input_variant, distance)
-				used_input_set_ids.append(input_variant['id'])
-				if input_variant['id'] == "ID_118102_2":
-					print("validated:")
-					print(variant)
-			i+=1
-	"""
-
 	# SOMATIC CALCULATIONS
 	# validated somatic variants (true positives)
 	tp = [v for v in input_set if v['validated'] and v['validated']['label'] == "SOMATIC"]
@@ -185,7 +148,7 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	return
 
 def evaluate_vcf(args, checkpoints, time_str):
-	""" given the input, somatic, and germline VCFs, label the input VCF"""
+	""" given the input, somatic, and germline VCFs, label the input VCF """
 	# create the comparison set from somatic & germline VCFs
 	compare_set = create_variant_dicts(args.somatic, 'SOMATIC', args.qual_filter)
 	vcfs_string=f'{args.somatic}'
@@ -205,9 +168,11 @@ def evaluate_vcf(args, checkpoints, time_str):
 			'start_loc': variant.start,
 			'length': variant.INFO.get('SVLEN'),
 			'type': variant.INFO.get('SVTYPE'),
-			'tumour_support': int(variant.INFO.get('TUMOUR_READ_SUPPORT')),
-			'normal_support': int(variant.INFO.get('NORMAL_READ_SUPPORT')),
 			'within_buffer': []})
+		if variant.INFO.get('TUMOUR_READ_SUPPORT'):
+			input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
+		if variant.INFO.get('NORMAL_READ_SUPPORT'):
+			input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 		for compare_variant in compare_set:
 			if compare_variant['start_chr'] == variant_chrom:
 				distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
@@ -223,8 +188,6 @@ def evaluate_vcf(args, checkpoints, time_str):
 				'start_loc': variant.INFO.get('END'),
 				'length': variant.INFO.get('SVLEN'),
 				'type': variant.INFO.get('SVTYPE'),
-				'tumour_support': int(variant.INFO.get('TUMOUR_READ_SUPPORT')),
-				'normal_support': int(variant.INFO.get('NORMAL_READ_SUPPORT')),
 				'within_buffer': []})
 			if args.by_support:
 				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
@@ -284,7 +247,10 @@ def evaluate_vcf(args, checkpoints, time_str):
 				# tie-break by closest variant
 				if closest_value[1] is None or distance < closest_value[1]:
 					closest_variant = compare_variant
-					closest_value = [variant['tumour_support'], distance]
+					if 'tumour_support' in variant:
+						closest_value = [variant['tumour_support'], distance]
+					else:
+						closest_value = [None, distance]
 		if closest_variant:
 			compare_variants_used.setdefault(closest_variant['id'], []).append(variant['id'])
 			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'], closest_value[1])
