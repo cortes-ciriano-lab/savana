@@ -46,8 +46,9 @@ def process_hetSNPs(blocksets, allele_counts, dp_cutoff, min_block_size=10, min_
     for block in blocksets:
         if "None" not in block:
             # print(block)
-            # subset allele count data to blocks and remove SNPs with AF0/AF1 of 0 or 1
-            ac_block = [x for x in allele_counts if x[-2] == block and float(x[10]) != 0 and float(x[10]) != 1 and float(x[11]) != 0 and float(x[11]) != 1]
+            # subset allele count data to blocks and remove SNPs with rounded AF0/AF1 of 0 or 1
+            # ac_block = [x for x in allele_counts if x[-2] == block and float(x[10]) != 0 and float(x[10]) != 1 and float(x[11]) != 0 and float(x[11]) != 1]
+            ac_block = [x for x in allele_counts if x[-2] == block and float(x[10]) >= 0.05 and float(x[10]) <= 0.95 and float(x[11]) >= 0.05 and float(x[11]) <= 0.95]
             block_snps = len(ac_block) # number of SNPs in block
             if block_snps < min_block_size: # skip blocks with less than min_block_size SNPs and remove empty block
                 continue
