@@ -90,6 +90,7 @@ subcommands:
     evaluate            label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against
     train               train model on folder of input VCFs
     cna                 run copy number
+    to                  identify somatic SVs without normal sample
 ```
 
 ## Run SAVANA
@@ -99,12 +100,14 @@ After installing, SAVANA can be run on long-read data with a minumum set of argu
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a phased VCF for the germline sample (see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a SNP VCF for the germline sample. Then, to call both SVs and CNAs you can run savana with:
 ```
-savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --snp_vcf <vcf-file> --blacklist <blacklist-bed-file>
 ```
+Alternatively, you can use the 1000 genome vcf files (provided within SAVANA) using `--g1000_vcf 1000g_hg38` for hg38 or `--g1000_vcf 1000g_hg19` for hg19 aligned bam files. However, we strongly recommend using a SNP VCF from the matched germline sample for best performance.
+
 Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. 
-Additionally, if you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> file instead of the phased VCF using the `--allele_counts_het_snps` flag. 
+Additionally, if you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> file instead of the VCF using the `--allele_counts_het_snps` flag. 
 Example command to run savana for both of the above:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --allele_counts_het_snps <allele_counts_hetSNPs.bed> --no_blacklist
@@ -135,7 +138,8 @@ Argument|Description
 Argument|Description
 --------|-----------
 *Basic Arguments*
---phased_vcf| Path to phased vcf file to extract heterozygous SNPs for allele counting
+--snp_vcf| Path to SNP vcf file to extract heterozygous SNPs for allele counting
+--g1000_vcf | Use 1000g biallelic vcf file for allele counting instead of SNP vcf from matched normal. Specify which genome version to use. choices={"1000g_hg38", "1000g_hg19", "1000g_t2t"}
 --ont | Run on Nanopore data (default)
 --pb | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio))
 --sample| Name to prepend to output files (default=tumour BAM filename without extension)
@@ -164,7 +168,7 @@ Argument|Description
 --allele_counts_het_snps| If allele counting has already been performed provide the path for the allele counts of heterozygous SNPs to skip this step
 --allele_mapq|    Mapping quality threshold for reads to be included in the allele counting (default = 5)
 --allele_min_reads|    Minimum number of reads required per het SNP site for allele counting (default = 10)
---ac_window| Window size for allele counting to parallelise (default = 1000000)
+--ac_window| Window size for allele counting to parallelise (default = 1200000; this should be >=500000)
 --cn_binsize|  Bin window size in kbp (default=10)
 --blacklist| Path to the blacklist file
 --breakpoints| Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis
@@ -196,8 +200,8 @@ Argument|Description
 --min_proportion_close_to_whole_number| Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit (default = 0.5)
 --max_distance_from_whole_number| Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer (default = 0.25)
 --main_cn_step_change| Max main copy number step change across genome to be considered for a given solution
---min_ps_size|   Minimum size (number of SNPs) for phaseset to be considered for purity estimation (default = 10)
---min_ps_length|   Minimum length (bps) for phaseset to be considered for purity estimation (default = 500000)
+--min_block_size|   Minimum size (number of SNPs) for a genomic block to be considered for purity estimation (default = 10)
+--min_block_length|   Minimum length (bps) for a genomic block to be considered for purity estimation (default = 500000)
 *Additional Arguments*
 --legacy | Use legacy filters (strict/lenient) to classify variants
 --custom_model | Path to custom model pkl file

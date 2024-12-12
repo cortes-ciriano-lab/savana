@@ -164,6 +164,7 @@ def bimodality_coefficient(x, na_rm=False):
 
 #----
 # 3. Functions for ploidy estimation
+### Method/principles in part based on rascal R package: https://www.biorxiv.org/content/10.1101/2021.07.19.452658v1
 #----
 def relative_to_absolute_CN(relative_CN, purity, ploidy):
     '''
