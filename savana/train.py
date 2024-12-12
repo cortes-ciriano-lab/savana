@@ -98,7 +98,9 @@ def format_data(data_matrix, tumour_only):
 		data_matrix['NORMAL_PHASING_CONFIDENCE'] = (data_matrix['NORMAL_MAJOR_HP_COUNT'] + 1)/(data_matrix['NORMAL_MAJOR_HP_COUNT'] + data_matrix['NORMAL_MINOR_HP_COUNT'] + 1) * data_matrix['NORMAL_PROP_ALT_READS_PHASED']
 	# feature indicating the proportion of alt reads vs reads clustered to the start location
 	data_matrix['TUMOUR_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['TUMOUR_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_TUMOUR'] + 1)
-	data_matrix['NORMAL_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['NORMAL_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_NORMAL'] + 1)
+	if not tumour_only:
+		print(tumour_only)
+		data_matrix['NORMAL_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['NORMAL_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_NORMAL'] + 1)
 
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
