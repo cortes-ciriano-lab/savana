@@ -207,9 +207,10 @@ def evaluate_vcf(args, checkpoints, time_str):
 				'start_loc': variant.INFO.get('END2'),
 				'length': variant.INFO.get('SVLEN'),
 				'type': variant.INFO.get('SVTYPE'),
-				'tumour_support': int(variant.INFO.get('TUMOUR_READ_SUPPORT')),
-				'normal_support': int(variant.INFO.get('NORMAL_READ_SUPPORT')),
 				'within_buffer': []})
+			if args.by_support:
+				input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
+				input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 			for compare_variant in compare_set:
 				if compare_variant['start_chr'] == variant_chrom:
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
@@ -237,12 +238,18 @@ def evaluate_vcf(args, checkpoints, time_str):
 			if args.by_support:
 				# tie-break using support - default to zero to prevent no-support match
 				closest_value[0] = 0 if not closest_value[0] else closest_value[0]
-				if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value[0] and variant['normal_support'] == 0:
-					closest_variant = compare_variant
-					closest_value = [variant['tumour_support'], distance]
-				elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value[0]:
-					closest_variant = compare_variant
-					closest_value = [variant['normal_support'], distance]
+				if 'normal_support' in variant:
+					if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value[0] and variant['normal_support'] == 0:
+						closest_variant = compare_variant
+						closest_value = [variant['tumour_support'], distance]
+					elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value[0]:
+						closest_variant = compare_variant
+						closest_value = [variant['normal_support'], distance]
+				else:
+					# no normal support
+					if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value[0]:
+						closest_variant = compare_variant
+						closest_value = [variant['tumour_support'], distance]
 			elif args.by_distance:
 				# tie-break by closest variant
 				if closest_value[1] is None or distance < closest_value[1]:
