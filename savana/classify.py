@@ -104,7 +104,7 @@ def parse_cna(cna_file):
 		curr_minor_copy_num = None
 		curr_seg_start = 0
 		for row in reader:
-			chrom, start, end, seg, _, _, _, copy_num, minor_copy_num = row
+			chrom, start, end, seg, _, _, _, copy_num, minor_copy_num, _, _ = row
 			copy_num = round(float(copy_num))
 			if not curr_copy_num or curr_chrom != chrom:
 				# first segment of chromosome
@@ -131,7 +131,16 @@ def rescue_cna(args, checkpoints, time_str):
 	classified_vcf = cyvcf2.VCF(args.output)
 	rescue_dict = {} # store the id and distance of the rescued variants for each segment
 	for variant in classified_vcf:
-		if variant.INFO['TUMOUR_READ_SUPPORT'] >= args.min_support and variant.INFO['NORMAL_READ_SUPPORT'] == 0 and variant.CHROM in cna_dict:
+		# not tumour only
+		if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+			continue
+		elif variant.INFO['NORMAL_READ_SUPPORT'] != 0:
+			continue
+		elif int(variant.INFO['CLUSTERED_READS_NORMAL']) >= 3:
+			continue
+		elif variant.CHROM not in cna_dict:
+			continue
+		else:
 			for seg_start, seg_end, seg_name in cna_dict[variant.CHROM]:
 				# segment start
 				distance_start = abs(variant.start - int(seg_start))
