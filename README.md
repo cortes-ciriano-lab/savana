@@ -14,6 +14,7 @@ For further information, benchmarking and for citation, please refer to our [SAV
 * [Run SAVANA](#run-savana)
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
+  + [Tumour-only Mode](#tumour-only-mode)
 * [Output Files](#output-files)
   + [Output Files SV Algorithm](#output-files-sv-algorithm)
   + [Output Files CNA Algorithm](#output-files-cna-algorithm)
@@ -211,6 +212,9 @@ Argument|Description
 --by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default)
 --stats | Output filename for statistics on comparison to somatic/germline VCF
 
+### Tumour-only Mode
+> Note: We strongly recommend running SAVANA conventionally using tumour and matched normal bam files for best performance. However, we have developed a SAVANA tumour-only `savana to` mode which can be run in the absence of a matched normal sample if required. This will be released soon with release version v1.2.7. To test it out in the meantime, please change to the branch [major-release-to](https://github.com/cortes-ciriano-lab/savana/tree/helrick/major-release-to).
+
 ## Output Files
 ### Output Files SV Algorithm
 
@@ -280,7 +284,7 @@ To enable the examination of inserted sequence, `{sample}.inserted_sequences.fa`
 ### Output Files CNA Algorithm
 
 #### Raw read counts TSV
-`{sample}_{cn_binsize}_raw_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered and matched-normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`).
+`{sample}_{cn_binsize}_raw_read_counts.tsv` contains all raw and unfiltered read counts for each bin across the reference genome for the tumour and matched normal sample. In addition, SAVANA also outputs other intermediate files during copy number processing, including the filtered and matched normal normalised log2 transformed read counts (`{sample}_{cn_binsize}_read_counts_mnorm_log2r.tsv`).
 
 #### Segmented log2r relative copy number TSV
 `{sample}_{cn_binsize}_read_counts_mnorm_log2r_segmented.tsv` contains the final relative copy number (log2r) data post CBS segmentation. This includes the log2r relative copy number for each bin across the reference genome, as well as the segment IDs and according segmented log2r relative copy number values.
