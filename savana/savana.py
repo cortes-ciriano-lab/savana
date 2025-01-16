@@ -255,7 +255,7 @@ def savana_main(args):
         args.stats = os.path.join(args.outdir,f'{args.sample}.germline.evaluation.stats')
         savana_evaluate(args)
 
-    args.bp = args.somatic_output
+    args.breakpoints = args.somatic_output
 
     if args.phased_vcf or args.allele_counts_het_snps:
         savana_cna(args, True)
