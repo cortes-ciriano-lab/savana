@@ -131,24 +131,40 @@ def rescue_cna(args, checkpoints, time_str):
 	classified_vcf = cyvcf2.VCF(args.output)
 	rescue_dict = {} # store the id and distance of the rescued variants for each segment
 	for variant in classified_vcf:
-		# not tumour only
-		if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
-			continue
-		elif variant.INFO['NORMAL_READ_SUPPORT'] != 0:
-			continue
-		elif int(variant.INFO['CLUSTERED_READS_NORMAL']) >= 3:
-			continue
-		elif variant.CHROM not in cna_dict:
-			continue
+		if not args.tumour_only:
+			# not tumour only can use NORMAL fields
+			if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+				continue
+			elif variant.INFO['NORMAL_READ_SUPPORT'] != 0:
+				continue
+			elif int(variant.INFO['CLUSTERED_READS_NORMAL']) >= 3:
+				continue
+			elif variant.CHROM not in cna_dict:
+				continue
+			else:
+				for seg_start, seg_end, seg_name in cna_dict[variant.CHROM]:
+					# segment start
+					distance_start = abs(variant.start - int(seg_start))
+					distance_end = abs(variant.start - int(seg_end))
+					if distance_start <= args.cna_rescue_distance:
+						rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_start))
+					elif distance_end <= args.cna_rescue_distance:
+						rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_end))
 		else:
-			for seg_start, seg_end, seg_name in cna_dict[variant.CHROM]:
-				# segment start
-				distance_start = abs(variant.start - int(seg_start))
-				distance_end = abs(variant.start - int(seg_end))
-				if distance_start <= args.cna_rescue_distance:
-					rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_start))
-				elif distance_end <= args.cna_rescue_distance:
-					rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_end))
+			# tumour only - can't use NORMAL fields
+			if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+				continue
+			elif variant.CHROM not in cna_dict:
+				continue
+			else:
+				for seg_start, seg_end, seg_name in cna_dict[variant.CHROM]:
+					# segment start
+					distance_start = abs(variant.start - int(seg_start))
+					distance_end = abs(variant.start - int(seg_end))
+					if distance_start <= args.cna_rescue_distance:
+						rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_start))
+					elif distance_end <= args.cna_rescue_distance:
+						rescue_dict.setdefault(seg_name, []).append((variant.ID, distance_end))
 
 	# sort by the distance
 	rescue_dict = {k: sorted(v, key=lambda x: x[1]) for k, v in rescue_dict.items()}
@@ -523,28 +539,45 @@ def classify_by_model(args, checkpoints, time_str):
 		variant_mate_class = variant_classes.get(variant.INFO.get('MATEID', None), variant_class)
 		if variant_class == 1 or variant_mate_class == 1:
 			# check against hard filters that override prediction
-			if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
-				variant_classes[variant_id] = 4
-				if variant_mate_id: # reject mate as well
-					variant_classes[variant_mate_id] = 4
-			elif not args.tumour_only and (variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']):
-				variant_classes[variant_id] = 4
-				if variant_mate_id: # reject mate as well
-					variant_classes[variant_mate_id] = 4
-			elif variant.INFO['TUMOUR_AF'][0] < args.min_af and variant.INFO['TUMOUR_AF'][1] < args.min_af:
-				# determine if tumour-amplified
-				avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
-				avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
-				if avg_tumour_dp <= avg_normal_dp*5:
-					# no tumour amplification, low af holds
-					variant_classes[variant_id] = 5
+			if not args.tumour_only:
+				# filters can use NORMAL fields in hard filters
+				if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+					variant_classes[variant_id] = 4
 					if variant_mate_id: # reject mate as well
-						variant_classes[variant_mate_id] = 5
+						variant_classes[variant_mate_id] = 4
+				elif not args.tumour_only and (variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']):
+					variant_classes[variant_id] = 4
+					if variant_mate_id: # reject mate as well
+						variant_classes[variant_mate_id] = 4
+				elif variant.INFO['TUMOUR_AF'][0] < args.min_af and variant.INFO['TUMOUR_AF'][1] < args.min_af:
+					# determine if tumour-amplified
+					avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
+					avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
+					if avg_tumour_dp <= avg_normal_dp*5:
+						# no tumour amplification, low af holds
+						variant_classes[variant_id] = 5
+						if variant_mate_id: # reject mate as well
+							variant_classes[variant_mate_id] = 5
+				else:
+					# both pass
+					variant_classes[variant_id] = 1
+					if variant_mate_id: # accept mate as well
+						variant_classes[variant_mate_id] = 1
 			else:
-				# both pass
-				variant_classes[variant_id] = 1
-				if variant_mate_id: # accept mate as well
-					variant_classes[variant_mate_id] = 1
+				# filters cannot use NORMAL fields in hard filters
+				if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+					variant_classes[variant_id] = 4
+					if variant_mate_id: # reject mate as well
+						variant_classes[variant_mate_id] = 4
+				elif variant.INFO['TUMOUR_AF'][0] < args.min_af:
+					variant_classes[variant_id] = 4
+					if variant_mate_id: # reject mate as well
+						variant_classes[variant_mate_id] = 4
+				else:
+					# both pass
+					variant_classes[variant_id] = 1
+					if variant_mate_id: # accept mate as well
+						variant_classes[variant_mate_id] = 1
 		elif variant_class == 2 and variant_mate_class == 2:
 			# check against hard filters that override prediction
 			if not args.tumour_only and (variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support):
