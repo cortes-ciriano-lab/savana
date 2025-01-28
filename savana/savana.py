@@ -125,7 +125,12 @@ def savana_classify(args):
         classify.classify_pacbio(args, checkpoints, time_str)
     elif args.ont:
         # using a model - perform logic to determine which one
-        model_base = 'ont-somatic' if not args.predict_germline else 'ont-germline'
+        if args.tumour_only:
+            model_base = 'ont-somatic-to'
+        elif args.predict_germline:
+            model_base = 'ont-germline'
+        else:
+            model_base = 'ont-somatic'
         # check whether the model has been un-tarred
         models_dir = os.path.join(os.path.dirname(__file__), 'models')
         model_path = os.path.join(models_dir, model_base)
@@ -247,9 +252,11 @@ def savana_cna(args, as_workflow=False):
     helper.time_function("Total time to perform copy number calling", checkpoints, time_str, final=True)
 
 def savana_tumour_only(args):
-    """ identify raw breakpoints - without matched normal """
+    """ identify breakpoints and classify them with model - without matched normal """
     args.tumour_only = True
-    
+    # germline not possible - manually declare to prevent nonsensical argument to TO parser
+    args.predict_germline, args.germline_output, args.germline = False, False, False
+
     if not args.sample:
         # set sample name to default if req.
         args.sample = os.path.splitext(os.path.basename(args.tumour))[0]
@@ -289,13 +296,30 @@ def savana_tumour_only(args):
     checkpoints, time_str = run.spawn_processes(args, aln_files, checkpoints, time_str, outdir)
     # finish timing
     helper.time_function("Total time to call raw variants", checkpoints, time_str, final=True)
-    
-    # Add back in later once models for tumour only have been trained
-    # args.breakpoints = args.somatic_output
+
+    # set inputs and outputs
+    args.vcf = os.path.join(args.outdir,f'{args.sample}.sv_breakpoints.vcf') # previous step's output
+    args.output = os.path.join(args.outdir,f'{args.sample}.classified.vcf')
+    if not args.somatic_output:
+        args.somatic_output = os.path.join(args.outdir,f'{args.sample}.classified.somatic.vcf')
+
+    savana_classify(args)
+
+    # perform evaluation against provided VCFs, if any
+    if args.somatic:
+        # evaluate against somatic "truthset" VCF
+        args.input = args.somatic_output if args.somatic_output else os.path.join(args.outdir, f'{args.sample}.sv_breakpoints.vcf')
+        args.output = os.path.join(args.outdir, f'{args.sample}.somatic.labelled.vcf')
+        args.stats = os.path.join(args.outdir,f'{args.sample}.somatic.evaluation.stats')
+        savana_evaluate(args)
+
+    args.breakpoints = args.somatic_output
 
     if args.snp_vcf or args.g1000_vcf or args.allele_counts_het_snps:
         args.normal = None
         savana_cna(args, True)
+
+    return
 
 
 def savana_main(args):
@@ -501,6 +525,25 @@ def parse_args(args):
     to_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
     to_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
     to_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
+    # classify args
+    to_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
+    to_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
+    classify_group = to_parser.add_mutually_exclusive_group()
+    classify_group.add_argument('--ont', action='store_true', help='Use the Oxford Nanopore (ONT) trained model to classify variants (default)')
+    classify_group.add_argument('--pb', action='store_true', help='Use PacBio thresholds to classify variants')
+    classify_group.add_argument('--custom_model', nargs='?', type=str, required=False, help='Pickle file of custom machine-learning model')
+    classify_group.add_argument('--custom_params', nargs='?', type=str, required=False, help='JSON file of custom filtering parameters')
+    classify_group.add_argument('--legacy', action='store_true', help='Use legacy lenient/strict filtering')
+    to_parser.add_argument('--somatic_output', nargs='?', type=str, required=False, help='Output VCF with only PASS somatic variants')
+    to_parser.add_argument('--confidence', nargs='?', type=helper.float_range(0.0, 1.0), default=None, help='Confidence level for mondrian conformal prediction - suggested range (0.70-0.99) (not used by default)')
+    # evaluate args
+    to_parser.add_argument('--somatic', nargs='?', type=str, required=False, help='Somatic VCF file to evaluate against')
+    to_parser.add_argument('--overlap_buffer', nargs='?', type=int, default=100, required=False, help='Buffer for considering an overlap (default=100)')
+    to_parser.add_argument('--curate', action='store_true', default=False, help='Attempt to reduce false labels for training (allow label to be used twice)')
+    to_parser.add_argument('--qual_filter', nargs='?', type=int, default=None, help='Impose a quality filter on comparator variants (default=None)')
+    evaluate_group = to_parser.add_mutually_exclusive_group()
+    evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
+    evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
     # cna arguments for tumour only mode
     to_parser.add_argument('--cna_threads', nargs='?', type=int, const=0, help='Number of threads to use for CNA (default=max)')
     to_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')
