@@ -393,8 +393,6 @@ def check_outdir(args_outdir, args_overwrite, illegal=None):
 
 def check_tmpdir(args_tmpdir, outdir, args_overwrite, illegal=None):
 	# create output dir if it doesn't exist
-	print(outdir)
-	print(args_overwrite)
 	tmpdir = os.path.join(outdir, args_tmpdir)
 	if not os.path.exists(tmpdir):
 		print(f'Creating directory {tmpdir} to store temp files during hetSNP allele counting')
