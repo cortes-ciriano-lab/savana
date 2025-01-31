@@ -211,6 +211,10 @@ def savana_cna(args, as_workflow=False):
     # initialize timing
     checkpoints = [time()]
     time_str = []
+    # determine blacklisting
+    if not args.blacklist:
+        args.blacklisting = False
+
     # cna threads
     if not args.cna_threads:
         args.cna_threads = cpu_count()
@@ -601,7 +605,7 @@ def parse_args(args):
     if not subparser:
         # arguments for default, main savana process: run, classify, evaluate, cna
         global_parser.add_argument('-t', '--tumour', nargs='?', type=str, required=True, help='Tumour BAM file (must have index)')
-        global_parser.add_argument('-n','--normal', nargs='?', type=str, required=False, help='Normal BAM file (must have index)')
+        global_parser.add_argument('-n','--normal', nargs='?', type=str, required=True, help='Normal BAM file (must have index)')
         global_parser.add_argument('--ref', nargs='?', type=str, required=True, help='Full path to reference genome')
         global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
         global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
