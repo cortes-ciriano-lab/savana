@@ -99,7 +99,6 @@ def format_data(data_matrix, tumour_only):
 	# feature indicating the proportion of alt reads vs reads clustered to the start location
 	data_matrix['TUMOUR_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['TUMOUR_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_TUMOUR'] + 1)
 	if not tumour_only:
-		print(tumour_only)
 		data_matrix['NORMAL_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['NORMAL_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_NORMAL'] + 1)
 
 	# when nothing in second depth column (insertions), replace with value in first
