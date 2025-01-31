@@ -19,6 +19,7 @@ import numpy as np
 import cyvcf2
 import csv
 import os
+import re
 
 import savana.train as train
 from savana.breakpoints import *
@@ -665,8 +666,51 @@ def classify_by_model(args, checkpoints, time_str):
 		germline_vcf.close()
 	input_vcf.close()
 	helper.time_function("Output classified VCF", checkpoints, time_str)
+	if args.somatic_output:
+		write_somatic_bedpe(args.somatic_output)
+	helper.time_function("Output classified BEDPE", checkpoints, time_str)
 
 	return
+
+def write_somatic_bedpe(somatic_output):
+	""" given a somatic vcf, wriite a somatic bedpe """
+
+	# extract name for bedpe
+	somatic_bedpe_file = f'{os.path.splitext(somatic_output)[0]}.bedpe'
+	bedpe_string = ''
+	for variant in cyvcf2.VCF(somatic_output):
+		chrom = variant.CHROM
+		start = variant.start + 1
+		alt = variant.ALT[0]
+		bp_id = variant.ID
+		# print SV based on first edge, ignore second edge
+		if bp_id.endswith('_1'):
+			if alt == "<INS>" or '.' in alt:
+				# ins or sbnd, no second edge
+				alt_chr = chrom
+				alt_pos = start + 1 # add one base for second pos
+			else:
+				# parse the alt column for chr/pos
+				split_0, split_1 = alt.split(":")
+				chr_match = re.search(r'[^[\]]*$', split_0)
+				pos_match = re.search(r'^[^\[\]]*', split_1)
+				alt_chr = chr_match.group(0)
+				alt_pos = pos_match.group(0)
+
+			# now get the length, support, and orientation from the INFO column
+			support_string = ''
+			for s in ['TUMOUR', 'NORMAL']:
+				support = variant.INFO.get(s+"_READ_SUPPORT")
+				support_string+=s+"_"+str(support)+"/" if support else ''
+			support_string = support_string.rstrip("/")
+			svlen = variant.INFO.get('SVLEN')
+			orientation = variant.INFO.get('BP_NOTATION')
+			sv_id = re.sub('_1$', '', bp_id) # remove pair identifier
+			bedpe_string+=f'{chrom}\t{start}\t{start}\t{alt_chr}\t{alt_pos}\t{alt_pos}\t{sv_id}|{svlen}bp|{support_string}|{orientation}\n'
+
+	with open(somatic_bedpe_file, 'w') as output:
+		output.write(bedpe_string)
+
 
 if __name__ == "__main__":
 	print("Classification functions for SAVANA")
