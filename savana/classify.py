@@ -25,15 +25,16 @@ import savana.train as train
 from savana.breakpoints import *
 from savana.clusters import *
 
-def pool_predict(data_matrix, features_to_drop, model, threads, confidence=None):
+def pool_predict(data_matrix, features_to_drop, model_name, model_obj, threads, confidence=None):
 	""" split the prediction across multiprocessing Pool """
 	if confidence is not None:
 		print(f' > Using Mondrian Conformal Prediction with Confidence of {confidence}')
+		model_base = os.path.splitext(os.path.basename(model_name))[0]
 		# untar nonconform scores if not already done
 		models_dir = os.path.join(os.path.dirname(__file__),'models')
 		for key in ['0','1']:
-			txt_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.txt')
-			tar_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.tar.gz')
+			txt_path = os.path.join(models_dir, f'{model_base}_{str(key)}_mondrian_dist.txt')
+			tar_path = os.path.join(models_dir, f'{model_base}_{str(key)}_mondrian_dist.tar.gz')
 			if os.path.isfile(txt_path):
 				print(f'Using untarred {txt_path}')
 			elif os.path.isfile(tar_path):
@@ -47,7 +48,8 @@ def pool_predict(data_matrix, features_to_drop, model, threads, confidence=None)
 	results = pool.map(partial(
 		predict,
 		features_to_drop=features_to_drop,
-		model=model,
+		model_name=model_name,
+		model_obj=model_obj,
 		confidence=confidence
 	), data_matrices)
 	pool.close()
@@ -55,24 +57,24 @@ def pool_predict(data_matrix, features_to_drop, model, threads, confidence=None)
 
 	return dict(ChainMap(*results))
 
-def predict(data_matrix, features_to_drop, model, confidence):
+def predict(data_matrix, features_to_drop, model_name, model_obj, confidence):
 	""" given features and a model, return the predictions """
 	ids = data_matrix['ID']
 	features = data_matrix.drop(features_to_drop, axis=1, errors='ignore')
 	# reorder the columns based on model order
-	feature_order = model.feature_names_in_
+	feature_order = model_obj.feature_names_in_
 	features = features[feature_order]
-
 	if confidence is not None:
 		# mondrian
-		predicted_probabilities = model.predict_proba(features)
+		predicted_probabilities = model_obj.predict_proba(features)
 		# get nonconform scores
 		models_dir = os.path.join(os.path.dirname(__file__),'models')
+		model_base = os.path.splitext(os.path.basename(model_name))[0]
 		sig_level = 1.0 - confidence
 		prediction_dict_mondrian = {}
 		mondrian_dists = {}
 		for key in [0, 1]:
-			mondrian_dist_path = os.path.join(models_dir, f'{str(key)}_mondrian_dist.txt')
+			mondrian_dist_path = os.path.join(models_dir, f'{model_base}_{str(key)}_mondrian_dist.txt')
 			mondrian_dists[key] = np.loadtxt(mondrian_dist_path, delimiter='\t', skiprows=1)
 		for i, prob in enumerate(predicted_probabilities):
 			for key in [0, 1]:
@@ -86,7 +88,7 @@ def predict(data_matrix, features_to_drop, model, confidence):
 		return prediction_dict_mondrian
 
 	# perform prediction using model with standard prediction
-	predicted = model.predict(features)
+	predicted = model_obj.predict(features)
 	prediction_dict = {}
 	for i, value in enumerate(predicted):
 		prediction_dict[ids.iloc[i]] = value
@@ -504,7 +506,7 @@ def classify_by_model(args, checkpoints, time_str):
 	loaded_model = pickle.load(open(args.custom_model, "rb"))
 	helper.time_function("Loaded classification model", checkpoints, time_str)
 
-	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], loaded_model, args.threads, args.confidence)
+	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], args.custom_model, loaded_model, args.threads, args.confidence)
 
 	helper.time_function("Performed prediction", checkpoints, time_str)
 	class_dictionary = {
