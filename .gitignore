@@ -1,5 +1,6 @@
 data
 savana/models/*.ignore
+savana/models/*.txt
 annotations
 tests
 build
