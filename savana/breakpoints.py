@@ -26,7 +26,7 @@ from pympler import muppy, summary, refbrowser
 #helper.conditionally_decorate(profile, True)
 """
 
-def get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq):
+def get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq, keep_inv_artefact):
 	""" reconstruct the breakpoints from the supplementary alignments """
 	breakpoint_pairs = []
 	cigar_tuples = read.cigartuples
@@ -153,13 +153,32 @@ def get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, s
 			breakpoint_pairs[i][1]['query_pos_start'] = curr_start['query_pos_end']
 
 	# once all pairs completed, create breakpoints for each edge
-	return create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set)
+	return create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set, keep_inv_artefact)
 
-def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set):
+def create_breakpoint_objects(read, label, contig_order, breakpoint_pairs, chimeric_regions, haplotype, phase_set, keep_inv_artefact):
 	supplementary_breakpoints = []
 	index = 0 # track manually to allow skipping/merging
+
 	while index < len(breakpoint_pairs):
 		curr_start, curr_end = breakpoint_pairs[index]
+		if not keep_inv_artefact:
+			# remove foldback inversion artefacts
+			if curr_start['chr'] == curr_end['chr'] and curr_start['region_mapped'] and curr_end['region_mapped']:
+				# have to be on same chromosome and both mapped
+				if (curr_start['bp_notation']+curr_end['bp_notation']) in ['--','++']:
+					# must be an inverted bp
+					if abs(curr_start['loc']-curr_end['loc']) <= 200:
+						# must map back within 200bp of self
+						index += 1
+						continue
+						"""
+						print("FB INV ARTEFACT DETECTED")
+						print(read.query_name)
+						print(curr_start)
+						print(curr_end)
+						print(f'Full bp pairs:')
+						print(breakpoint_pairs)
+						"""
 		# don't create breakpoints for irrelevant contigs
 		if curr_start['chr'] not in contig_order or curr_end['chr'] not in contig_order:
 			index += 1
@@ -458,7 +477,7 @@ def get_phasing_from_read(read):
 
 	return haplotype, phase_set
 
-def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, keep_inv_artefact, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
@@ -493,7 +512,7 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 		chimeric_regions = helper.get_chimeric_regions(read)
 		if chimeric_regions:
 			#TODO: can also test getting chimeric regions in this function and returning immediately if none
-			chimeric_breakpoints = get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq)
+			chimeric_breakpoints = get_supplementary_breakpoints(read, chimeric_regions, label, contig_order, single_bnd, single_bnd_max_mapq, keep_inv_artefact)
 			for bp in chimeric_breakpoints:
 				potential_breakpoints.setdefault(bp.start_chr,[]).append(bp)
 		# look for insertions and deletions in the CIGAR
@@ -633,7 +652,7 @@ def count_labels_and_phase(source_breakpoints):
 
 	return read_counts, aln_counts, [start_phase, end_phase]
 
-def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
+def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom, tumour_only=False):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same start chromosome!
 	#TODO: refactor. this works but it's ugly and overcomplicated
@@ -674,7 +693,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 								consensus_source = "/".join(sorted(event_info['sources'].keys()))
 								breakpoints_for_end_chrom.append(ConsensusBreakpoint(
 									[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-									consensus_source, start_cluster, None, [ins_read_counts, ins_aln_counts, ins_phasing_counts, total_read_counts], "<INS>", event_info['inserts']))
+									consensus_source, start_cluster, None, [ins_read_counts, ins_aln_counts, ins_phasing_counts, total_read_counts], "<INS>", tumour_only, event_info['inserts']))
 							else:
 								# separate here by bp_notation
 								sorted_breakpoints = {}
@@ -697,7 +716,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 									if max(len(count) for count in sbnd_read_counts.values()) >= min_support:
 										breakpoints_for_end_chrom.append(ConsensusBreakpoint(
 											[{'chr': cluster.chr, 'loc': median_start}, {'chr': cluster.chr, 'loc': median_start}],
-											consensus_source, start_cluster, None, [sbnd_read_counts, sbnd_aln_counts, sbnd_phasing_counts, total_read_counts], notation_type, event_info['inserts']))
+											consensus_source, start_cluster, None, [sbnd_read_counts, sbnd_aln_counts, sbnd_phasing_counts, total_read_counts], notation_type, tumour_only, event_info['inserts']))
 				# now deal with other breakpoint notation types
 				# reverse start/end in order to re-cluster
 				flipped_breakpoints = [reversed(b) for b in end_chrom_breakpoints if b.breakpoint_notation not in ["<INS>", "+", "-"]]
@@ -732,7 +751,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 							consensus_source = "/".join(sorted(source.keys()))
 							new_breakpoint = ConsensusBreakpoint(
 								[{'chr': start_cluster.chr, 'loc': median_start}, {'chr': end_chrom_cluster.chr, 'loc': median_end}],
-								consensus_source, start_cluster, end_chrom_cluster, [read_counts, aln_counts, phasing_counts, total_read_counts], bp_type)
+								consensus_source, start_cluster, end_chrom_cluster, [read_counts, aln_counts, phasing_counts, total_read_counts], bp_type, tumour_only)
 							if new_breakpoint.sv_length >= min_length or (new_breakpoint.start_chr != new_breakpoint.end_chr and new_breakpoint.sv_length == 0):
 								breakpoints_for_end_chrom.append(new_breakpoint)
 
@@ -758,10 +777,13 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom):
 def compute_depth(breakpoints, shared_cov_arrays, coverage_binsize):
 	""" use the contig coverages to annotate the depth (mosdepth method) and phasing dictionary to annotate the haplotyping info """
 	for bp in breakpoints:
-		bp.phased_local_depths = {
-			'tumour': [{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]}],
-			'normal': [{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]},{1: [0,0], 2: [0,0], None: [0,0]}]
-		}
+		bp.phased_local_depths = {}
+		for label in shared_cov_arrays.keys():
+			bp.phased_local_depths[label] = [
+				{1: [0,0], 2: [0,0], None: [0,0]}, # before
+				{1: [0,0], 2: [0,0], None: [0,0]}, # at
+				{1: [0,0], 2: [0,0], None: [0,0]} # after
+			]
 		haplotypes = [1, 2, None]
 		for label in bp.phased_local_depths.keys():
 			for i, (chrom, loc) in enumerate([(bp.start_chr, bp.start_loc),(bp.end_chr, bp.end_loc)]):

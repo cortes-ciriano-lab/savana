@@ -23,8 +23,8 @@ def process_allele_counts(allele_counts_bed_path):
         for line in file:
             fields = line.strip().split("\t")
             A,C,G,T,N = int(fields[5]),int(fields[6]),int(fields[7]),int(fields[8]),int(fields[9])
-            ps_id = f"{fields[0]}_{fields[-1]}" # assign phase sets IDs as same phase set might accur in different chromosomes
-            fields.append(ps_id)
+            # ps_id = f"{fields[0]}_{fields[-1]}" # assign phase sets IDs as same phase set might accur in different chromosomes
+            # fields.append(ps_id)
             DP = A+C+G+T+N
             if DP > 20: # only include het SNPs allele counts with a total depth of > 20.
                 fields.append(DP)
@@ -32,55 +32,54 @@ def process_allele_counts(allele_counts_bed_path):
                 allele_counts.append(fields)
     # columns:"chr", "start", "end","REF", "ALT", "A","C","G","T","N","AF_0","AF_1","GT","PS","ps_id","DP"
     # get unique phase sets to iterate (or multiprocess through)
-    phasesets = list(dict.fromkeys([x[-2] for x in allele_counts]))
+    blocksets = list(dict.fromkeys([x[-2] for x in allele_counts]))
     file.close()
-    return allele_counts, phasesets
+    return allele_counts, blocksets
 
 # def estimate_cellularity_phased_hetSNPs(phasesets,allele_counts,dp_cutoff,min_ps_size=10,min_ps_length=500000):
-def process_phased_hetSNPs(phasesets, allele_counts, dp_cutoff, min_ps_size=10, min_ps_length=500000):
+def process_hetSNPs(blocksets, allele_counts, dp_cutoff, min_block_size=10, min_block_length=500000):
     '''
     Estimate sample cellularity/purity using allele counts of phased hetSNPs.
     '''
-    phasesets_dict = {}
-    ps_summary = []
-    for ps in phasesets:
-        if "None" not in ps:
-            # print(ps)
-            # subset allele count data to ps and remove SNPs with AF0/AF1 of 0 or 1
-            ac_ps = [x for x in allele_counts if x[-2] == ps and float(x[10]) != 0 and float(x[10]) != 1 and float(x[11]) != 0 and float(x[11]) != 1]
-            ps_snps = len(ac_ps) # number of SNPs in ps
-            if ps_snps < min_ps_size: # skip ps with less than min_ps_size SNPs and remove empty ps
+    blocksets_dict = {}
+    block_summary = []
+    for block in blocksets:
+        if "None" not in block:
+            # print(block)
+            # subset allele count data to blocks and remove SNPs with rounded AF0/AF1 of 0 or 1
+            # ac_block = [x for x in allele_counts if x[-2] == block and float(x[10]) != 0 and float(x[10]) != 1 and float(x[11]) != 0 and float(x[11]) != 1]
+            ac_block = [x for x in allele_counts if x[-2] == block and float(x[10]) >= 0.05 and float(x[10]) <= 0.95 and float(x[11]) >= 0.05 and float(x[11]) <= 0.95]
+            block_snps = len(ac_block) # number of SNPs in block
+            if block_snps < min_block_size: # skip blocks with less than min_block_size SNPs and remove empty block
                 continue
             else:
-                ps_length = max([int(x[2]) for x in ac_ps]) - min([int(x[1]) for x in ac_ps]) # genomic lenght of ps_length
-                ps_depth = statistics.mean([int(x[-1]) for x in ac_ps]) # mean depth of ps
-                # ps_weight = ps_snps/no_hetSNPs # estimate weight of PS based on number of hetSNPs present in PS compared to all hetSNPs across sample
-                # all AFs at all het SNP position within ps
-                af = [float(x[10]) for x in ac_ps] + [float(x[11]) for x in ac_ps]
-                if ps_snps > min_ps_size and ps_length > min_ps_length and ps_depth < dp_cutoff and cnfitter.is_unimodal(af) == False:
-                    ps_bc = cnfitter.bimodality_coefficient(af)
-                # if ps_snps > min_ps_size and ps_length > min_ps_length and ps_depth < dp_cutoff and is_unimodal(af) == False:
-                #     ps_bc = bimodality_coefficient(af)
-                    phasesets_dict[ps] = ac_ps
-                    ps_summary.append([ps, ps_depth, ps_length, ps_snps, ps_bc])
-    return phasesets_dict, ps_summary
+                block_length = max([int(x[2]) for x in ac_block]) - min([int(x[1]) for x in ac_block]) # genomic lenght of block_length
+                block_depth = statistics.mean([int(x[-1]) for x in ac_block]) # mean depth of ps
+                # block_weight = block_snps/no_hetSNPs # estimate weight of blocks based on number of hetSNPs present in block compared to all hetSNPs across sample
+                # all AFs at all het SNP position within block
+                af = [float(x[10]) for x in ac_block] + [float(x[11]) for x in ac_block]
+                if block_snps > min_block_size and block_length > min_block_length and block_depth < dp_cutoff and cnfitter.is_unimodal(af) == False:
+                    block_bc = cnfitter.bimodality_coefficient(af)
+                    blocksets_dict[block] = ac_block
+                    block_summary.append([block, block_depth, block_length, block_snps, block_bc])
+    return blocksets_dict, block_summary
 
 
-def estimate_cellularity(phasesets_dict, ps_summary):
-    ps_summary = sorted(ps_summary,key=lambda x: x[-1]) # sort ps by bimodality coefficient
-    # ps_summary = sorted(sorted(ps_summary,key=lambda x: x[-2]), key=lambda x: round(x[-1],3)) # sort by ps_bc and weight
-    # select top 10% PSs
-    # # ps_top = [x[0] for x in ps_summary[-(round(len(ps_summary)*0.01)):]]
+def estimate_cellularity(blocksets_dict, block_summary):
+    block_summary = sorted(block_summary,key=lambda x: x[-1]) # sort block by bimodality coefficient
+    # block_summary = sorted(sorted(block_summary,key=lambda x: x[-2]), key=lambda x: round(x[-1],3)) # sort by block_bc and weight
+    # select top 10% blocks
+    # # block_top = [x[0] for x in block_summary[-(round(len(block_summary)*0.01)):]]
     #
-    ps_top = [x[0] for x in ps_summary[-10:]]
-    # pull out data for ps_top
-    ps_top_acs = []
-    for pst in ps_top:
-        ps_top_acs += phasesets_dict[pst]
+    block_top = [x[0] for x in block_summary[-10:]]
+    # pull out data for block_top
+    block_top_acs = []
+    for blockt in block_top:
+        block_top_acs += blocksets_dict[blockt]
     # Estimate cellularity
     af_cutoff = 0.5
-    pur0 = statistics.median([float(x[10]) for x in ps_top_acs if float(x[10]) > af_cutoff] + [float(x[11]) for x in ps_top_acs if float(x[11]) > af_cutoff])
-    pur1 = statistics.median([float(x[10]) for x in ps_top_acs if float(x[10]) < (1-af_cutoff)] + [float(x[11]) for x in ps_top_acs if float(x[11]) < (1-af_cutoff)])
+    pur0 = statistics.median([float(x[10]) for x in block_top_acs if float(x[10]) > af_cutoff] + [float(x[11]) for x in block_top_acs if float(x[11]) > af_cutoff])
+    pur1 = statistics.median([float(x[10]) for x in block_top_acs if float(x[10]) < (1-af_cutoff)] + [float(x[11]) for x in block_top_acs if float(x[11]) < (1-af_cutoff)])
     cellularity = statistics.mean([1-(1-max(pur0,pur1))*2]+[1-(min(pur0,pur1))*2])
     return cellularity
 
@@ -118,7 +117,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
     min_ploidy, max_ploidy, ploidy_step, min_cellularity, max_cellularity, cellularity_step, cellularity_buffer, overrule_cellularity,
     distance_function, distance_filter_scale_factor, distance_precision,
     max_proportion_zero, min_proportion_close_to_whole_number, max_distance_from_whole_number, main_cn_step_change,
-    min_ps_size, min_ps_length, threads):
+    min_block_size, min_block_length, threads):
     '''
     # 3. Estimate purity using phased heterozygous SNPs
     ### Method/principles based on: https://doi.org/10.1371/journal.pone.0045835
@@ -134,15 +133,17 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
     elif allele_counts_bed_path != None:
         print("     ... Allele counts for phased hetSNPs provided and being processed to estimate sample purity ...")
 
-        allele_counts, phasesets = process_allele_counts(allele_counts_bed_path)
+        # allele_counts, phasesets = process_allele_counts(allele_counts_bed_path)
+        allele_counts, blocksets = process_allele_counts(allele_counts_bed_path)
         # Estimate depth cutoff to exclude potentially amplified/gained regions as those will impact BAF distribution
         ac_mean_depth = statistics.mean([x[-1] for x in allele_counts])
         dp_cutoff = 2 * ac_mean_depth
         # no_hetSNPs = len(allele_counts)
 
-        phasesets_dict, ps_summary = process_phased_hetSNPs(phasesets, allele_counts, dp_cutoff, min_ps_size=min_ps_size, min_ps_length=min_ps_length)
+        # seg_dict, seg_summary = process_seg_SNPs(rel_copy_number_segments, allele_counts, dp_cutoff, min_seg_size=min_ps_size, min_seg_length=min_ps_length)
+        blocksets_dict, block_summary = process_hetSNPs(blocksets, allele_counts, dp_cutoff, min_block_size=min_block_size, min_block_length=min_block_length)
 
-        cellularity = estimate_cellularity(phasesets_dict, ps_summary)
+        cellularity = estimate_cellularity(blocksets_dict, block_summary)
         digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
         print(f"        estimated cellularity using hetSNPs = {round(cellularity,digs)}.")
         if overrule_cellularity != None:
@@ -196,7 +197,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
 
     # Convert relative to absolute copy number and obtain major and minor copy number values if allele counts provided
     if allele_counts_bed_path == None:
-        print("     ... No phased hetSNPs allele counts provided. Only total absolute copy number will be estimated. Consider providing hetSNPs allele counts if possible. See documentation for instructions on how to generate these.")
+        print("     ... No phased hetSNPs allele counts provided. Only total absolute copy number will be estimated. Consider providing hetSNPs allele counts or using 1000g vcf input. See documentation for instructions on how to generate these.")
         fitted_purity, fitted_ploidy = final_fit[0], final_fit[1]
         abs_copy_number_segments = copy.deepcopy(rel_copy_number_segments)
         for x in abs_copy_number_segments:
@@ -267,6 +268,3 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
                     params_out.write(f'{key}: {value}\n')
     """
 
-    ###############
-    # Add in code to redefine segment breaks based on rounded acn?
-    ###############

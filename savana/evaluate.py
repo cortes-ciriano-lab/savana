@@ -104,43 +104,6 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 				used_compare_set_ids.append(within_buffer_compare_variant['id'])
 				break
 
-	"""
-	# mark input set
-	for variant in input_set:
-		variant['validated'] = None
-		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
-		i = 0
-		while not variant['validated'] and i < len(within_buffer_sorted):
-			compare_variant, distance = within_buffer_sorted[i]
-			if compare_variant['id'] not in used_compare_set_ids:
-				variant['validated'] = (compare_variant['id'], distance)
-				# now go validate this variant
-
-				used_compare_set_ids.append(compare_variant['id'])
-			i+=1
-
-	# mark compare sets
-	for variant in compare_set:
-		variant['validated'] = None
-		within_buffer_sorted = sorted(variant['within_buffer'], key=lambda x: x[1])
-		if variant['external_id'] == 'gridss45fb_2672h':
-			print(within_buffer_sorted)
-		i = 0
-		while not variant['validated'] and i < len(within_buffer_sorted):
-			input_variant, distance = within_buffer_sorted[i]
-			if variant['external_id'] == 'gridss45fb_2672h':
-				print(input_variant)
-				print(distance)
-				print(input_variant['id'] not in used_input_set_ids)
-			if input_variant['id'] not in used_input_set_ids:
-				variant['validated'] = (input_variant, distance)
-				used_input_set_ids.append(input_variant['id'])
-				if input_variant['id'] == "ID_118102_2":
-					print("validated:")
-					print(variant)
-			i+=1
-	"""
-
 	# SOMATIC CALCULATIONS
 	# validated somatic variants (true positives)
 	tp = [v for v in input_set if v['validated'] and v['validated']['label'] == "SOMATIC"]
@@ -185,7 +148,7 @@ def compute_statistics(args, compare_set, input_set, vcfs_string):
 	return
 
 def evaluate_vcf(args, checkpoints, time_str):
-	""" given the input, somatic, and germline VCFs, label the input VCF"""
+	""" given the input, somatic, and germline VCFs, label the input VCF """
 	# create the comparison set from somatic & germline VCFs
 	compare_set = create_variant_dicts(args.somatic, 'SOMATIC', args.qual_filter)
 	vcfs_string=f'{args.somatic}'
@@ -206,8 +169,9 @@ def evaluate_vcf(args, checkpoints, time_str):
 			'length': variant.INFO.get('SVLEN'),
 			'type': variant.INFO.get('SVTYPE'),
 			'within_buffer': []})
-		if args.by_support:
+		if variant.INFO.get('TUMOUR_READ_SUPPORT'):
 			input_variants[-1]['tumour_support'] = int(variant.INFO.get('TUMOUR_READ_SUPPORT'))
+		if variant.INFO.get('NORMAL_READ_SUPPORT'):
 			input_variants[-1]['normal_support'] = int(variant.INFO.get('NORMAL_READ_SUPPORT'))
 		for compare_variant in compare_set:
 			if compare_variant['start_chr'] == variant_chrom:
@@ -251,8 +215,9 @@ def evaluate_vcf(args, checkpoints, time_str):
 				if compare_variant['start_chr'] == variant_chrom:
 					distance = abs(compare_variant['start_loc'] - input_variants[-1]['start_loc'])
 					if distance <= args.overlap_buffer:
-						compare_variant['within_buffer'].append((input_variants[-1], distance))
-						input_variants[-1]['within_buffer'].append((compare_variant, distance))
+						compare_variant['within_buffer'].append([input_variants[-1], distance])
+						input_variants[-1]['within_buffer'].append([compare_variant, distance])
+
 
 	# label input variants with matched somatic/germline
 	compare_variants_used = {}
@@ -261,7 +226,7 @@ def evaluate_vcf(args, checkpoints, time_str):
 	for variant in input_variants:
 		variant['validated'] = False
 		closest_variant = None
-		closest_value = None
+		closest_value = [None,None]
 		for compare_variant, distance in variant['within_buffer']:
 			# check how many times this variant has been used as a label
 			used_count = len(compare_variants_used.get(compare_variant['id'],[]))
@@ -272,21 +237,35 @@ def evaluate_vcf(args, checkpoints, time_str):
 				continue
 			if args.by_support:
 				# tie-break using support - default to zero to prevent no-support match
-				closest_value = 0 if not closest_value else closest_value
-				if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value and variant['normal_support'] == 0:
-					closest_variant = compare_variant
-					closest_value = variant['tumour_support']
-				elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value:
-					closest_variant = compare_variant
-					closest_value = variant['normal_support']
+				closest_value[0] = 0 if not closest_value[0] else closest_value[0]
+				if 'normal_support' in variant and 'tumour_support' in variant:
+					if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value[0] and variant['normal_support'] == 0:
+						closest_variant = compare_variant
+						closest_value = [variant['tumour_support'], distance]
+					elif compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value[0]:
+						closest_variant = compare_variant
+						closest_value = [variant['normal_support'], distance]
+				elif 'normal_support' in variant:
+					# no tumour support
+					if compare_variant['label'] == 'GERMLINE' and variant['normal_support'] > closest_value[0]:
+						closest_variant = compare_variant
+						closest_value = [variant['normal_support'], distance]
+				else:
+					# no normal support
+					if compare_variant['label'] == 'SOMATIC' and variant['tumour_support'] > closest_value[0]:
+						closest_variant = compare_variant
+						closest_value = [variant['tumour_support'], distance]
 			elif args.by_distance:
 				# tie-break by closest variant
-				if closest_value is None or distance < closest_value:
+				if closest_value[1] is None or distance < closest_value[1]:
 					closest_variant = compare_variant
-					closest_value = distance
+					if 'tumour_support' in variant:
+						closest_value = [variant['tumour_support'], distance]
+					else:
+						closest_value = [None, distance]
 		if closest_variant:
 			compare_variants_used.setdefault(closest_variant['id'], []).append(variant['id'])
-			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'], closest_value)
+			input_variant_labels[variant['id']] = (closest_variant['label'], closest_variant['external_id'], closest_value[1])
 
 	# edit input_vcf to include LABEL in header
 	input_vcf = cyvcf2.VCF(args.input)

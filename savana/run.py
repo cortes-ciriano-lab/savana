@@ -49,7 +49,8 @@ def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 		task_arg_dict['buffer'],
 		task_arg_dict['length'],
 		task_arg_dict['depth'],
-		task_arg_dict['contig']
+		task_arg_dict['contig'],
+		task_arg_dict['tumour_only']
 	)
 	task_tracker[task_arg_dict['task_id']] = 1
 	conn.send((breakpoints, contig))
@@ -88,6 +89,7 @@ def execute_get_potential_breakpoint_task(task_arg_dict, task_tracker, conn):
 		task_arg_dict['end_pos'],
 		task_arg_dict['coverage_binsize'],
 		task_arg_dict['contig_coverage_array'],
+		task_arg_dict['keep_inv_artefact'],
 		task_arg_dict['single_bnd'],
 		task_arg_dict['single_bnd_min_length'],
 		task_arg_dict['single_bnd_max_mapq']
@@ -104,7 +106,7 @@ def generate_annotate_depth_tasks(called_breakpoints, args):
 	tasks = []
 	task_id_counter = 0
 	total_breakpoints = sum(len(bps) for bps in called_breakpoints.values())
-	split = max(floor(total_breakpoints/(args.threads*10)), 1)
+	split = max(floor(total_breakpoints/(args.threads)), 1)
 	spare_breakpoints = []
 	for _, breakpoints in called_breakpoints.items():
 		if len(breakpoints) > split:
@@ -147,6 +149,7 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 			'buffer': args.end_buffer,
 			'length': args.length,
 			'depth': args.min_support,
+			'tumour_only': args.tumour_only,
 			'task_id': task_id_counter
 		})
 		task_id_counter += 1
@@ -200,6 +203,7 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 						'start_pos': start_pos,
 						'end_pos': end_pos,
 						'coverage_binsize': args.coverage_binsize,
+						'keep_inv_artefact': args.keep_inv_artefact,
 						'single_bnd': args.single_bnd,
 						'single_bnd_min_length': args.single_bnd_min_length,
 						'single_bnd_max_mapq': args.single_bnd_max_mapq,
@@ -220,6 +224,7 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 					'start_pos': 0,
 					'end_pos': contig_length,
 					'coverage_binsize': args.coverage_binsize,
+					'keep_inv_artefact': args.keep_inv_artefact,
 					'single_bnd': args.single_bnd,
 					'single_bnd_min_length': args.single_bnd_min_length,
 					'single_bnd_max_mapq': args.single_bnd_max_mapq,

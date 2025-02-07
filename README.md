@@ -75,7 +75,7 @@ python3 -m pip install . -vv
 
 You can test that SAVANA was installed successfully by running `savana --help`, which should display the following text:
 ```
-usage: savana [-h] [--version] {run,classify,evaluate,train,cna} ...
+usage: savana [-h] [--version] {run,classify,evaluate,train,cna,to} ...
 
 SAVANA - somatic SV caller
 
@@ -84,13 +84,14 @@ optional arguments:
   --version             show program's version number and exit
 
 subcommands:
-  {run,classify,evaluate,train,cna}
+  {run,classify,evaluate,train,cna,to}
                         SAVANA sub-commands
     run                 identify and cluster breakpoints - output raw variants without classification
     classify            classify VCF using model
     evaluate            label SAVANA VCF with somatic/germline/missing given VCF(s) to compare against
     train               train model on folder of input VCFs
     cna                 run copy number
+    to                  identify somatic SVs without normal sample
 ```
 
 ## Run SAVANA
@@ -100,15 +101,20 @@ After installing, SAVANA can be run on long-read data with a minumum set of argu
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a phased VCF for the germline sample (see [Generating Phased VCF](#generating-phased-vcf)). Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a SNP VCF for the germline sample. Then, to call both SVs and CNAs you can run savana with:
 ```
-savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --phased_vcf <vcf-file> --blacklist <blacklist-bed-file>
+savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --snp_vcf <vcf-file>
 ```
-Note, that if you do not want to use a blacklist to compute copy number aberrations, you will have to specify the `--no_blacklist` flag instead. 
-Additionally, if you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> file instead of the phased VCF using the `--allele_counts_het_snps` flag. 
-Example command to run savana for both of the above:
+Alternatively, you can use the 1000 genome vcf files (provided within SAVANA) using `--g1000_vcf 1000g_hg38` for hg38 or `--g1000_vcf 1000g_hg19` for hg19 aligned bam files. However, we strongly recommend using a SNP VCF from the matched germline sample for best performance.
+
+If you would like to provide a blacklist for CNA calling you can do so via:
 ```
-savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --allele_counts_het_snps <allele_counts_hetSNPs.bed> --no_blacklist
+ --blacklist <blacklist-bed-file>
+```
+
+If you have already generated the heterozygous SNP allele counts using the above command, you can skip this step by providing the <allele_counts_hetSNPs.bed> using the `--allele_counts_het_snps` parameter instead of a VCF (`--snp_vcf/--g1000_vcf`).
+```
+--allele_counts_het_snps <allele_counts_hetSNPs.bed>
 ```
 
 ### Quickstart
@@ -124,7 +130,19 @@ savana --tumour ONT_COLO829_T_truthset_50k.phased.bam --normal ONT_COLO829_N_tru
 ```
 > To run the above on a SLURM cluster we requested an interactive job with 8 cpus (`-c 8`) and 16 GB of memory (`--mem 16`). The total time to call variants (as measured by Linux `time`) was 48.88 seconds. You may need to adjust requirements for your computing environment
 
-### Mandatory Arguments
+
+
+### Tumour-only Mode
+
+We strongly recommend running SAVANA conventionally using tumour and matched normal bam files for best performance. However, we have developed a SAVANA tumour-only `savana to` mode which can be run in the absence of a matched normal sample if required:
+
+```
+savana to --tumour <tumour-file> --outdir <outdir> --ref <ref-fasta> --g1000_vcf <vcf-file>
+```
+
+### SAVANA Arguments
+
+#### Mandatory Arguments
 Argument|Description
 --------|-----------
 --tumour|Tumour BAM/CRAM file (must have index in .bai/.crai format)
@@ -132,16 +150,18 @@ Argument|Description
 --outdir|Output directory (can exist but must be empty)
 --ref|Full path to reference genome that was used to align the `tumour` and `normal` BAM
 
-### Optional Arguments
+#### Optional Arguments
 Argument|Description
 --------|-----------
 *Basic Arguments*
---phased_vcf| Path to phased vcf file to extract heterozygous SNPs for allele counting
+--snp_vcf| Path to SNP vcf file to extract heterozygous SNPs for allele counting
+--g1000_vcf | Use 1000g biallelic vcf file for allele counting instead of SNP vcf from matched normal. Specify which genome version to use. choices={"1000g_hg38", "1000g_hg19", "1000g_t2t"}
 --ont | Run on Nanopore data (default)
 --pb | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio))
 --sample| Name to prepend to output files (default=tumour BAM filename without extension)
 --contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
 --length| Minimum length SV to consider (default=30)
+--keep_inv_artefact| Do not remove breakpoints with foldback-inversion artefact pattern (default is to remove)
 --mapq| Minimum MAPQ of reads to consider (default=0)
 --min_support| Minimum supporting reads for a variant (default=5)
 --min_af| Minimum allele-fraction (AF) for a variant (default=0.01)
@@ -165,7 +185,7 @@ Argument|Description
 --allele_counts_het_snps| If allele counting has already been performed provide the path for the allele counts of heterozygous SNPs to skip this step
 --allele_mapq|    Mapping quality threshold for reads to be included in the allele counting (default = 5)
 --allele_min_reads|    Minimum number of reads required per het SNP site for allele counting (default = 10)
---ac_window| Window size for allele counting to parallelise (default = 1000000)
+--ac_window| Window size for allele counting to parallelise (default = 1200000; this should be >=500000)
 --cn_binsize|  Bin window size in kbp (default=10)
 --blacklist| Path to the blacklist file
 --breakpoints| Path to SAVANA VCF file to incorporate savana breakpoints into copy number analysis
@@ -197,8 +217,8 @@ Argument|Description
 --min_proportion_close_to_whole_number| Minimum proportion of fitted copy numbers sufficiently close to whole number to be tolerated for a given fit (default = 0.5)
 --max_distance_from_whole_number| Distance from whole number for fitted value to be considered sufficiently close to nearest copy number integer (default = 0.25)
 --main_cn_step_change| Max main copy number step change across genome to be considered for a given solution
---min_ps_size|   Minimum size (number of SNPs) for phaseset to be considered for purity estimation (default = 10)
---min_ps_length|   Minimum length (bps) for phaseset to be considered for purity estimation (default = 500000)
+--min_block_size|   Minimum size (number of SNPs) for a genomic block to be considered for purity estimation (default = 10)
+--min_block_length|   Minimum length (bps) for a genomic block to be considered for purity estimation (default = 500000)
 *Additional Arguments*
 --legacy | Use legacy filters (strict/lenient) to classify variants
 --custom_model | Path to custom model pkl file
@@ -212,15 +232,16 @@ Argument|Description
 --by_distance | When comparing to --somatic or --germline VCF, tie-break by distance (default)
 --stats | Output filename for statistics on comparison to somatic/germline VCF
 
-### Tumour-only Mode
-> Note: We strongly recommend running SAVANA conventionally using tumour and matched normal bam files for best performance. However, we have developed a SAVANA tumour-only `savana to` mode which can be run in the absence of a matched normal sample if required. This will be released soon with release version v1.2.7. To test it out in the meantime, please change to the branch [major-release-to](https://github.com/cortes-ciriano-lab/savana/tree/helrick/major-release-to).
-
 ## Output Files
 ### Output Files SV Algorithm
 
-#### Raw SV Breakpoints VCF
+#### Somatic Breakpoints
 
-`{sample}_sv_breakpoints.vcf` contains all (unfiltered) variants with each edge of a breakpoint having a line in the VCF (i.e. all breakpoints have two lines except for insertions). A note that the `SV_TYPE` field in the `INFO` column of SAVANA VCF output files only denotes `BND` and `INS` types. We have elected not to call `SV_TYPE` beyond these types as it is not definitively possible to do so without copy number information in VCF v4.2 (GRIDSS has a more in-depth explanation for their decision to do this here: https://github.com/PapenfussLab/gridss#why-are-all-calls-bnd).
+By default, SAVANA classifies somatic variants using a random-forest classifier, trained on a range of somatic Oxford Nanopore data labelled with true somatic variants (as determined by supporting Illumina data). We have found that this yields the best results when running on somatic Oxford Nanopore data. The SVs classified as somatic can be found in the `{sample}.classified.somatic.vcf` as well as a `{sample}.classified.somatic.bedpe`.
+
+##### Somatic VCF
+
+In SAVANA, each edge of a breakpoint has a line in the VCF (i.e. all breakpoints have two lines except for insertions). The `SV_TYPE` field in the `INFO` column of SAVANA VCF output files only denotes `BND` and `INS` types. We have elected not to call `SV_TYPE` beyond these types as it is not definitively possible to do so without copy number information in VCF v4.2 (GRIDSS has a more in-depth explanation for their decision to do this here: https://github.com/PapenfussLab/gridss#why-are-all-calls-bnd).
 
 SAVANA reports the breakend orientation using brackets in the ALT field as described in section 5.4 of [VCFv4.2](https://samtools.github.io/hts-specs/VCFv4.2.pdf). We also report this in a `BP_NOTATION` field which can be converted to different nomenclatures as follows:
 
@@ -230,7 +251,9 @@ SAVANA reports the breakend orientation using brackets in the ALT field as descr
 | Brackets (VCF)  | N[chr:pos[ / ]chr:pos]N | ]chr:pos]N / N[chr:pos[ | N]chr:pos] / N]chr:pos] | [chr:pos[N / [chr:pos[N |
 | 5' to 3'  | 3to5 | 5to3 | 3to3 | 5to5 |
 
-SAVANA also reports information about each structural variant in the INFO field of the VCF:
+SAVANA reports information about each structural variant in the INFO field of the VCF:
+<details>
+<summary>VCF INFO Fields</summary>
 
 | Field | Description |
 | ----- | ----------- |
@@ -263,15 +286,15 @@ SAVANA also reports information about each structural variant in the INFO field 
 | {ORIGIN\|END}_EVENT_SIZE_MEAN | Cluster value for the mean of the supporting breakpoints' lengths |
 | {ORIGIN\|END}_TUMOUR_DP | Total depth/coverage (number of reads) in the tumour at SV location (one per breakpoint edge) |
 | {ORIGIN\|END}_NORMAL_DP | Total depth/coverage (number of reads) in the normal at SV location (one per breakpoint edge) |
+</details>
 
+##### Somatic BEDPE
 
-#### Classified Breakpoints VCF
+`{sample}.classified.somatic.bedpe` contains the paired end breakpoints of all SVs predicted as somatic along with their variant ID, length, and, number of supporting reads from the tumour and normal (listed as "TUMOUR_x/NORMAL_y" - absence indicates 0), and breakpoint orientation (as listed in the table above).
 
-By default, SAVANA classifies somatic variants using a random-forest classifier, trained on a range of somatic Oxford Nanopore data labelled with true somatic variants (as determined by supporting Illumina data). They can be found in the `{sample}.classified.sv_breakpoints.somatic.vcf`. We have found this yields the best results when running on somatic Oxford Nanopore data.
+#### Raw Breakpoints
 
-#### Raw Breakpoints BEDPE
-
-`{sample}_sv_breakpoints.bedpe` contains the paired end breakpoints of all unfiltered variants along with their variant ID, length, cluster IDs (for debugging purposes), number of supporting reads from the tumour and normal (listed as "TUMOUR_x/NORMAL_y" - absence indicates 0), and breakpoint orientation (as listed in the table above).
+If you would like to access _all_ SV breakpoints, including those with normal support or predicted as noise by the model, they are in the `{sample}_sv_breakpoints.vcf` and `{sample}_sv_breakpoints.bedpe` files. The INFO columns and structure of the raw VCF is the same as in the [somatic VCF](#somatic-vcf) and the BEDPE as the [somatic BEDPE](#somatic-bedpe).
 
 #### Read-support TSV
 

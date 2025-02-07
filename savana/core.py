@@ -17,7 +17,7 @@ from statistics import mean, median, pstdev
 
 class ConsensusBreakpoint():
 	""" class for a second-round called breakpoint (stores originating cluster information """
-	def __init__(self, locations, source, originating_cluster, end_cluster, counts, breakpoint_notation, inserts=None):
+	def __init__(self, locations, source, originating_cluster, end_cluster, counts, breakpoint_notation, tumour_only=False, inserts=None):
 		self.start_chr = locations[0]['chr']
 		self.start_loc = int(locations[0]['loc'])
 		self.end_chr = locations[1]['chr']
@@ -35,9 +35,14 @@ class ConsensusBreakpoint():
 		self.end_cluster = end_cluster if end_cluster else originating_cluster
 		self.supporting_reads, self.aln_support_counts, self.phasing, self.total_read_counts = counts
 		# use the label counts to calculate read support
-		self.read_support_counts = {'normal': 0, 'tumour': 0}
-		for label, reads in self.supporting_reads.items():
-			self.read_support_counts[label] += len(reads)
+		if tumour_only:
+			self.read_support_counts = {'tumour': 0}
+			for label, reads in self.supporting_reads.items():
+				self.read_support_counts[label] += len(reads)
+		else:
+			self.read_support_counts = {'tumour': 0, 'normal': 0}
+			for label, reads in self.supporting_reads.items():
+				self.read_support_counts[label] += len(reads)
 		# add a count of 0 for aln support if key doesn't exist
 		for key in self.read_support_counts.keys():
 			if key not in self.aln_support_counts:
@@ -237,7 +242,7 @@ class ConsensusBreakpoint():
 
 		alts = self.get_alts(start_base, end_base)
 		gt_tag = ''
-		if self.read_support_counts['normal'] >= 1:
+		if 'normal' in self.read_support_counts and self.read_support_counts['normal'] >= 1:
 			gt_tag = '0/0'
 		else:
 			gt_tag = '0/1'
@@ -252,7 +257,8 @@ class ConsensusBreakpoint():
 		info[0] += f'BP_NOTATION={self.breakpoint_notation};'
 		info[0] += f'SOURCE={self.source};'
 		info[0] += f'CLUSTERED_READS_TUMOUR={self.total_read_counts["tumour"]};'
-		info[0] += f'CLUSTERED_READS_NORMAL={self.total_read_counts["normal"]};'
+		if 'normal' in self.total_read_counts:
+			info[0] += f'CLUSTERED_READS_NORMAL={self.total_read_counts["normal"]};'
 		info[0] += stats_str
 		if self.breakpoint_notation == "<INS>":
 			info[0] = 'SVTYPE=INS;' + info[0]
@@ -261,7 +267,8 @@ class ConsensusBreakpoint():
 					sum_across_haplotypes = sum([counts[0] for hp, counts in depths[i].items()])
 					info[0] += f'{label.upper()}_DP_{bin_label}={sum_across_haplotypes},{sum_across_haplotypes};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
-			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
+			if 'normal' in self.allele_fractions:
+				info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 			for label, counts in self.phased_local_depths.items():
 				bp_0_phase_at = f'{",".join([str(v[0]) for k,v in counts[1].items()])}'
 				info[0] += f';{label.upper()}_TOTAL_HP_AT={bp_0_phase_at};'
@@ -272,7 +279,8 @@ class ConsensusBreakpoint():
 					sum_across_haplotypes = sum([counts[0] for hp, counts in depths[i].items()])
 					info[0] += f'{label.upper()}_DP_{bin_label}={sum_across_haplotypes},{sum_across_haplotypes};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
-			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
+			if 'normal' in self.allele_fractions:
+				info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 			for label, counts in self.phased_local_depths.items():
 				bp_0_phase_at = f'{",".join([str(v[0]) for k,v in counts[1].items()])}'
 				info[0] += f';{label.upper()}_TOTAL_HP_AT={bp_0_phase_at};'
@@ -288,9 +296,11 @@ class ConsensusBreakpoint():
 					info[0] += f'{label.upper()}_DP_{bin_label}={sum_across_haplotypes_0},{sum_across_haplotypes_1};'
 					info[1] += f'{label.upper()}_DP_{bin_label}={sum_across_haplotypes_1},{sum_across_haplotypes_0};'
 			info[0] = info[0] + f'TUMOUR_AF={",".join([str(af) for af in self.allele_fractions["tumour"]])};'
-			info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
+			if 'normal' in self.allele_fractions:
+				info[0] = info[0] + f'NORMAL_AF={",".join([str(af) for af in self.allele_fractions["normal"]])}'
 			info[1] = info[1] + f'TUMOUR_AF={",".join([str(af) for af in reversed(self.allele_fractions["tumour"])])};'
-			info[1] = info[1] + f'NORMAL_AF={",".join([str(af) for af in reversed(self.allele_fractions["normal"])])}'
+			if 'normal' in self.allele_fractions:
+				info[1] = info[1] + f'NORMAL_AF={",".join([str(af) for af in reversed(self.allele_fractions["normal"])])}'
 			for label, counts in self.phased_local_depths.items():
 				bp_0_phase_at = f'{",".join([str(v[0]) for k,v in counts[1].items()])}'
 				info[0] += f';{label.upper()}_TOTAL_HP_AT={bp_0_phase_at};'
@@ -366,7 +376,7 @@ class PotentialBreakpoint():
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_chr={self.start_chr}, end_chr={self.end_chr})')
 		if (breakpoint_notation in ["<INS>", "-", "+"]) and self.start_loc != self.end_loc:
 			raise AttributeError(f'{breakpoint_notation} breakpoints must have same start/end location (start_loc={self.start_loc}, end_chr={self.end_loc})')
-		self.spans_cluster = True if (self.start_chr == self.end_chr and abs(self.start_loc - self.end_loc) <= 150) else False
+		self.spans_cluster = True if (self.start_chr == self.end_chr and abs(self.start_loc - self.end_loc) <= 300 and breakpoint_notation not in ["<INS>", "-", "+"]) else False
 		self.breakpoint_notation = breakpoint_notation
 		self.insert_length = len(insert) if insert else 0
 		self.inserted_sequence = zlib.compress(insert.encode()) if insert else None
@@ -434,8 +444,29 @@ class Cluster():
 	def overlaps(self, other, buffer):
 		""" determine if a breakpoint should be merged to a cluster """
 		assert self.start <= other.start_loc,"Overlap check requires breakpoints to be sorted."
-		cluster_end_buffered = self.end + buffer
-		if cluster_end_buffered >= other.start_loc:
+		# consider whether the cluster is forward or reverse
+		reverse = None
+		if self.start <= self.end:
+			# it's forward, add the buffer
+			#      	 start               end
+			# ---------|------------------|-----------
+			#      	 start                 end_buff
+			# ---------|----------------------|-------
+			# then we check if end_buffered >= start
+			cluster_end_buffered = self.end + buffer
+			reverse = False
+		else:
+			# it's reverse, subtrack the buffer instead
+			#      	  end               start
+			# ---------|------------------|-----------
+			#   end_buff                start
+			# -----|----------------------|-----------
+			# then we check if end_buffered <= start
+			cluster_end_buffered = self.end - buffer
+			reverse = True
+		if reverse and cluster_end_buffered <= other.start_loc:
+			return True
+		elif not reverse and cluster_end_buffered >= other.start_loc:
 			return True
 		return False
 

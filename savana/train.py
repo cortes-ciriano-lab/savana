@@ -39,45 +39,87 @@ FEATURES_TO_DROP = [
 	'TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER',
 	'NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER',
 	'TUMOUR_AF', 'NORMAL_AF', 'BP_NOTATION', '<INS>', 'LABEL_VARIANT_ID', 'DISTANCE_TO_MATCH',
-	'CLASS','REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
-	'ORIGIN_EVENT_SIZE_MEDIAN', 'ORIGIN_EVENT_SIZE_MEAN', 'END_EVENT_SIZE_MEDIAN', 'END_EVENT_SIZE_MEAN',
-	'TUMOUR_PS', 'TUMOUR_ALT_HP', 'NORMAL_PS', 'NORMAL_ALT_HP', 'TUMOUR_TOTAL_HP_AT', 'NORMAL_TOTAL_HP_AT'
+	'CLASS', 'REPEAT', 'BLACKLIST', 'INS_PON', 'MICROSATELLITE',
+	'TUMOUR_PS', 'TUMOUR_ALT_HP', 'NORMAL_PS', 'NORMAL_ALT_HP', 'TUMOUR_TOTAL_HP_AT', 'NORMAL_TOTAL_HP_AT',
+	'TUMOUR_ALT_HP_1_COUNT', 'TUMOUR_ALT_HP_2_COUNT', 'NORMAL_ALT_HP_1_COUNT', 'NORMAL_ALT_HP_2_COUNT'
 ]
 
-def format_data(data_matrix):
+def format_data(data_matrix, tumour_only):
 	""" parse columns, do conversions, one-hot-encoding """
 	# split the DP tuples
 	# this was solution to strange pandas error if comes up again:
-	tumour_dp_before = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
-	tumour_dp_before.columns = ['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']
-	data_matrix = pd.concat([data_matrix, tumour_dp_before], axis=1)
-	#data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	#tumour_dp_before = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
+	#tumour_dp_before.columns = ['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']
+	#data_matrix = pd.concat([data_matrix, tumour_dp_before], axis=1)
+	data_matrix[['TUMOUR_DP_BEFORE_0', 'TUMOUR_DP_BEFORE_1']] = data_matrix['TUMOUR_DP_BEFORE'].apply(pd.Series)
 	data_matrix[['TUMOUR_DP_AT_0', 'TUMOUR_DP_AT_1']] = data_matrix['TUMOUR_DP_AT'].apply(pd.Series)
 	data_matrix[['TUMOUR_DP_AFTER_0', 'TUMOUR_DP_AFTER_1']] = data_matrix['TUMOUR_DP_AFTER'].apply(pd.Series)
-	data_matrix[['NORMAL_DP_BEFORE_0', 'NORMAL_DP_BEFORE_1']] = data_matrix['NORMAL_DP_BEFORE'].apply(pd.Series)
-	data_matrix[['NORMAL_DP_AT_0', 'NORMAL_DP_AT_1']] = data_matrix['NORMAL_DP_AT'].apply(pd.Series)
-	data_matrix[['NORMAL_DP_AFTER_0', 'NORMAL_DP_AFTER_1']] = data_matrix['NORMAL_DP_AFTER'].apply(pd.Series)
+	if not tumour_only:
+		data_matrix[['NORMAL_DP_BEFORE_0', 'NORMAL_DP_BEFORE_1']] = data_matrix['NORMAL_DP_BEFORE'].apply(pd.Series)
+		data_matrix[['NORMAL_DP_AT_0', 'NORMAL_DP_AT_1']] = data_matrix['NORMAL_DP_AT'].apply(pd.Series)
+		data_matrix[['NORMAL_DP_AFTER_0', 'NORMAL_DP_AFTER_1']] = data_matrix['NORMAL_DP_AFTER'].apply(pd.Series)
 	# split the AF tuples
 	data_matrix[['TUMOUR_AF_0', 'TUMOUR_AF_1']] = data_matrix['TUMOUR_AF'].apply(pd.Series)
-	data_matrix[['NORMAL_AF_0', 'NORMAL_AF_1']] = data_matrix['NORMAL_AF'].apply(pd.Series)
+	if not tumour_only:
+		data_matrix[['NORMAL_AF_0', 'NORMAL_AF_1']] = data_matrix['NORMAL_AF'].apply(pd.Series)
 	if 'TUMOUR_ALT_HP' in data_matrix:
 		# split the HP tuples
 		data_matrix[['TUMOUR_ALT_HP_1_COUNT', 'TUMOUR_ALT_HP_2_COUNT', 'TUMOUR_ALT_HP_NA_COUNT']] = data_matrix['TUMOUR_ALT_HP'].apply(pd.Series)
-		data_matrix[['NORMAL_ALT_HP_1_COUNT', 'NORMAL_ALT_HP_2_COUNT', 'NORMAL_ALT_HP_NA_COUNT']] = data_matrix['NORMAL_ALT_HP'].apply(pd.Series)
+		if not tumour_only:
+			data_matrix[['NORMAL_ALT_HP_1_COUNT', 'NORMAL_ALT_HP_2_COUNT', 'NORMAL_ALT_HP_NA_COUNT']] = data_matrix['NORMAL_ALT_HP'].apply(pd.Series)
 	if 'TUMOUR_TOTAL_HP_AT' in data_matrix:
 		# split the HP tuples
 		data_matrix[['TUMOUR_TOTAL_HP_1_COUNT', 'TUMOUR_TOTAL_HP_2_COUNT', 'TUMOUR_TOTAL_HP_NA_COUNT']] = data_matrix['TUMOUR_TOTAL_HP_AT'].apply(pd.Series)
-		data_matrix[['NORMAL_TOTAL_HP_1_COUNT', 'NORMAL_TOTAL_HP_2_COUNT', 'NORMAL_TOTAL_HP_NA_COUNT']] = data_matrix['NORMAL_TOTAL_HP_AT'].apply(pd.Series)
+		if not tumour_only:
+			data_matrix[['NORMAL_TOTAL_HP_1_COUNT', 'NORMAL_TOTAL_HP_2_COUNT', 'NORMAL_TOTAL_HP_NA_COUNT']] = data_matrix['NORMAL_TOTAL_HP_AT'].apply(pd.Series)
+	# add feature that indicates whether the phasing is in conflict
+	# as well, calculate the percentage of supporting reads that are phased
+	if 'TUMOUR_ALT_HP' in data_matrix:
+		data_matrix['TUMOUR_PHASING_CONFLICT'] = np.where(
+			(data_matrix['TUMOUR_ALT_HP_1_COUNT'] > 0) & (data_matrix['TUMOUR_ALT_HP_2_COUNT'] > 0),
+			True,
+			False
+		)
+		data_matrix['TUMOUR_PROP_ALT_READS_PHASED'] = (data_matrix['TUMOUR_ALT_HP_1_COUNT'] + data_matrix['TUMOUR_ALT_HP_2_COUNT'] + 1)/(data_matrix['TUMOUR_ALN_SUPPORT'] + 1)
+		data_matrix["TUMOUR_MAJOR_HP_COUNT"] = data_matrix[["TUMOUR_ALT_HP_1_COUNT", "TUMOUR_ALT_HP_2_COUNT"]].max(axis=1)
+		data_matrix["TUMOUR_MINOR_HP_COUNT"] = data_matrix[["TUMOUR_ALT_HP_1_COUNT", "TUMOUR_ALT_HP_2_COUNT"]].min(axis=1)
+		data_matrix['TUMOUR_PHASING_RATIO'] = (data_matrix['TUMOUR_MAJOR_HP_COUNT']+1)/(data_matrix['TUMOUR_MAJOR_HP_COUNT']+data_matrix['TUMOUR_MINOR_HP_COUNT']+1)
+		data_matrix['TUMOUR_PHASING_CONFIDENCE'] = (data_matrix['TUMOUR_MAJOR_HP_COUNT'] + 1)/(data_matrix['TUMOUR_MAJOR_HP_COUNT'] + data_matrix['TUMOUR_MINOR_HP_COUNT'] + 1) * data_matrix['TUMOUR_PROP_ALT_READS_PHASED']
+	if not tumour_only and 'NORMAL_ALT_HP' in data_matrix:
+		data_matrix['NORMAL_PHASING_CONFLICT'] = np.where(
+			(data_matrix['NORMAL_ALT_HP_1_COUNT'] > 0) & (data_matrix['NORMAL_ALT_HP_2_COUNT'] > 0),
+			True,
+			False
+		)
+		data_matrix['NORMAL_PROP_ALT_READS_PHASED'] = (data_matrix['NORMAL_ALT_HP_1_COUNT'] + data_matrix['NORMAL_ALT_HP_2_COUNT'] + 1)/(data_matrix['NORMAL_ALN_SUPPORT'] + 1)
+		data_matrix["NORMAL_MAJOR_HP_COUNT"] = data_matrix[["NORMAL_ALT_HP_1_COUNT", "NORMAL_ALT_HP_2_COUNT"]].max(axis=1)
+		data_matrix["NORMAL_MINOR_HP_COUNT"] = data_matrix[["NORMAL_ALT_HP_1_COUNT", "NORMAL_ALT_HP_2_COUNT"]].min(axis=1)
+		data_matrix['NORMAL_PHASING_RATIO'] = (data_matrix['NORMAL_MAJOR_HP_COUNT']+1)/(data_matrix['NORMAL_MAJOR_HP_COUNT']+data_matrix['NORMAL_MINOR_HP_COUNT']+1)
+		data_matrix['NORMAL_PHASING_CONFIDENCE'] = (data_matrix['NORMAL_MAJOR_HP_COUNT'] + 1)/(data_matrix['NORMAL_MAJOR_HP_COUNT'] + data_matrix['NORMAL_MINOR_HP_COUNT'] + 1) * data_matrix['NORMAL_PROP_ALT_READS_PHASED']
+	# feature indicating the proportion of alt reads vs reads clustered to the start location
+	data_matrix['TUMOUR_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['TUMOUR_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_TUMOUR'] + 1)
+	if not tumour_only:
+		data_matrix['NORMAL_PROP_ALT_READS_VS_CLUSTERED'] = (data_matrix['NORMAL_ALN_SUPPORT'] + 1)/(data_matrix['CLUSTERED_READS_NORMAL'] + 1)
+
 	# when nothing in second depth column (insertions), replace with value in first
 	data_matrix['TUMOUR_DP_BEFORE_1'] = data_matrix['TUMOUR_DP_BEFORE_1'].fillna(data_matrix['TUMOUR_DP_BEFORE_0'])
 	data_matrix['TUMOUR_DP_AT_1'] = data_matrix['TUMOUR_DP_AT_1'].fillna(data_matrix['TUMOUR_DP_AT_0'])
 	data_matrix['TUMOUR_DP_AFTER_1'] = data_matrix['TUMOUR_DP_AFTER_1'].fillna(data_matrix['TUMOUR_DP_AFTER_0'])
-	data_matrix['NORMAL_DP_BEFORE_1'] = data_matrix['NORMAL_DP_BEFORE_1'].fillna(data_matrix['NORMAL_DP_BEFORE_0'])
-	data_matrix['NORMAL_DP_AT_1'] = data_matrix['NORMAL_DP_AT_1'].fillna(data_matrix['NORMAL_DP_AT_0'])
-	data_matrix['NORMAL_DP_AFTER_1'] = data_matrix['NORMAL_DP_AFTER_1'].fillna(data_matrix['NORMAL_DP_AFTER_0'])
+	if not tumour_only:
+		data_matrix['NORMAL_DP_BEFORE_1'] = data_matrix['NORMAL_DP_BEFORE_1'].fillna(data_matrix['NORMAL_DP_BEFORE_0'])
+		data_matrix['NORMAL_DP_AT_1'] = data_matrix['NORMAL_DP_AT_1'].fillna(data_matrix['NORMAL_DP_AT_0'])
+		data_matrix['NORMAL_DP_AFTER_1'] = data_matrix['NORMAL_DP_AFTER_1'].fillna(data_matrix['NORMAL_DP_AFTER_0'])
 	data_matrix['TUMOUR_AF_1'] = data_matrix['TUMOUR_AF_1'].fillna(data_matrix['TUMOUR_AF_0'])
-	data_matrix['NORMAL_AF_1'] = data_matrix['NORMAL_AF_1'].fillna(data_matrix['NORMAL_AF_0'])
+	if not tumour_only:
+		data_matrix['NORMAL_AF_1'] = data_matrix['NORMAL_AF_1'].fillna(data_matrix['NORMAL_AF_0'])
 	data_matrix.replace([np.inf, -np.inf], -1, inplace=True)
+	# add ratios for copy number change
+	if not tumour_only:
+		data_matrix['NORMAL_DP_CHANGE_RATIO_0'] = (data_matrix['NORMAL_DP_BEFORE_0']+1)/(data_matrix['NORMAL_DP_AFTER_0']+1)
+	data_matrix['TUMOUR_DP_CHANGE_RATIO_0'] = (data_matrix['TUMOUR_DP_BEFORE_0']+1)/(data_matrix['TUMOUR_DP_AFTER_0']+1)
+	if not tumour_only:
+		data_matrix['NORMAL_DP_CHANGE_RATIO_1'] = (data_matrix['NORMAL_DP_BEFORE_1']+1)/(data_matrix['NORMAL_DP_AFTER_1']+1)
+	data_matrix['TUMOUR_DP_CHANGE_RATIO_1'] = (data_matrix['TUMOUR_DP_BEFORE_1']+1)/(data_matrix['TUMOUR_DP_AFTER_1']+1)
 	# create std_dev/mean_size ratio columns
 	data_matrix['ORIGIN_STD_MEAN_RATIO'] = data_matrix['ORIGIN_STARTS_STD_DEV']/(data_matrix['ORIGIN_EVENT_SIZE_MEAN']+1.0)
 	data_matrix['END_STD_MEAN_RATIO'] = data_matrix['END_STARTS_STD_DEV']/(data_matrix['END_EVENT_SIZE_MEAN']+1.0)
@@ -102,13 +144,19 @@ def format_data(data_matrix):
 	data_matrix = data_matrix.drop('BP_NOTATION', axis=1)
 	data_matrix = data_matrix.join(sv_type_one_hot)
 
-
 	return data_matrix
 
-def prepare_data(data_matrix, germline_class):
+def prepare_data(data_matrix, germline_class, tumour_only):
 	""" add predictor and split into train/test """
 	# reformat/parse columns
-	data_matrix = format_data(data_matrix)
+	data_matrix = format_data(data_matrix, tumour_only)
+	if not tumour_only:
+		# perform sanity check on labels - don't allow somatic label with NORMAL support
+		data_matrix.loc[
+		((data_matrix["NORMAL_ALN_SUPPORT"].astype(int) > 0) | (data_matrix["NORMAL_READ_SUPPORT"].astype(int) > 0))
+		& (data_matrix["LABEL"] == 'SOMATIC'),
+		'LABEL'
+		] = 'NOT_IN_COMPARISON'
 	if germline_class:
 		# encode the labels to 0/1/2 for FALSE/SOMATIC/GERMLINE
 		data_matrix['LABEL'] = data_matrix['LABEL'].map(
@@ -132,8 +180,10 @@ def format_value_counts(value_counts):
 	""" print this out prettier """
 	values = value_counts.keys().tolist()
 	counts = value_counts.tolist()
+	str = ''
 	for i in range(0,len(values)):
-		print(f'{round(counts[i], 4)} - {encoded_labels[values[i]]}')
+		str+=f'{round(counts[i], 4)} - {encoded_labels[values[i]]}\n'
+	return str
 
 def cross_conformal_classifier(X, y, outdir, split, threads):
 	""" """
@@ -146,12 +196,13 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 	X_reserved_test = X_reserved_test_with_ids.copy(deep=True) # prevent ids from being dropped
 	X_reserved_test = X_reserved_test.iloc[: , 2:]
 
-	print(f'\nDistributions of Training Data:')
-	format_value_counts(y_train.value_counts(normalize=False))
-	format_value_counts(y_train.value_counts(normalize=True))
-	print(f'\nDistributions of Testing Data:')
-	format_value_counts(y_reserved_test.value_counts(normalize=False))
-	format_value_counts(y_reserved_test.value_counts(normalize=True))
+	training_str = ['TRAINING STATS:\n\n']
+	training_str.append(f'Distributions of Training Data:\n')
+	training_str.append(format_value_counts(y_train.value_counts(normalize=False))+'\n')
+	training_str.append(format_value_counts(y_train.value_counts(normalize=True))+'\n')
+	training_str.append(f'Distributions of Testing Data:\n')
+	training_str.append(format_value_counts(y_reserved_test.value_counts(normalize=False))+'\n')
+	training_str.append(format_value_counts(y_reserved_test.value_counts(normalize=True))+'\n')
 
 	X_calibration, X_proper_train, y_calibration, y_proper_train = train_test_split(X_train, y_train, test_size=0.3)
 
@@ -222,24 +273,24 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 			# noise = false but class = noise
 			fn_noise += 1
 
-	print('\nResults using Cross-conformal prediction')
-	print(f'Neither: {count_neither} | Both: {count_both} | Total: {len(test_probabilities)}')
+	training_str.append(f'Results using Cross-conformal prediction\n')
+	training_str.append(f'Neither: {count_neither} | Both: {count_both} | Total: {len(test_probabilities)}\n')
 	# SOMATIC SCORES
 	precision = tp_somatic/(tp_somatic+fp_somatic)
 	recall = tp_somatic/(tp_somatic+fn_somatic)
 	f_measure = (2*precision*recall)/(precision+recall)
-	print(f'Somatic Scores:')
-	print(f'TP Somatic: {tp_somatic} | FN Somatic: {fn_somatic}')
-	print(f'FP Somatic: {fp_somatic} | TN Somatic: {tn_somatic}')
-	print(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}')
+	training_str.append(f'Somatic Scores:\n')
+	training_str.append(f'TP Somatic: {tp_somatic} | FN Somatic: {fn_somatic}\n')
+	training_str.append(f'FP Somatic: {fp_somatic} | TN Somatic: {tn_somatic}\n')
+	training_str.append(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}\n')
 	# NOISE SCORES
 	precision = tp_noise/(tp_noise+fp_noise)
 	recall = tp_noise/(tp_noise+fn_noise)
 	f_measure = (2*precision*recall)/(precision+recall)
-	print(f'Noise Scores:')
-	print(f'TP Noise: {tp_noise} | FN Noise: {fn_noise}')
-	print(f'FP Noise: {fp_noise} | TN Noise: {tn_noise}')
-	print(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}')
+	training_str.append(f'Noise Scores:\n')
+	training_str.append(f'TP Noise: {tp_noise} | FN Noise: {fn_noise}\n')
+	training_str.append(f'FP Noise: {fp_noise} | TN Noise: {tn_noise}\n')
+	training_str.append(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}\n')
 
 	groups = {}
 	for group in ['both','null','noise', 'somatic']:
@@ -263,7 +314,7 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 			fp.write('\n')
 
 	# USING REGULAR NON-CONFORMAL VOTE
-	print('\nResults using standard prediction')
+	training_str.append('\nResults using standard prediction\n')
 	voting_class_assignments = {k: np.array([]) for k in nconform_scores.keys()}
 	voting_class_assignments['truth'] = np.array([])
 	for i, prob in enumerate(test_probabilities):
@@ -311,24 +362,24 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 			# noise = false but class = noise
 			fn_noise += 1
 
-	print(f'Neither: {count_neither} | Both: {count_both} | Total: {len(test_probabilities)}')
+	training_str.append(f'Neither: {count_neither} | Both: {count_both} | Total: {len(test_probabilities)}\n')
 	# SOMATIC SCORES
 	precision = tp_somatic/(tp_somatic+fp_somatic)
 	recall = tp_somatic/(tp_somatic+fn_somatic)
 	f_measure = (2*precision*recall)/(precision+recall)
-	print(f'Somatic Scores:')
-	print(f'TP Somatic: {tp_somatic} | FN Somatic: {fn_somatic}')
-	print(f'FP Somatic: {fp_somatic} | TN Somatic: {tn_somatic}')
-	print(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}')
+	training_str.append(f'Somatic Scores:\n')
+	training_str.append(f'TP Somatic: {tp_somatic} | FN Somatic: {fn_somatic}\n')
+	training_str.append(f'FP Somatic: {fp_somatic} | TN Somatic: {tn_somatic}\n')
+	training_str.append(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}\n')
 
 	# NOISE SCORES
 	precision = tp_noise/(tp_noise+fp_noise)
 	recall = tp_noise/(tp_noise+fn_noise)
 	f_measure = (2*precision*recall)/(precision+recall)
-	print(f'Noise Scores:')
-	print(f'TP Noise: {tp_noise} | FN Noise: {fn_noise}')
-	print(f'FP Noise: {fp_noise} | TN Noise: {tn_noise}')
-	print(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}')
+	training_str.append(f'Noise Scores:\n')
+	training_str.append(f'TP Noise: {tp_noise} | FN Noise: {fn_noise}\n')
+	training_str.append(f'FP Noise: {fp_noise} | TN Noise: {tn_noise}\n')
+	training_str.append(f'Precision: {round(precision,2)} | Recall: {round(recall,2)} | F-measure: {round(f_measure,2)}\n')
 
 	with open(f'{outdir}/class_counts_voted.txt', 'w') as fp:
 		fp.write('\t'.join(['group','count_0', 'count_1']))
@@ -338,17 +389,44 @@ def cross_conformal_classifier(X, y, outdir, split, threads):
 			fp.write('\n')
 
 	# EVALUATE
-	print('\n- Precision-Recall Curve -')
+	training_str.append('\n- Precision-Recall Curve -\n')
 	# now drop for the pr-curve # TODO remove this, it's unneeded i think
 	#X_reserved_test_no_ids = X_reserved_test.drop(['SAMPLE','ID'], axis=1, errors='ignore')
 	probs = random_forest.predict_proba(X_reserved_test)
 	precision, recall, _ = precision_recall_curve(y_reserved_test, probs[:, 1])
-	print(f'AUC: {round(auc(recall, precision),2)}')
+	training_str.append(f'AUC: {round(auc(recall, precision),2)}\n')
 
 	# print out the feature importances
-	print('\nSorted Feature Importances:')
+	training_str.append('Sorted Feature Importances:\n')
 	feature_importances = pd.Series(random_forest.feature_importances_, index=X_train.drop(['SAMPLE','ID'], axis=1, errors='ignore').columns).sort_values(ascending=False)
-	print(feature_importances.to_string())
+	training_str.append(feature_importances.to_string())
+	with open(os.path.join(outdir, f'feature_importances.txt'), "w") as text_file:
+	    text_file.write(feature_importances.to_string())
+
+	# export n example decision trees
+	import random
+	n = 5
+	training_str.append(f'\n{n} Example Decision Trees:\n')
+	random_tree_indicies = random.sample(range(0, len(random_forest.estimators_)), n)
+	for i in random_tree_indicies:
+		training_str.append(f'\nExample Decision Tree [{i}]\n')
+		from sklearn.tree import export_text, plot_tree
+		import matplotlib.pyplot as plt
+		tree = random_forest.estimators_[i]
+		tree_txt = export_text(tree, feature_names=X_train.drop(['SAMPLE','ID'], axis=1, errors='ignore').columns.tolist())
+		training_str.append(tree_txt)
+		with open(os.path.join(outdir, f'example_tree_{i}.txt'), "w") as text_file:
+			text_file.write(tree_txt)
+		plt.figure(figsize=(25, 25))  # Adjust size as needed
+		plot_tree(tree, feature_names=X_train.drop(['SAMPLE','ID'], axis=1, errors='ignore').columns.tolist(), filled=True, fontsize=8)
+		# Save the figure as a PNG file
+		plt.savefig(os.path.join(outdir, f'example_tree_{i}.png'), dpi=300)  # Set dpi for better resolution
+		plt.close()  # Close the plot to free up memory
+
+	with open(f'{outdir}/training_stats.txt', 'w') as training_stats:
+		for line in training_str:
+			print(line, end='')
+			training_stats.write(line)
 
 	# export the data and predictions
 	test_matrix = X_reserved_test_with_ids.copy(deep=True)
@@ -452,90 +530,6 @@ def test_cutoffs(model, X_test, y_test, outdir, model_type):
 			]
 			fp.write('\t'.join(line))
 			fp.write('\n')
-
-def random_forest_training(hyperparameter, X_train, y_train):
-	""" train and return a random forest classifier """
-	if hyperparameter:
-		# hyper-parameter testing
-		param_dist = {'n_estimators': randint(100,1000), 'max_depth': randint(10,25)}
-		rf = RandomForestClassifier(n_jobs=16)
-		rand_search = RandomizedSearchCV(
-			rf,
-			param_distributions=param_dist,
-			n_iter=5,
-			cv=3,
-			scoring='average_precision',
-			verbose=3
-		)
-		rand_search.fit(X_train, y_train)
-		print('Using Best Hyperparameters:')
-		print(', '.join(f'{key}: {round(value,2)}' for key, value in rand_search.best_params_.items()))
-		# store the best model
-		random_forest = rand_search.best_estimator_
-	else:
-		# use default pre-deteremined hyperparameters
-		random_forest = RandomForestClassifier(max_depth=20, n_estimators=400, n_jobs=16)
-		random_forest.fit(X_train, y_train)
-
-	return random_forest
-
-def evaluate_model(model, X_train, X_test, y_test, y_pred, outdir, model_type, germline_class):
-	""" calculate performance stats of model """
-	print(f'\nStatistics for model: {model_type}')
-	# FIRST STATS METHOD
-	average_method = 'weighted'
-	stats = {
-		'Precision': precision_score(y_test, y_pred, average=average_method),
-		'Recall': recall_score(y_test, y_pred, average=average_method),
-		'F-score': f1_score(y_test, y_pred, average=average_method)
-	}
-	print('\n- Weighted Stats -')
-	for stat, value in stats.items():
-		print(f'{stat}: {round(value, 3)}')
-	# SECOND STATS METHOD
-	average_method = 'macro'
-	stats = {
-		'Precision': precision_score(y_test, y_pred, average=average_method),
-		'Recall': recall_score(y_test, y_pred, average=average_method),
-		'F-score': f1_score(y_test, y_pred, average=average_method)
-	}
-	print('\n- Macro Stats -')
-	for stat, value in stats.items():
-		print(f'{stat}: {round(value, 3)}')
-
-	print('\n- Precision-Recall Curve -')
-	probs = model.predict_proba(X_test.drop(['SAMPLE','ID'], axis=1))
-	precision, recall, _ = precision_recall_curve(y_test, probs[:, 1])
-	print(f'F1: {round(f1_score(y_test, y_pred),2)} | AUC: {round(auc(recall, precision),2)}')
-
-	# print out the feature importances
-	print('\nSorted Feature Importances:')
-	feature_importances = pd.Series(model.feature_importances_, index=X_train.drop(['SAMPLE','ID'], axis=1).columns).sort_values(ascending=False)
-	print(feature_importances.to_string())
-
-	print('\nConfusion Matrix:')
-	labels = np.array(['FALSE', 'SOMATIC', 'GERMLINE']) if germline_class else np.array(['FALSE', 'TRUE'])
-	cm=confusion_matrix(y_test, y_pred)
-	disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
-	disp.plot()
-	plt.savefig(os.path.join(outdir, f'{model_type}_confusion_matrix.png'))
-	plt.show()
-
-	report = classification_report(y_test, y_pred)
-	print(report)
-	with open(os.path.join(outdir, f'{model_type}_model_stats.txt'), 'w') as f:
-		f.write(report)
-
-	# export y_test and pred
-	test_matrix = X_test.copy(deep=True)
-	test_matrix['TRUE_LABEL'] = y_test.copy()
-	test_matrix['PREDICTED_LABEL'] = y_pred.copy()
-	# only interested in the FP/FN
-	test_matrix_missed = test_matrix[test_matrix['TRUE_LABEL'] != test_matrix['PREDICTED_LABEL']]
-	test_matrix_missed.to_csv(os.path.join(outdir, f'test_set_incorrect_{model_type}.tsv'), sep="\t", index=False)
-	# only interested in the TP/TN
-	test_matrix_found = test_matrix[test_matrix['TRUE_LABEL'] == test_matrix['PREDICTED_LABEL']]
-	test_matrix_found.to_csv(os.path.join(outdir, f'test_set_correct_{model_type}.tsv'), sep="\t", index=False)
 
 def save_model(args, model, outdir):
 	""" save model and its info to pickle file """
