@@ -159,6 +159,9 @@ def merge_segments(x, Sse, quantile):
     #     return []
     if len(Sse) == 1:
         return Sse
+    if quantile == 0:
+        # print("    Merging of segments skipped")
+        return Sse
     else:
         # initialise list to collect absolute differences between segment medians
         med_changepoints_diffs = []
@@ -283,7 +286,10 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
 
     # Define contig names from input log2r read count file
     chr_names = list(dict.fromkeys([x[1] for x in in_data]))
-
+    
+    if quantile == 0:
+        print("    Segment merging will be skipped")
+    
     # only use multiprocessing if more than 1 thread available/being used.
     if threads == 1:
         # loop through chromosomes
