@@ -157,7 +157,7 @@ Argument|Description
 --snp_vcf| Path to SNP vcf file to extract heterozygous SNPs for allele counting
 --g1000_vcf | Use 1000g biallelic vcf file for allele counting instead of SNP vcf from matched normal. Specify which genome version to use. choices={"1000g_hg38", "1000g_hg19", "1000g_t2t"}
 --ont | Run on Nanopore data (default)
---pb | Use PacBio filters to classify variants ([see description of filters](classify-for-pacbio))
+--pb | Use PacBio filters to classify variants ([Classify for PacBio](#classify-for-pacbio))
 --sample| Name to prepend to output files (default=tumour BAM filename without extension)
 --contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
 --length| Minimum length SV to consider (default=30)

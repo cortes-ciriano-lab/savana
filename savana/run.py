@@ -148,7 +148,7 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 			'clusters': clusters,
 			'buffer': args.end_buffer,
 			'length': args.length,
-			'depth': args.min_support,
+			'depth': args.algorithm_min_reads,
 			'tumour_only': args.tumour_only,
 			'task_id': task_id_counter
 		})
