@@ -378,8 +378,9 @@ def classify_by_params(args, checkpoints, time_str):
 
 def pacbio_pass_somatic(variant, min_support, min_af):
 	""" custom manual filters for PacBio """
-	if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
-		return False
+	if variant.INFO.get('NORMAL_READ_SUPPORT'):
+		if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
+			return False
 	if variant.INFO['TUMOUR_READ_SUPPORT'] < min_support:
 		return False
 	if variant.INFO['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant.INFO['END_STARTS_STD_DEV'] > 50.0:
@@ -390,8 +391,9 @@ def pacbio_pass_somatic(variant, min_support, min_af):
 		return False
 	if variant.INFO['TUMOUR_AF'][0] < min_af:
 		return False
-	if variant.INFO['CLUSTERED_READS_NORMAL'] > 3:
-		return False
+	if variant.INFO.get('CLUSTERED_READS_NORMAL'):
+		if variant.INFO['CLUSTERED_READS_NORMAL'] > 3:
+			return False
 	return True
 
 def classify_pacbio(args, checkpoints, time_str):
