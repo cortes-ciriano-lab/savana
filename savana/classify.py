@@ -378,8 +378,9 @@ def classify_by_params(args, checkpoints, time_str):
 
 def pacbio_pass_somatic(variant, min_support, min_af):
 	""" custom manual filters for PacBio """
-	if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
-		return False
+	if variant.INFO.get('NORMAL_READ_SUPPORT'):
+		if variant.INFO['NORMAL_READ_SUPPORT'] != 0:
+			return False
 	if variant.INFO['TUMOUR_READ_SUPPORT'] < min_support:
 		return False
 	if variant.INFO['ORIGIN_STARTS_STD_DEV'] > 50.0 or variant.INFO['END_STARTS_STD_DEV'] > 50.0:
@@ -390,17 +391,17 @@ def pacbio_pass_somatic(variant, min_support, min_af):
 		return False
 	if variant.INFO['TUMOUR_AF'][0] < min_af:
 		return False
-	if variant.INFO['CLUSTERED_READS_NORMAL'] > 3:
-		return False
+	if variant.INFO.get('CLUSTERED_READS_NORMAL'):
+		if variant.INFO['CLUSTERED_READS_NORMAL'] > 3:
+			return False
 	return True
 
 def classify_pacbio(args, checkpoints, time_str):
 	""" classify using PacBio filters (manually defined) """
 
-	# increase min support and AF for PacBio (not below supplied mins)
-	pacbio_min_support = max(7, args.min_support)
-	pacbio_min_af = max(0.10, args.min_af)
-	print(f'Using PacBio minimum support filters of {pacbio_min_support} reads and {pacbio_min_af} allele-fracion')
+	print(f'\nClassifying SVs using PacBio filters')
+	print(f' - minimum number of tumour supporting reads of {args.min_support}')
+	print(f' - minimum allele-fraction of {args.min_af}')
 
 	if args.predict_germline:
 		print('Germline PacBio filters not yet implemented.')
@@ -409,7 +410,7 @@ def classify_pacbio(args, checkpoints, time_str):
 	pass_dict = {}
 	for variant in input_vcf:
 		variant_id = variant.ID
-		passed_somatic = pacbio_pass_somatic(variant, pacbio_min_support, pacbio_min_af)
+		passed_somatic = pacbio_pass_somatic(variant, args.min_support, args.min_af)
 		# update the pass dictionary
 		pass_dict[variant_id] = passed_somatic
 		if passed_somatic:

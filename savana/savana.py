@@ -62,6 +62,10 @@ def savana_run(args):
     else:
         sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
 
+    # for now this is not user-modifiable, it is an algorithm value,
+    # it defines the minimum number of reads that constitute a 'cluster'
+    args.algorithm_min_reads = 3
+
     # confirm ref and ref fasta index exist
     if not os.path.exists(args.ref):
         sys.exit(f'Provided reference: "{args.ref}" does not exist. Please provide full path')
@@ -96,6 +100,21 @@ def savana_classify(args):
             sys.exit(f'The `predict_germline` flag cannot be used in conjunction with custom parameters. Please include germline criteria in JSON input')
         elif args.legacy:
             sys.exit(f'The `predict_germline` flag cannot be used in conjunction with legacy filtering')
+    # decide whether to use default min_support and min_af
+    if not args.min_support:
+        # min_support is not set, if ONT use 3 if PacBio use 7
+        if not args.pb:
+            args.min_support = 3
+        else:
+            print(f'Setting default minimum tumour supporting reads for PacBio (7)')
+            args.min_support = 7
+    if not args.min_af:
+        # min_af is not set, if ONT use 0.01 if PacBio use 0.10
+        if not args.pb:
+            args.min_af = 0.01
+        else:
+            print(f'Setting default minimum allele-fraction for PacBio (0.10)')
+            args.min_af = 0.10
 
     if args.legacy:
         classify.classify_legacy(args, checkpoints, time_str)
@@ -283,6 +302,10 @@ def savana_tumour_only(args):
     else:
         sys.exit('Unrecognized file extension. Tumour files must be BAM/CRAM')
 
+    # for now this is not user-modifiable, it is an algorithm value,
+    # it defines the minimum number of reads that constitute a 'cluster'
+    args.algorithm_min_reads = 3
+
     # confirm ref and ref fasta index exist
     if not os.path.exists(args.ref):
         sys.exit(f'Provided reference: "{args.ref}" does not exist. Please provide full path')
@@ -394,15 +417,13 @@ def parse_args(args):
     run_parser.add_argument('--debug', action='store_true', help='output extra debugging info and files')
     run_parser.add_argument('--chunksize', nargs='?', type=int, default=100000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
     run_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-    run_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
-    run_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
     run_parser.set_defaults(func=savana_run)
 
     # savana classify
     classify_parser = subparsers.add_parser("classify", help="classify VCF using model")
     classify_parser.add_argument('--vcf', nargs='?', type=str, required=True, help='VCF file to classify')
-    classify_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant')
-    classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant')
+    classify_parser.add_argument('--min_support', nargs='?', type=int, default=None, required=False, help='Minimum supporting reads for a PASS variant')
+    classify_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=None, required=False, help='Minimum allele-fraction for a PASS variant')
     classify_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
     classify_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
     group = classify_parser.add_mutually_exclusive_group()
@@ -527,8 +548,8 @@ def parse_args(args):
     to_parser.add_argument('--debug', action='store_true', help='Output extra debugging info and files')
     to_parser.add_argument('--chunksize', nargs='?', type=int, default=100000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
     to_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
-    to_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
-    to_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
+    to_parser.add_argument('--min_support', nargs='?', type=int, default=None, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
+    to_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=None, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
     # classify args
     to_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
     to_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
@@ -626,8 +647,8 @@ def parse_args(args):
         global_parser.add_argument('--chunksize', nargs='?', type=int, default=100000000, help='Chunksize to use when splitting genome for parallel analysis - used to optimise memory (default=1000000)')
         global_parser.add_argument('--coverage_binsize', nargs='?', type=int, default=5, help='Length used for coverage bins (default=5)')
         # classify args
-        global_parser.add_argument('--min_support', nargs='?', type=int, default=3, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
-        global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=0.01, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
+        global_parser.add_argument('--min_support', nargs='?', type=int, default=None, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
+        global_parser.add_argument('--min_af', nargs='?', type=helper.float_range(0.0, 1.0), default=None, required=False, help='Minimum allele-fraction for a PASS variant (default=0.01)')
         global_parser.add_argument('--cna_rescue', nargs='?', type=str, required=False, help='Copy number abberation output file for this sample (used to rescue variants)')
         global_parser.add_argument('--cna_rescue_distance', nargs='?', type=int, default=50, required=False, help='Maximum distance from a copy number abberation for a variant to be rescued')
         classify_group = global_parser.add_mutually_exclusive_group()
