@@ -652,7 +652,7 @@ def count_labels_and_phase(source_breakpoints):
 
 	return read_counts, aln_counts, [start_phase, end_phase]
 
-def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom, tumour_only=False):
+def call_breakpoints(chrom, clusters, end_buffer, min_length, min_support, tumour_only=False):
 	""" identify consensus breakpoints from list of clusters """
 	# N.B. all breakpoints in a cluster must be from same start chromosome!
 	#TODO: refactor. this works but it's ugly and overcomplicated
@@ -723,7 +723,7 @@ def call_breakpoints(clusters, end_buffer, min_length, min_support, chrom, tumou
 				# sort by new start
 				flipped_breakpoints.sort()
 				# cheeky reclustering with reversed breakpoints
-				_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, end_buffer)
+				_, cluster_stack = cluster_breakpoints(end_chrom, flipped_breakpoints, min_support, end_buffer)
 				for end_chrom_cluster in cluster_stack:
 					# sort breakpoints by their breakpoint_notation
 					sorted_breakpoints = {}
