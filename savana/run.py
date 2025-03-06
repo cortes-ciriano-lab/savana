@@ -45,11 +45,11 @@ def execute_annotate(task_arg_dict, contig_coverage_array, task_tracker, conn):
 def execute_call_breakpoints(task_arg_dict, task_tracker, conn):
 	""" submit task arguments to the function and send results through pipe """
 	breakpoints, contig = call_breakpoints(
+		task_arg_dict['contig'],
 		task_arg_dict['clusters'],
 		task_arg_dict['buffer'],
 		task_arg_dict['length'],
-		task_arg_dict['depth'],
-		task_arg_dict['contig'],
+		task_arg_dict['min_support'],
 		task_arg_dict['tumour_only']
 	)
 	task_tracker[task_arg_dict['task_id']] = 1
@@ -64,6 +64,7 @@ def execute_cluster_breakpoints(task_arg_dict, task_tracker, conn):
 	contig, clustered_breakpoints = cluster_breakpoints(
 		task_arg_dict['contig'],
 		task_arg_dict['breakpoints'],
+		task_arg_dict['min_reads_per_cluster'],
 		task_arg_dict['buffer'],
 		task_arg_dict['ins_buffer'],
 	)
@@ -148,7 +149,7 @@ def generate_call_breakpoint_tasks(clustered_breakpoints, args):
 			'clusters': clusters,
 			'buffer': args.end_buffer,
 			'length': args.length,
-			'depth': args.algorithm_min_reads,
+			'min_support': args.min_support,
 			'tumour_only': args.tumour_only,
 			'task_id': task_id_counter
 		})
@@ -163,6 +164,7 @@ def generate_cluster_breakpoints_tasks(potential_breakpoints, args):
 		tasks.append({
 			'contig': contig,
 			'breakpoints': breakpoints,
+			'min_reads_per_cluster': args.min_reads_per_cluster,
 			'buffer': args.buffer,
 			'ins_buffer': args.insertion_buffer,
 			'task_id': task_id_counter

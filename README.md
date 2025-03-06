@@ -131,7 +131,6 @@ savana --tumour ONT_COLO829_T_truthset_50k.phased.bam --normal ONT_COLO829_N_tru
 > To run the above on a SLURM cluster we requested an interactive job with 8 cpus (`-c 8`) and 16 GB of memory (`--mem 16`). The total time to call variants (as measured by Linux `time`) was 48.88 seconds. You may need to adjust requirements for your computing environment
 
 
-
 ### Tumour-only Mode
 
 We strongly recommend running SAVANA conventionally using tumour and matched normal bam files for best performance. However, we have developed a SAVANA tumour-only `savana to` mode which can be run in the absence of a matched normal sample if required:
@@ -139,6 +138,9 @@ We strongly recommend running SAVANA conventionally using tumour and matched nor
 ```
 savana to --tumour <tumour-file> --outdir <outdir> --ref <ref-fasta> --g1000_vcf <vcf-file>
 ```
+
+If you use this mode, filtering the resulting SVs using external population and panel of normal (PoN) resources is **highly** recommended. Specifically, we recommend removing SVs that overlap with any SVs in [gnomadSV](https://gnomad.broadinstitute.org/data#v4-structural-variants) that have >=10% population allele-frequency (AF in `gnomad.v4.1.sv.sites.bed.gz`) as well as SVs present in the Hartwig Medical Foundation SV PoN (`sv_pon.38.bedpe.gz` - available at [hmf_dna_pipeline_resources](https://console.cloud.google.com/storage/browser/_details/hmf-public/HMFtools-Resources/dna_pipeline/v5_34/38/hmf_dna_pipeline_resources.38_v5.34.tar.gz;tab=live_object?pageState=(%22StorageObjectListTable%22:(%22f%22:%22%255B%255D%22))&inv=1&invt=AbrTFA&pli=1)).
+
 
 ### SAVANA Arguments
 
@@ -163,7 +165,7 @@ Argument|Description
 --length| Minimum length SV to consider (default=30)
 --keep_inv_artefact| Do not remove breakpoints with foldback-inversion artefact pattern (default is to remove)
 --mapq| Minimum MAPQ of reads to consider (default=0)
---min_support| Minimum supporting reads for a variant (default=5)
+--min_support| Minimum supporting reads for a variant (default=3)
 --min_af| Minimum allele-fraction (AF) for a variant (default=0.01)
 --cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
 --cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
@@ -179,6 +181,7 @@ Argument|Description
 --insertion_buffer| Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
 --end_buffer | Buffer to add when clustering the alternate edge of potential breakpoints, excepting insertions (default=100)
 --coverage_binsize | Length used for coverage bins (default=5)
+--min_reads_per_cluster | During initial clustering, discard clusters with fewer than n (default=3) reads supporting a putative event of any size/orientation
 --chunksize | Chunksize to use when splitting genome for parallel analysis (default=1000000)
 *CNA Algorithm Arguments*
 --tmpdir| Temp directory for allele counting temp files (defaults to outdir)

@@ -62,9 +62,19 @@ def savana_run(args):
     else:
         sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
 
-    # for now this is not user-modifiable, it is an algorithm value,
-    # it defines the minimum number of reads that constitute a 'cluster'
-    args.algorithm_min_reads = 3
+    # decide whether to use default min_support
+    if not args.min_support:
+        # min_support is not set, if ONT use 3 if PacBio use 7
+        if not hasattr(args, 'pb') or not args.pb:
+            args.min_support = 3
+        else:
+            print(f'Setting default minimum tumour supporting reads for PacBio (7)')
+            args.min_support = 7
+
+    # if min_reads_per_cluster is higher than min_support, need to lower it
+    if args.min_reads_per_cluster > args.min_support:
+        print(f'Lowering `min_reads_per_cluster` to {args.min_support} to match `min_support`')
+        args.min_reads_per_cluster = args.min_support
 
     # confirm ref and ref fasta index exist
     if not os.path.exists(args.ref):
@@ -302,9 +312,19 @@ def savana_tumour_only(args):
     else:
         sys.exit('Unrecognized file extension. Tumour files must be BAM/CRAM')
 
-    # for now this is not user-modifiable, it is an algorithm value,
-    # it defines the minimum number of reads that constitute a 'cluster'
-    args.algorithm_min_reads = 3
+    # decide whether to use default min_support
+    if not args.min_support:
+        # min_support is not set, if ONT use 3 if PacBio use 7
+        if not hasattr(args, 'pb') or not args.pb:
+            args.min_support = 3
+        else:
+            print(f'Setting default minimum tumour supporting reads for PacBio (7)')
+            args.min_support = 7
+
+    # if min_reads_per_cluster is higher than min_support, need to lower it
+    if args.min_reads_per_cluster > args.min_support:
+        print(f'Lowering `min_reads_per_cluster` to {args.min_support} to match `min_support`')
+        args.min_reads_per_cluster = args.min_support
 
     # confirm ref and ref fasta index exist
     if not os.path.exists(args.ref):
@@ -402,14 +422,16 @@ def parse_args(args):
     run_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
     run_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider. See example at example/contigs.chr.hg38.txt (optional, default=All)")
     run_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
+    run_parser.add_argument('-s','--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     run_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='Minimum MAPQ to consider a read mapped (default=5)')
     run_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
     run_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
     run_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
+    run_parser.add_argument('--min_support', nargs='?', type=int, default=None, required=False, help='Minimum supporting reads for a PASS variant (default=3)')
+    run_parser.add_argument('--min_reads_per_cluster', nargs='?', type=int, default=3, help='In clustering step, discard clusters with fewer than n (default=3) supporting reads')
     run_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
     run_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     run_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
-    run_parser.add_argument('-s','--sample', nargs='?', type=str, help="Name to prepend to output files (default=tumour BAM filename without extension)")
     run_parser.add_argument('--keep_inv_artefact', action='store_true', help="Do not remove breakpoints with foldback-inversion artefact pattern")
     run_parser.add_argument('--single_bnd', action='store_true', help='Report single breakend variants in addition to standard types (default=False)')
     run_parser.add_argument('--single_bnd_min_length', nargs='?', type=int, default=1000, help='Minimum length of single breakend to consider (default=100)')
@@ -537,6 +559,7 @@ def parse_args(args):
     to_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
     to_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
     to_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
+    to_parser.add_argument('--min_reads_per_cluster', nargs='?', type=int, default=3, help='In clustering step, discard clusters with fewer than n (default=3) supporting reads')
     to_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
     to_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
     to_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
@@ -631,10 +654,6 @@ def parse_args(args):
         global_parser.add_argument('--ref_index', nargs='?', type=str, required=False, help='Full path to reference genome fasta index (ref path + ".fai" by default)')
         global_parser.add_argument('--contigs', nargs='?', type=str, help="Contigs/chromosomes to consider (optional, default=All)")
         global_parser.add_argument('--length', nargs='?', type=int, default=30, help='Minimum length SV to consider (default=30)')
-        global_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='Minimum MAPQ to consider a read mapped (default=5)')
-        global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
-        global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
-        global_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
         global_parser.add_argument('--threads', nargs='?', type=int, const=0, help='Number of threads to use (default=max)')
         global_parser.add_argument('--outdir', nargs='?', required=True, help='Output directory (can exist but must be empty)')
         global_parser.add_argument('--overwrite', action='store_true', help='Use this flag to write to output directory even if files are present')
@@ -671,6 +690,12 @@ def parse_args(args):
         evaluate_group = global_parser.add_mutually_exclusive_group()
         evaluate_group.add_argument('--by_support', action='store_true', help='Comparison method: tie-break by read support')
         evaluate_group.add_argument('--by_distance', action='store_true', default=True, help='Comparison method: tie-break by min. distance (default)')
+        # algorithm args - down here to prevent them being listed first for users
+        global_parser.add_argument('--mapq', nargs='?', type=int, default=5, help='Minimum MAPQ to consider a read mapped (default=5)')
+        global_parser.add_argument('--buffer', nargs='?', type=int, default=10, help='Buffer when clustering adjacent potential breakpoints, excepting insertions (default=10)')
+        global_parser.add_argument('--insertion_buffer', nargs='?', type=int, default=250, help='Buffer when clustering adjacent potential insertion breakpoints (default=250)')
+        global_parser.add_argument('--end_buffer', nargs='?', type=int, default=50, help='Buffer when clustering alternate edge of potential breakpoints, excepting insertions (default=50)')
+        global_parser.add_argument('--min_reads_per_cluster', nargs='?', type=int, default=3, help='In clustering step, discard clusters with fewer than n (default=3) supporting reads')
         # cna args
         global_parser.add_argument('--cna_threads', nargs='?', type=int, const=0, help='Number of threads to use for CNA (default=max)')
         global_parser.add_argument('--tmpdir', nargs='?', required=False, default='tmp', help='Temp directory for allele counting temp files (defaults to outdir)')

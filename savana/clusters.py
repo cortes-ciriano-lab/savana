@@ -16,7 +16,7 @@ import pybedtools
 
 from savana.core import Cluster
 
-def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
+def cluster_breakpoints(chrom, breakpoints, min_reads_per_cluster, buffer, ins_buffer=None):
 	""" given a list of Breakpoints (starting on same chrom) cluster them on location and type """
 	stack = []
 	breakpoints.sort()
@@ -34,9 +34,8 @@ def cluster_breakpoints(chrom, breakpoints, buffer, ins_buffer=None):
 		else:
 			stack[-1].add(bp)
 
-	# require three supporting reads per cluster & remove normal-only clusters
-	#TODO: for gemline don't want this
-	filtered_stack = [cluster for cluster in stack if len(cluster.supporting_reads) >= 3 and not all([bp.label == 'normal' for bp in cluster.breakpoints])]
+	# require min_reads_per_cluster supporting reads per cluster & remove normal-only clusters
+	filtered_stack = [cluster for cluster in stack if len(cluster.supporting_reads) >= min_reads_per_cluster and not all([bp.label == 'normal' for bp in cluster.breakpoints])]
 
 	return chrom, filtered_stack
 
