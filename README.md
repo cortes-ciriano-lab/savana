@@ -256,7 +256,7 @@ SAVANA reports the breakend orientation using brackets in the ALT field as descr
 
 SAVANA reports information about each structural variant in the INFO field of the VCF:
 <details>
-<summary>VCF INFO Fields</summary>
+<summary>**VCF INFO Fields**</summary>
 
 | Field | Description |
 | ----- | ----------- |
