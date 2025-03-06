@@ -165,7 +165,7 @@ Argument|Description
 --length| Minimum length SV to consider (default=30)
 --keep_inv_artefact| Do not remove breakpoints with foldback-inversion artefact pattern (default is to remove)
 --mapq| Minimum MAPQ of reads to consider (default=0)
---min_support| Minimum supporting reads for a variant (default=5)
+--min_support| Minimum supporting reads for a variant (default=3)
 --min_af| Minimum allele-fraction (AF) for a variant (default=0.01)
 --cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
 --cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
@@ -181,6 +181,7 @@ Argument|Description
 --insertion_buffer| Buffer to add when clustering adjacent insertion potential breakpoints (default=100)
 --end_buffer | Buffer to add when clustering the alternate edge of potential breakpoints, excepting insertions (default=100)
 --coverage_binsize | Length used for coverage bins (default=5)
+--min_reads_per_cluster | During initial clustering, discard clusters with fewer than n (default=3) reads supporting a putative event of any size/orientation
 --chunksize | Chunksize to use when splitting genome for parallel analysis (default=1000000)
 *CNA Algorithm Arguments*
 --tmpdir| Temp directory for allele counting temp files (defaults to outdir)
