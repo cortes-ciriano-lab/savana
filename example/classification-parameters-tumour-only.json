@@ -1,0 +1,5 @@
+{
+	"somatic": {
+		"MIN_TUMOUR_READ_SUPPORT": 5
+	}
+}
