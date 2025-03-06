@@ -43,7 +43,10 @@ def pool_predict(data_matrix, features_to_drop, model_name, model_obj, threads, 
 				tar = tarfile.open(tar_path, "r:gz")
 				tar.extractall(models_dir)
 				tar.close()
-	data_matrices = np.array_split(data_matrix, threads)
+	chunk_size = ceil(len(data_matrix)/threads)
+	data_matrices = []
+	for i in range(0,len(data_matrix), chunk_size):
+		data_matrices.append(data_matrix.iloc[i:(i+chunk_size)])
 	pool = Pool(threads)
 	results = pool.map(partial(
 		predict,
