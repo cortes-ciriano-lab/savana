@@ -312,8 +312,12 @@ def classify_legacy(args, checkpoints, time_str):
 
 def filter_with_comparator(variant_value, filter_value, comparator):
 	""" given the variant's value, the filter, and the comparator (min/max), return whether it passes """
+	# for tuples, use first element (refers to this breakpoint)
+	if isinstance(variant_value, tuple):
+		variant_value = variant_value[0]
 	# cast the filter value to the same type as the variant's value
 	filter_value = type(variant_value)(filter_value)
+	# parse min/max logic
 	if comparator.upper() == "MAX":
 		if variant_value > filter_value:
 			return False
