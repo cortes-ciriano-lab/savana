@@ -551,7 +551,9 @@ def spawn_processes(args, aln_files, checkpoints, time_str, outdir):
 	# build strings
 	ref_fasta = pysam.FastaFile(args.ref)
 	bedpe_string = ''
-	vcf_string = helper.generate_vcf_header(args, annotated_breakpoints[0])
+	vcf_string = helper.generate_vcf_header(
+		args, annotated_breakpoints[0] if annotated_breakpoints else None
+	)
 	read_support_string = 'VARIANT_ID\tTUMOUR_SUPPORTING_READS\tNORMAL_SUPPORTING_READS\n'
 	insertion_fasta_string = ''
 	count = 0

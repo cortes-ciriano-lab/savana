@@ -347,12 +347,13 @@ def generate_vcf_header(args, example_breakpoint):
 		'##INFO=<ID=NORMAL_TOTAL_HP_AT,Number=3,Type=Integer,Description="Counts of all reads at SV location belonging to each haplotype in the normal sample (1/2/NA)">'
 	])
 	# add the stat info fields
-	breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
-	breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()
-	for stat in breakpoint_stats_origin:
-		vcf_header_str.append(f'##INFO=<ID=ORIGIN_{stat.upper()},Number=1,Type=Float,Description="Originating cluster value for {stat}">')
-	for stat in breakpoint_stats_end:
-		vcf_header_str.append(f'##INFO=<ID=END_{stat.upper()},Number=1,Type=Float,Description="End cluster value for {stat}">')
+	if example_breakpoint is not None:
+		breakpoint_stats_origin = example_breakpoint.originating_cluster.get_stats().keys()
+		breakpoint_stats_end = example_breakpoint.end_cluster.get_stats().keys()
+		for stat in breakpoint_stats_origin:
+			vcf_header_str.append(f'##INFO=<ID=ORIGIN_{stat.upper()},Number=1,Type=Float,Description="Originating cluster value for {stat}">')
+		for stat in breakpoint_stats_end:
+			vcf_header_str.append(f'##INFO=<ID=END_{stat.upper()},Number=1,Type=Float,Description="End cluster value for {stat}">')
 	# add the final header line
 	sample_name = os.path.splitext(os.path.basename(args.tumour))[0]
 	vcf_header_str.append("#"+"\t".join(['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT',sample_name]))
