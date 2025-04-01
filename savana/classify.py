@@ -508,112 +508,113 @@ def classify_by_model(args, checkpoints, time_str):
 
 	header, data = train.read_vcf(args.vcf)
 	data_matrix = pd.DataFrame(data, columns=header)
-	data_matrix = train.format_data(data_matrix, args.tumour_only)
-	helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
+	if data:
+		data_matrix = train.format_data(data_matrix, args.tumour_only)
+		helper.time_function("Loaded raw breakpoints", checkpoints, time_str)
 
-	loaded_model = pickle.load(open(args.custom_model, "rb"))
-	helper.time_function("Loaded classification model", checkpoints, time_str)
+		loaded_model = pickle.load(open(args.custom_model, "rb"))
+		helper.time_function("Loaded classification model", checkpoints, time_str)
 
-	prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], args.custom_model, loaded_model, args.threads, args.confidence)
+		prediction_dict = pool_predict(data_matrix, train.FEATURES_TO_DROP+["ID"], args.custom_model, loaded_model, args.threads, args.confidence)
 
-	helper.time_function("Performed prediction", checkpoints, time_str)
-	class_dictionary = {
-		-2: 'PREDICTED_BOTH', # mondrian
-		-1: 'PREDICTED_NEITHER', # mondrian
-		0: 'PREDICTED_NOISE',
-		1: 'PREDICTED_SOMATIC',
-		2: 'PREDICTED_GERMLINE',
-		3: 'RESCUED_SOMATIC',
-		4: 'REJECTED_LOW_SUPPORT',
-		5: 'REJECTED_LOW_AF'
-	}
-	variant_classes = prediction_dict
+		helper.time_function("Performed prediction", checkpoints, time_str)
+		class_dictionary = {
+			-2: 'PREDICTED_BOTH', # mondrian
+			-1: 'PREDICTED_NEITHER', # mondrian
+			0: 'PREDICTED_NOISE',
+			1: 'PREDICTED_SOMATIC',
+			2: 'PREDICTED_GERMLINE',
+			3: 'RESCUED_SOMATIC',
+			4: 'REJECTED_LOW_SUPPORT',
+			5: 'REJECTED_LOW_AF'
+		}
+		variant_classes = prediction_dict
 
-	if args.confidence is not None:
-		# convert the raw mondrian predictions into classes listed above
-		for variant, raw_prediction in prediction_dict.items():
-			# convert the raw predictions (inclu. mondrian)
-			if type(raw_prediction) is list and len(raw_prediction) == 1:
-				prediction_dict[variant] = raw_prediction[0]
-			if type(raw_prediction) is list and len(raw_prediction) == 2:
-				prediction_dict[variant] = -2
-			if type(raw_prediction) is list and len(raw_prediction) == 0:
-				prediction_dict[variant] = -1
+		if args.confidence is not None:
+			# convert the raw mondrian predictions into classes listed above
+			for variant, raw_prediction in prediction_dict.items():
+				# convert the raw predictions (inclu. mondrian)
+				if type(raw_prediction) is list and len(raw_prediction) == 1:
+					prediction_dict[variant] = raw_prediction[0]
+				if type(raw_prediction) is list and len(raw_prediction) == 2:
+					prediction_dict[variant] = -2
+				if type(raw_prediction) is list and len(raw_prediction) == 0:
+					prediction_dict[variant] = -1
 
-	# assign the classes of variants in input vcf
-	input_vcf = cyvcf2.VCF(args.vcf)
-	for variant in input_vcf:
-		variant_id = variant.ID
-		variant_mate_id = variant.INFO.get('MATEID', None)
-		variant_class = prediction_dict.get(variant_id, None)
-		# if no mate present, (as in ins, sbnds) set mate prediction to self prediction
-		variant_mate_class = variant_classes.get(variant.INFO.get('MATEID', None), variant_class)
-		if variant_class == 1 or variant_mate_class == 1:
-			# check against hard filters that override prediction
-			if not args.tumour_only:
-				# filters can use NORMAL fields in hard filters
-				if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
-					variant_classes[variant_id] = 4
-					if variant_mate_id: # reject mate as well
-						variant_classes[variant_mate_id] = 4
-				elif not args.tumour_only and (variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']):
-					variant_classes[variant_id] = 4
-					if variant_mate_id: # reject mate as well
-						variant_classes[variant_mate_id] = 4
-				elif variant.INFO['TUMOUR_AF'][0] < args.min_af and variant.INFO['TUMOUR_AF'][1] < args.min_af:
-					# determine if tumour-amplified
-					avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
-					avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
-					if avg_tumour_dp <= avg_normal_dp*5:
-						# no tumour amplification, low af holds
-						variant_classes[variant_id] = 5
+		# assign the classes of variants in input vcf
+		input_vcf = cyvcf2.VCF(args.vcf)
+		for variant in input_vcf:
+			variant_id = variant.ID
+			variant_mate_id = variant.INFO.get('MATEID', None)
+			variant_class = prediction_dict.get(variant_id, None)
+			# if no mate present, (as in ins, sbnds) set mate prediction to self prediction
+			variant_mate_class = variant_classes.get(variant.INFO.get('MATEID', None), variant_class)
+			if variant_class == 1 or variant_mate_class == 1:
+				# check against hard filters that override prediction
+				if not args.tumour_only:
+					# filters can use NORMAL fields in hard filters
+					if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+						variant_classes[variant_id] = 4
 						if variant_mate_id: # reject mate as well
-							variant_classes[variant_mate_id] = 5
+							variant_classes[variant_mate_id] = 4
+					elif not args.tumour_only and (variant.INFO['TUMOUR_READ_SUPPORT'] < variant.INFO['NORMAL_READ_SUPPORT']):
+						variant_classes[variant_id] = 4
+						if variant_mate_id: # reject mate as well
+							variant_classes[variant_mate_id] = 4
+					elif variant.INFO['TUMOUR_AF'][0] < args.min_af and variant.INFO['TUMOUR_AF'][1] < args.min_af:
+						# determine if tumour-amplified
+						avg_tumour_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['TUMOUR_DP_BEFORE', 'TUMOUR_DP_AT', 'TUMOUR_DP_AFTER']])
+						avg_normal_dp = mean([variant.INFO[dp] if isinstance(variant.INFO[dp], float) else variant.INFO[dp][0] for dp in ['NORMAL_DP_BEFORE', 'NORMAL_DP_AT', 'NORMAL_DP_AFTER']])
+						if avg_tumour_dp <= avg_normal_dp*5:
+							# no tumour amplification, low af holds
+							variant_classes[variant_id] = 5
+							if variant_mate_id: # reject mate as well
+								variant_classes[variant_mate_id] = 5
+					else:
+						# both pass
+						variant_classes[variant_id] = 1
+						if variant_mate_id: # accept mate as well
+							variant_classes[variant_mate_id] = 1
 				else:
-					# both pass
-					variant_classes[variant_id] = 1
-					if variant_mate_id: # accept mate as well
-						variant_classes[variant_mate_id] = 1
-			else:
-				# filters cannot use NORMAL fields in hard filters
-				if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+					# filters cannot use NORMAL fields in hard filters
+					if variant.INFO['TUMOUR_READ_SUPPORT'] < args.min_support:
+						variant_classes[variant_id] = 4
+						if variant_mate_id: # reject mate as well
+							variant_classes[variant_mate_id] = 4
+					elif variant.INFO['TUMOUR_AF'][0] < args.min_af:
+						variant_classes[variant_id] = 4
+						if variant_mate_id: # reject mate as well
+							variant_classes[variant_mate_id] = 4
+					else:
+						# both pass
+						variant_classes[variant_id] = 1
+						if variant_mate_id: # accept mate as well
+							variant_classes[variant_mate_id] = 1
+			elif variant_class == 2 and variant_mate_class == 2:
+				# check against hard filters that override prediction
+				if not args.tumour_only and (variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support):
 					variant_classes[variant_id] = 4
 					if variant_mate_id: # reject mate as well
 						variant_classes[variant_mate_id] = 4
-				elif variant.INFO['TUMOUR_AF'][0] < args.min_af:
-					variant_classes[variant_id] = 4
+				elif not args.tumour_only and (variant.INFO['NORMAL_AF'] < args.min_af):
+					variant_classes[variant_id] = 5
 					if variant_mate_id: # reject mate as well
-						variant_classes[variant_mate_id] = 4
+						variant_classes[variant_mate_id] = 5
 				else:
-					# both pass
-					variant_classes[variant_id] = 1
-					if variant_mate_id: # accept mate as well
-						variant_classes[variant_mate_id] = 1
-		elif variant_class == 2 and variant_mate_class == 2:
-			# check against hard filters that override prediction
-			if not args.tumour_only and (variant.INFO['NORMAL_READ_SUPPORT'] < args.min_support):
-				variant_classes[variant_id] = 4
+					# keep the true prediction
+					variant_classes[variant_id] = variant_class
+			elif variant_class == 0 or variant_mate_class == 0:
+				# either edge was predicted as noise (and neither edge somatic or germline since failed earlier check)
+				# update both edges to noise
+				variant_classes[variant_id] = 0
 				if variant_mate_id: # reject mate as well
-					variant_classes[variant_mate_id] = 4
-			elif not args.tumour_only and (variant.INFO['NORMAL_AF'] < args.min_af):
-				variant_classes[variant_id] = 5
-				if variant_mate_id: # reject mate as well
-					variant_classes[variant_mate_id] = 5
-			else:
-				# keep the true prediction
-				variant_classes[variant_id] = variant_class
-		elif variant_class == 0 or variant_mate_class == 0:
-			# either edge was predicted as noise (and neither edge somatic or germline since failed earlier check)
-			# update both edges to noise
-			variant_classes[variant_id] = 0
-			if variant_mate_id: # reject mate as well
-				variant_classes[variant_mate_id] = 0
-		elif (variant_class == -1 and variant_mate_class == -2) or (variant_class == -2 and variant_mate_class == -1):
-			# tricky case - one edge predicted both and the other predicted neither.
-			# update both edges to "BOTH"
-			variant_classes[variant_id] = -2
-			if variant_mate_id:
-				variant_classes[variant_mate_id] = -2
+					variant_classes[variant_mate_id] = 0
+			elif (variant_class == -1 and variant_mate_class == -2) or (variant_class == -2 and variant_mate_class == -1):
+				# tricky case - one edge predicted both and the other predicted neither.
+				# update both edges to "BOTH"
+				variant_classes[variant_id] = -2
+				if variant_mate_id:
+					variant_classes[variant_mate_id] = -2
 
 	# all variants and mates have final classes, output files
 	input_vcf = cyvcf2.VCF(args.vcf)
