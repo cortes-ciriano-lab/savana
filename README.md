@@ -101,7 +101,9 @@ After installing, SAVANA can be run on long-read data with a minumum set of argu
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta>
 ```
 
-This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. To compute copy number aberrations, you must provide a SNP VCF for the germline sample. Then, to call both SVs and CNAs you can run savana with:
+This will call somatic SVs. We recommend running with the --contigs argument (`--contigs example/contigs.chr.hg38.txt`) to only examine chromosomes of interest. We recommend phasing your input BAM files for optimal results (see [Phasing Information](#phasing-information)).
+
+To compute copy number aberrations, you must provide a SNP VCF for the germline sample. Then, to call both SVs and CNAs you can run savana with:
 ```
 savana --tumour <tumour-file> --normal <normal-file> --outdir <outdir> --ref <ref-fasta> --snp_vcf <vcf-file>
 ```
@@ -138,6 +140,8 @@ We strongly recommend running SAVANA conventionally using tumour and matched nor
 ```
 savana to --tumour <tumour-file> --outdir <outdir> --ref <ref-fasta> --g1000_vcf <vcf-file>
 ```
+
+In the absence of a normal BAM, we still recommend phasing your tumour BAM file using population SNPs as this will produce optimal SV calls (see [Phasing Information](#phasing-information) for more details on how to do this).
 
 If you use this mode, filtering the resulting SVs using external population and panel of normal (PoN) resources is **highly** recommended. Specifically, we recommend removing SVs that overlap with any SVs in [gnomadSV](https://gnomad.broadinstitute.org/data#v4-structural-variants) that have >=10% population allele-frequency (AF in `gnomad.v4.1.sv.sites.bed.gz`) as well as SVs present in the Hartwig Medical Foundation SV PoN (`sv_pon.38.bedpe.gz` - available at [hmf_dna_pipeline_resources](https://console.cloud.google.com/storage/browser/_details/hmf-public/HMFtools-Resources/dna_pipeline/v5_34/38/hmf_dna_pipeline_resources.38_v5.34.tar.gz;tab=live_object?pageState=(%22StorageObjectListTable%22:(%22f%22:%22%255B%255D%22))&inv=1&invt=AbrTFA&pli=1)).
 
@@ -322,9 +326,10 @@ To enable the examination of inserted sequence, `{sample}.inserted_sequences.fa`
 The final and main SAVANA CNA output file is `{sample}_{cn_binsize}_segmented_absolute_copy_number.tsv`, which contains the fitted total and minor absolute copy number values for each copy number segment (collapsed). Note that this output file (together with the classified somatic SAVANA SV calls) can be used to generate the Copy Number ReCon Plots, as outlined and described [here](https://github.com/cortes-ciriano-lab/ReConPlot).
 
 ## Phasing Information
+
 ### Generating Phased VCF
 
-We recommend using [LongPhase](https://github.com/twolinin/longphase) or [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples. As an example, WhatsHap can be run using the following command:
+We recommend using [LongPhase](https://github.com/twolinin/longphase) or [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to generate phased VCF from matched normal samples or a set of population SNPs. As an example, WhatsHap can be run using the following command:
 
 ```
 whatshap phase  --ignore-read-groups -o <phased.vcf.gz> --reference=<ref-fasta> <germline_snps.vcf> <normal-file>
@@ -334,10 +339,10 @@ Germline SNPs (`<germline_snps.vcf>`) can for example be obtained using [Clair3]
 
 ### Generating Phased BAMs
 
-Again, we recommend using [LongPhase](https://github.com/twolinin/longphase) or [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) for tagging sequencing reads by haplotype to generate phased BAMs (see example code below) using the `<phased.vcf.gz>` obtained in the previous step.
-
+We recommend using [LongPhase](https://github.com/twolinin/longphase) or [WhatsHap](https://whatshap.readthedocs.io/en/stable/index.html) to tag sequencing reads by haplotype. This will generate phased BAMs for both the tumour and normal (if available) using the `<phased.vcf.gz>` generated using the steps above.
 ```
-whatshap haplotag --ignore-read-groups -o <phased_tumour.bam> --reference <ref-fasta> <phased.vcf.gz> <tumour-file> && samtools index <phased_tumour.bam>
+whatshap haplotag --ignore-read-groups -o <phased_tumour.bam> --reference <ref-fasta> <phased.vcf.gz> <tumour_bam> && samtools index <phased_tumour.bam>
+whatshap haplotag --ignore-read-groups -o <phased_normal.bam> --reference <ref-fasta> <phased.vcf.gz> <normal_bam> && samtools index <phased_normal.bam>
 ```
 
 ## Advanced Options
