@@ -143,7 +143,7 @@ savana to --tumour <tumour-file> --outdir <outdir> --ref <ref-fasta> --g1000_vcf
 
 In the absence of a normal BAM, we still recommend phasing your tumour BAM file using population SNPs as this will produce optimal SV calls (see [Phasing Information](#phasing-information) for more details on how to do this).
 
-If you use this mode, filtering the resulting SVs using external population and panel of normal (PoN) resources is **highly** recommended. Specifically, we recommend removing SVs that overlap with any SVs in [gnomadSV](https://gnomad.broadinstitute.org/data#v4-structural-variants) that have >=10% population allele-frequency (AF in `gnomad.v4.1.sv.sites.bed.gz`) as well as SVs present in the Hartwig Medical Foundation SV PoN (`sv_pon.38.bedpe.gz` - available at [hmf_dna_pipeline_resources](https://console.cloud.google.com/storage/browser/_details/hmf-public/HMFtools-Resources/dna_pipeline/v5_34/38/hmf_dna_pipeline_resources.38_v5.34.tar.gz;tab=live_object?pageState=(%22StorageObjectListTable%22:(%22f%22:%22%255B%255D%22))&inv=1&invt=AbrTFA&pli=1)).
+If you use this mode, filtering the resulting SVs using external population and panel of normal (PoN) resources is **highly** recommended. Specifically, we recommend removing SVs that overlap with any SVs in [gnomadSV](https://gnomad.broadinstitute.org/data#v4-structural-variants) that have >=10% population allele-frequency (AF in `gnomad.v4.1.sv.sites.bed.gz`) as well as SVs present in the Hartwig Medical Foundation SV PoN (available at [hmf_dna_pipeline_resources](https://storage.googleapis.com/hmf-public/HMFtools-Resources/pipeline/oncoanalyser/2.0/38/hmf_pipeline_resources.38_v2.0.0--3.tar.gz) - `dna/sv/sv_pon.38.bedpe.gz` in the untarred directory).
 
 
 ### SAVANA Arguments
