@@ -225,7 +225,8 @@ def run_interval(interval, BAM, FASTA, MQ, MIN_COV, tmp_dir):
             # Get coverage
             DP = p.get_num_aligned()
             # Run only if coverage is more than minimum (arg parameter)
-            if (DP >= MIN_COV and ref_base != 'N'):
+            # if (DP >= MIN_COV and ref_base != 'N'):
+            if (DP >= MIN_COV and ref_base in ['A','C','G','T']):
                 # Get pileup list
                 PILEUP_LIST = p.get_query_sequences(mark_matches=True, add_indels=True)
                 BASE_COUNTS = BaseCount(PILEUP_LIST)
