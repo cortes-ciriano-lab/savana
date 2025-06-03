@@ -56,8 +56,8 @@ def savana_run(args):
     elif args.tumour.endswith('cram') and args.normal.endswith('cram'):
         args.is_cram = True
         aln_files = {
-            'tumour': pysam.AlignmentFile(args.tumour, "rc"),
-            'normal': pysam.AlignmentFile(args.normal, "rc")
+            'tumour': pysam.AlignmentFile(args.tumour, "rc", reference_filename=args.ref),
+            'normal': pysam.AlignmentFile(args.normal, "rc", reference_filename=args.ref)
         }
     else:
         sys.exit('Unrecognized file extension. Tumour and normal files must be BAM/CRAM')
@@ -307,7 +307,7 @@ def savana_tumour_only(args):
     elif args.tumour.endswith('cram'):
         args.is_cram = True
         aln_files = {
-            'tumour': pysam.AlignmentFile(args.tumour, "rc")
+            'tumour': pysam.AlignmentFile(args.tumour, "rc", reference_filename=args.ref)
         }
     else:
         sys.exit('Unrecognized file extension. Tumour files must be BAM/CRAM')
