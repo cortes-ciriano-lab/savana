@@ -64,8 +64,8 @@ def extract_hets(snp_vcf, g1000_vcf, FASTA, window):
         if g1000_vcf == "1000g_hg19":
             #vcf_path = os.path.join(vcf_dir, 'hg19_g1000_biallelic_AF0.35-0.65.vcf.gz')
             vcf_path = os.path.join(vcf_dir, 'hg19_g1000_biallelic_AF0.25-0.75.vcf.gz')
-        # if g1000_vcf == "1000g_t2t":
-        #     vcf_path = os.path.join(vcf_dir, 't2t_g1000_biallelic_AF0.35-0.65.vcf.gz')
+        if g1000_vcf == "1000g_t2t":
+            vcf_path = os.path.join(vcf_dir, 't2t_g1000_biallelic_AF0.25-0.75.vcf.gz')
         vcf_reader = cyvcf2.VCF(vcf_path)
         hets_dict = {}
         # iterate through variants
