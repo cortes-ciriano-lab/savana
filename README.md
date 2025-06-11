@@ -4,7 +4,7 @@ SAVANA is a somatic structural variant (SV) and copy number aberrations (SCNA) c
 
 SAVANA has been tested on ONT and PacBio HiFi reads aligned with minimap2 and winnowmap. It requires a Unix-based operating system and has been developed and tested on Linux.
 
-For further information, benchmarking and for citation, please refer to our [SAVANA preprint](https://doi.org/10.1101/2024.07.25.604944).
+For further information, benchmarking and for citation, please refer to our [SAVANA publication](https://www.nature.com/articles/s41592-025-02708-0).
 
 ## Contents
 * [Installation](#installation)
