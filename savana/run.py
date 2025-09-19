@@ -91,6 +91,7 @@ def execute_get_potential_breakpoint_task(task_arg_dict, task_tracker, conn):
 		task_arg_dict['coverage_binsize'],
 		task_arg_dict['contig_coverage_array'],
 		task_arg_dict['keep_inv_artefact'],
+		task_arg_dict['inv_artefact_distance'],
 		task_arg_dict['single_bnd'],
 		task_arg_dict['single_bnd_min_length'],
 		task_arg_dict['single_bnd_max_mapq']
@@ -206,6 +207,7 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 						'end_pos': end_pos,
 						'coverage_binsize': args.coverage_binsize,
 						'keep_inv_artefact': args.keep_inv_artefact,
+						'inv_artefact_distance': args.inv_artefact_distance,
 						'single_bnd': args.single_bnd,
 						'single_bnd_min_length': args.single_bnd_min_length,
 						'single_bnd_max_mapq': args.single_bnd_max_mapq,
@@ -227,6 +229,7 @@ def generate_get_potential_breakpoint_tasks(aln_files, args):
 					'end_pos': contig_length,
 					'coverage_binsize': args.coverage_binsize,
 					'keep_inv_artefact': args.keep_inv_artefact,
+					'inv_artefact_distance': args.inv_artefact_distance,
 					'single_bnd': args.single_bnd,
 					'single_bnd_min_length': args.single_bnd_min_length,
 					'single_bnd_max_mapq': args.single_bnd_max_mapq,
