@@ -168,10 +168,10 @@ Argument|Description
 --contigs| Contigs/chromosomes to consider (default is all in fai file). Example in `example/contigs.chr.hg38.txt`. Should be in order.
 --length| Minimum length SV to consider (default=30)
 --keep_inv_artefact| Do not remove breakpoints with foldback-inversion artefact pattern (default is to remove)
+--inv_artefact_distance| Maximum distance between inversion breakpoints to be considered an artefact when --keep_inv_artefact is not set (default=200)
 --mapq| Minimum MAPQ of reads to consider (default=0)
 --min_support| Minimum supporting reads for a variant (default=3)
 --min_af| Minimum allele-fraction (AF) for a variant (default=0.01)
---inv_artefact_distance| Maximum distance between inversion breakpoints to be considered an artefact when --keep_inv_artefact is not set (default=200)
 --cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
 --cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
 --threads| Number of threads to use (default is maximum available)
