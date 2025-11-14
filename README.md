@@ -14,6 +14,7 @@ For further information, benchmarking and for citation, please refer to our [SAV
 * [Run SAVANA](#run-savana)
   + [Mandatory Arguments](#mandatory-arguments)
   + [Optional Arguments](#optional-arguments)
+  + [Visualising SVs and CNAs](#visualising-svs-and-cnas)
   + [Tumour-only Mode](#tumour-only-mode)
 * [Output Files](#output-files)
   + [Output Files SV Algorithm](#output-files-sv-algorithm)
@@ -132,6 +133,13 @@ savana --tumour ONT_COLO829_T_truthset_50k.phased.bam --normal ONT_COLO829_N_tru
 ```
 > To run the above on a SLURM cluster we requested an interactive job with 8 cpus (`-c 8`) and 16 GB of memory (`--mem 16`). The total time to call variants (as measured by Linux `time`) was 48.88 seconds. You may need to adjust requirements for your computing environment
 
+### Visualising SVs and CNAs
+
+To create [ReconPlot](https://github.com/cortes-ciriano-lab/ReConPlot) visualisations from the SVs and CNAs output from SAVANA such as this:
+
+#TODO: add link to tutorial output
+
+Please refer to the dedicated [tutorial](tutorials/visualisation/) which includes steps to run SAVANA on a small example BAM.
 
 ### Tumour-only Mode
 
