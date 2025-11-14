@@ -132,6 +132,9 @@ savana --tumour ONT_COLO829_T_truthset_50k.phased.bam --normal ONT_COLO829_N_tru
 ```
 > To run the above on a SLURM cluster we requested an interactive job with 8 cpus (`-c 8`) and 16 GB of memory (`--mem 16`). The total time to call variants (as measured by Linux `time`) was 48.88 seconds. You may need to adjust requirements for your computing environment
 
+We recommend using [ReconPlot](https://github.com/cortes-ciriano-lab/ReConPlot), to visualise SVs and CNAs produced by SAVANA, example plot below:
+
+# ![ReconPlotExample](/docs/SAVANA_ReconPlotExample.png)
 
 ### Tumour-only Mode
 
