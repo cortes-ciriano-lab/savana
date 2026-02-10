@@ -147,7 +147,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
         digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
         print(f"        estimated cellularity using hetSNPs = {round(cellularity,digs)}.")
         if overrule_cellularity != None:
-            cellularity = int(overrule_cellularity)
+            cellularity = float(overrule_cellularity)
             print(f"        cellularity overruled by user with cellularity = {cellularity}.")
         min_cellularity = round(max(0,cellularity - cellularity_buffer),digs)
         max_cellularity = round(min(1,cellularity + cellularity_buffer),digs)

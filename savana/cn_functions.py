@@ -170,7 +170,11 @@ def relative_to_absolute_CN(relative_CN, purity, ploidy):
     '''
     Convert relative copy number values to absolute copy number values using purity and ploidy
     '''
-    acn = ploidy + (relative_CN - 1)*(ploidy+(2/purity)-2) 
+    if purity > 0:
+        acn = ploidy + (relative_CN - 1)*(ploidy+(2/purity)-2) 
+    elif purity == 0:
+        # acn = ploidy + (relative_CN - 1)*2
+        acn = ploidy * relative_CN
     return acn
 
 
