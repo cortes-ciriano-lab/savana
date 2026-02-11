@@ -255,10 +255,16 @@ def savana_cna(args, as_workflow=False):
             args.g1000_vcf = None
             allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.chromosomes,  args.ref, args.snp_vcf, args.g1000_vcf, args.tumour, args.ac_window, args.allele_mapq, args.allele_min_reads, tmpdir, args.cna_threads)
             helper.time_function("Counted alleles heterozygous SNPs", checkpoints, time_str)
-        if args.g1000_vcf:
+        elif args.g1000_vcf:
             args.snp_vcf = None
             allele_counts_bed_path = allele_counter.perform_allele_counting(outdir, args.sample, args.chromosomes,  args.ref, args.snp_vcf, args.g1000_vcf, args.tumour, args.ac_window, args.allele_mapq, args.allele_min_reads, tmpdir, args.cna_threads)
             helper.time_function("Counted alleles of 1000g SNPs", checkpoints, time_str)
+        elif args.overrule_cellularity != None:
+            print(f'Cellularity will be overruled by user input of {args.overrule_cellularity} - skipping estimation')
+            allele_counts_bed_path = None
+        else:
+            print(f'No SNP VCF provided for allele counting and no cellularity value provided - skipping allele counting and performing cellularity estimation from grid search instead (results may be less accurate)')
+            allele_counts_bed_path = None
     else:
         allele_counts_bed_path = args.allele_counts_het_snps
     # now generate bins

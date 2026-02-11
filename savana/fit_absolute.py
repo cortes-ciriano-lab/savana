@@ -129,10 +129,17 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
 
     # Open and prepare data to estimate cellularity if phased hetSNPs allele counts were provided.
     if allele_counts_bed_path == None:
-        print("     ... No phased hetSNPs allele counts were provided. Cellularity is estimated using grid search. Note that this is less accurate. Please provide hetSNPs allele counts if possible. See documentation for instructions on how to generate these.")
+        if overrule_cellularity != None:
+            cellularity = float(overrule_cellularity)
+            print(f" ... Cellularity overruled by user with cellularity = {cellularity}.")
+            digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
+            min_cellularity = round(max(0,cellularity - cellularity_buffer),digs)
+            max_cellularity = round(min(1,cellularity + cellularity_buffer),digs)
+        elif overrule_cellularity == None:
+            print("     ... No phased hetSNPs allele counts were provided. Cellularity is estimated using grid search. Note that this is less accurate. Please provide hetSNPs allele counts if possible. See documentation for instructions on how to generate these.")
+    
     elif allele_counts_bed_path != None:
         print("     ... Allele counts for phased hetSNPs provided and being processed to estimate sample purity ...")
-
         # allele_counts, phasesets = process_allele_counts(allele_counts_bed_path)
         allele_counts, blocksets = process_allele_counts(allele_counts_bed_path)
         # Estimate depth cutoff to exclude potentially amplified/gained regions as those will impact BAF distribution
@@ -142,13 +149,10 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
 
         # seg_dict, seg_summary = process_seg_SNPs(rel_copy_number_segments, allele_counts, dp_cutoff, min_seg_size=min_ps_size, min_seg_length=min_ps_length)
         blocksets_dict, block_summary = process_hetSNPs(blocksets, allele_counts, dp_cutoff, min_block_size=min_block_size, min_block_length=min_block_length)
-
         cellularity = estimate_cellularity(blocksets_dict, block_summary)
         digs = len(str(cellularity_step))-2 if isinstance(cellularity_step,int) != True else 1
-        print(f"        estimated cellularity using hetSNPs = {round(cellularity,digs)}.")
-        if overrule_cellularity != None:
-            cellularity = float(overrule_cellularity)
-            print(f"        cellularity overruled by user with cellularity = {cellularity}.")
+        print(f"    ... estimated cellularity using hetSNPs = {round(cellularity,digs)}.")
+        
         min_cellularity = round(max(0,cellularity - cellularity_buffer),digs)
         max_cellularity = round(min(1,cellularity + cellularity_buffer),digs)
 
