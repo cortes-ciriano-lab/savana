@@ -218,6 +218,7 @@ def split_segments_by_breakpoints(chr_out_data, bp_dict):
             elif seg_id != prev_id:
                 new_data.append(row)
                 prev_id = seg_id
+                new_id = seg_id
                 continue
         # Update segment name
         svcounter += 1
