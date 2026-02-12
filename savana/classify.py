@@ -107,10 +107,10 @@ def parse_cna(cna_file):
 		curr_chrom = None
 		curr_copy_num = None
 		curr_seg = None
-		curr_minor_copy_num = None
+		#curr_minor_copy_num = None
 		curr_seg_start = 0
 		for row in reader:
-			chrom, start, end, seg, _, _, _, copy_num, minor_copy_num, _, _ = row
+			chrom, start, end, seg, _, _, _, copy_num = row[0:8]#, minor_copy_num, _, _ = row
 			copy_num = round(float(copy_num))
 			if not curr_copy_num or curr_chrom != chrom:
 				# first segment of chromosome
@@ -118,7 +118,7 @@ def parse_cna(cna_file):
 				curr_copy_num = copy_num
 				curr_seg = seg
 				curr_seg_start = 0
-			elif copy_num != curr_copy_num or minor_copy_num != curr_minor_copy_num:
+			elif copy_num != curr_copy_num: #or minor_copy_num != curr_minor_copy_num:
 				# change in total or minor copy number
 				cna_dict.setdefault(chrom, []).append(
 					[curr_seg_start, start, curr_seg]
@@ -126,7 +126,7 @@ def parse_cna(cna_file):
 				# now reset
 				curr_copy_num = copy_num
 				curr_seg = seg
-				curr_minor_copy_num = minor_copy_num
+				#curr_minor_copy_num = minor_copy_num
 				curr_seg_start = start
 
 	return cna_dict
