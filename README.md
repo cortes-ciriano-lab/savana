@@ -175,7 +175,7 @@ Argument|Description
 --mapq| Minimum MAPQ of reads to consider (default=0)
 --min_support| Minimum supporting reads for a variant (default=3)
 --min_af| Minimum allele-fraction (AF) for a variant (default=0.01)
---cna_resuce| Copy number abberation output file for this sample (used to rescue variants)
+--cna_rescue| Copy number abberation output file for this sample (used to rescue variants)
 --cna_rescue_distance| Maximum distance from a copy number abberation for a variant to be rescued by it
 --threads| Number of threads to use (default is maximum available)
 --cna_threads| Number of threads to use for CNA calling (default is maximum available)
