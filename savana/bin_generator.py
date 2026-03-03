@@ -149,6 +149,7 @@ def generate_bins(outdir, sample, ref, chromosomes, bin_size, blacklist, breakpo
         chr_in = [[chrom,fasta.get_reference_length(chrom),ref,bin_size,blacklist,bp_dict[chrom]] for chrom in chr_names]
     else:
         chr_in = [[chrom,fasta.get_reference_length(chrom),ref,bin_size,blacklist] for chrom in chr_names]
+        bp_dict = None
     fasta.close()
 
     # c. Generate bins and count bases per bins for each chrom in parallel (run function using multithreader)
@@ -186,7 +187,7 @@ def generate_bins(outdir, sample, ref, chromosomes, bin_size, blacklist, breakpo
 
     outfile.close()
 
-    return outfile_name
+    return outfile_name,bp_dict
 
 if __name__ == "__main__":
     print("Bin generator")

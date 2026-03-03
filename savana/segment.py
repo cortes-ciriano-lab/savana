@@ -193,7 +193,50 @@ def merge_segments(x, Sse, quantile):
                 new_segments.append((current_start, current_end))
         return new_segments
 
-def segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, quantile):
+def split_segments_by_breakpoints(chr_out_data, bp_dict):
+    new_data = []
+    new_id = None
+    svcounter = 0
+    # for i,row in enumerate(chr_out_data):
+    for i,row in enumerate(chr_out_data):
+        chrom = row[1]
+        start = int(row[2])
+        seg_id = row[7]  
+        if i == 0:
+            prev_id = seg_id
+        if chrom not in bp_dict:
+            new_data.append(row)
+            continue
+        # Find breakpoints inside this segment
+        breakpoint = [bp for bp in bp_dict[chrom] if start == bp]
+        if not breakpoint:
+            if seg_id == prev_id:
+                if new_id is not None:
+                    row[7] = new_id
+                new_data.append(row)
+                continue
+            elif seg_id != prev_id:
+                new_data.append(row)
+                prev_id = seg_id
+                new_id = seg_id
+                continue
+        # Update segment name
+        svcounter += 1
+        new_id = seg_id + "-SV" + str(svcounter) 
+        #new_row = row.copy()
+        row[7] = new_id
+        new_data.append(row)
+    for new_seg in set([x[7] for x in new_data]):
+        # recalulate segment median log2r value for each new segment
+        seg_rows = [x for x in new_data if x[7] == new_seg]
+        seg_vals = [float(row[-3]) for row in seg_rows]
+        seg_median = median(seg_vals)
+        for row in seg_rows:
+            row[-1] = str(seg_median)   
+    return new_data
+
+
+def segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, quantile, enforce_sv_bps, breakpoints_dict):
     '''Segment copy number read count data per chromosome.
     '''
     print(f"    Segmenting {chr} ...")
@@ -227,7 +270,13 @@ def segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, q
             row.append(seg)
             row.append(str(seg_median))
             chr_out_data.append(row)
-    return chr_out_data
+    if enforce_sv_bps == True and breakpoints_dict is not None:
+        print(f"    Enforcing SV breakpoints for {chr} ...")
+        # split segments at SV breakpoints to ensure that SV breakpoints are not merged into segments (i.e. split segments at SV breakpoints)
+        chr_out_data_split = split_segments_by_breakpoints(chr_out_data, breakpoints_dict)
+        return chr_out_data_split
+    else:
+        return chr_out_data
 
 # Used for developing code and debugging but removed as plot is not very pretty...
 # def draw_segmented_data(data, seg_postions, chr_positions, title=None):
@@ -267,7 +316,7 @@ def segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, q
 
 #     return j
 
-def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, p_seg, p_val, quantile, threads):
+def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, p_seg, p_val, quantile, threads, enforce_sv_bps, breakpoints_dict):
     ''' segment the copy number '''
     # check and define threads
     new_threads = min(threads, cpu_count())
@@ -296,7 +345,7 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
         print("multithreading skipped.")
         segmentedData = []
         for chr in chr_names:
-            segmented_chr = segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, quantile)
+            segmented_chr = segment_chromosome(chr, in_data, min_segment_size, shuffles, p_seg, p_val, quantile, enforce_sv_bps, breakpoints_dict)
             # smoothen(chr, in_data, trim, smoothing_level)
             segmentedData.append(segmented_chr)
         segmentedData = [x for xs in segmentedData for x in xs]
@@ -304,7 +353,7 @@ def segment_copy_number(outdir, smoothened_cn_path, min_segment_size, shuffles, 
 
     else:
         print(f"multithreading using {threads} threads.")
-        args_in = [[chr, in_data, min_segment_size, shuffles, p_seg, p_val, quantile] for chr in chr_names]
+        args_in = [[chr, in_data, min_segment_size, shuffles, p_seg, p_val, quantile, enforce_sv_bps, breakpoints_dict] for chr in chr_names]
         # print(args_in)
         with Pool(processes=threads) as pool:
             segmentedData = [x for xs in list(pool.starmap(segment_chromosome, args_in)) for x in xs]

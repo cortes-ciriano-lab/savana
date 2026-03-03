@@ -268,7 +268,7 @@ def savana_cna(args, as_workflow=False):
     else:
         allele_counts_bed_path = args.allele_counts_het_snps
     # now generate bins
-    bin_annotations_path = bin_generator.generate_bins(outdir, args.sample, args.ref, args.chromosomes, args.cn_binsize, args.blacklist, args.breakpoints, args.cna_threads)
+    bin_annotations_path,breakpoints_dict = bin_generator.generate_bins(outdir, args.sample, args.ref, args.chromosomes, args.cn_binsize, args.blacklist, args.breakpoints, args.cna_threads)
     helper.time_function("Binned reference genome", checkpoints, time_str)
     # perform the read counting
     read_counts_path = read_counter.count_reads(outdir, args.tumour, args.normal, args.sample, bin_annotations_path, args.readcount_mapq, args.blacklisting, args.bl_threshold, args.bases_filter, args.bases_threshold, args.cna_threads)
@@ -277,7 +277,7 @@ def savana_cna(args, as_workflow=False):
     smoothened_cn_path = smooth.smooth_copy_number(outdir, read_counts_path, args.smoothing_level, args.trim)
     helper.time_function("Performed smoothing", checkpoints, time_str)
     # segment the copy number data
-    log2r_cn_path = segment.segment_copy_number(outdir, smoothened_cn_path, args.min_segment_size, args.shuffles, args.p_seg, args.p_val, args.quantile, args.cna_threads)
+    log2r_cn_path = segment.segment_copy_number(outdir, smoothened_cn_path, args.min_segment_size, args.shuffles, args.p_seg, args.p_val, args.quantile, args.cna_threads, args.enforce_sv_bps, breakpoints_dict)
     helper.time_function("Performed CBS", checkpoints, time_str)
     # fit absolute copy number
     fit_absolute.fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, args.sample,
@@ -536,6 +536,8 @@ def parse_args(args):
     cna_parser.add_argument('-ps', '--p_seg', type=float,  default=0.05, help='p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05).', required=False)
     cna_parser.add_argument('-pv', '--p_val', type=float,  default=0.01, help='p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01).', required=False)
     cna_parser.add_argument('-qt', '--quantile', type=float,  default=0.2, help='Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).', required=False)
+    cna_parser.add_argument('--enforce_sv_bps', action='store_true', help='Enforce copy number breakpoints at SAVANA SV breakpoints if --breakpoints argument is provided (default=False)')
+    cna_parser.set_defaults(enforce_sv_bps=False)
     cna_parser.add_argument('--min_ploidy', type=float, default=1.5, help='Minimum ploidy to be considered for copy number fitting.', required=False)
     cna_parser.add_argument('--max_ploidy', type=float, default=5, help='Maximum ploidy to be considered for copy number fitting.', required=False)
     cna_parser.add_argument('--ploidy_step', type=float, default=0.01, help='Ploidy step size for grid search space used during for copy number fitting.', required=False)
@@ -627,7 +629,9 @@ def parse_args(args):
     to_parser.add_argument('-sf', '--shuffles', type=int,  default=1000, help='Number of permutations (shuffles) to be performed during CBS (default = 1000).', required=False)
     to_parser.add_argument('-ps', '--p_seg', type=float,  default=0.05, help='p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05).', required=False)
     to_parser.add_argument('-pv', '--p_val', type=float,  default=0.01, help='p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01).', required=False)
-    to_parser.add_argument('-qt', '--quantile', type=float,  default=0.2, help='Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).', required=False)
+    to_parser.add_argument('-qt', '--quantile', type=float,  default=0.2, help='Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).', required=False)   
+    to_parser.add_argument('--enforce_sv_bps', action='store_true', help='Enforce copy number breakpoints at SAVANA SV breakpoints if --breakpoints argument is provided (default=False)')
+    to_parser.set_defaults(enforce_sv_bps=False)
     to_parser.add_argument('--min_ploidy', type=float, default=1.5, help='Minimum ploidy to be considered for copy number fitting.', required=False)
     to_parser.add_argument('--max_ploidy', type=float, default=5, help='Maximum ploidy to be considered for copy number fitting.', required=False)
     to_parser.add_argument('--ploidy_step', type=float, default=0.01, help='Ploidy step size for grid search space used during for copy number fitting.', required=False)
@@ -733,6 +737,8 @@ def parse_args(args):
         global_parser.add_argument('-ps', '--p_seg', type=float,  default=0.05, help='p-value used to test segmentation statistic for a given interval during CBS using (shuffles) number of permutations (default = 0.05).', required=False)
         global_parser.add_argument('-pv', '--p_val', type=float,  default=0.01, help='p-value used to test validity of candidate segments from CBS using (shuffles) number of permutations (default = 0.01).', required=False)
         global_parser.add_argument('-qt', '--quantile', type=float,  default=0.2, help='Quantile of changepoint (absolute median differences across all segments) used to estimate threshold for segment merging (default = 0.2; set to 0 to avoid segment merging).', required=False)
+        global_parser.add_argument('--enforce_sv_bps', action='store_true', help='Enforce copy number breakpoints at SAVANA SV breakpoints if --breakpoints argument is provided (default=False)')
+        global_parser.set_defaults(enforce_sv_bps=False)
         global_parser.add_argument('--min_ploidy', type=float, default=1.5, help='Minimum ploidy to be considered for copy number fitting.', required=False)
         global_parser.add_argument('--max_ploidy', type=float, default=5, help='Maximum ploidy to be considered for copy number fitting.', required=False)
         global_parser.add_argument('--ploidy_step', type=float, default=0.01, help='Ploidy step size for grid search space used during for copy number fitting.', required=False)
