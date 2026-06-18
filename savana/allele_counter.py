@@ -56,7 +56,7 @@ def extract_hets(snp_vcf, g1000_vcf, FASTA, window):
         inFasta = pysam.FastaFile(FASTA)
         ref_contigs = inFasta.references
         inFasta.close()
-        chr_annot = True if 'chr1' in ref_contigs else False
+        chr_annot = True if any(contig.startswith('chr') for contig in ref_contigs) else False
         vcf_dir = os.path.join(os.path.dirname(__file__),'1K_genome_vcf')
         if g1000_vcf == "1000g_hg38":
             #vcf_path = os.path.join(vcf_dir, 'hg38_g1000_biallelic_AF0.35-0.65.vcf.gz')
@@ -180,7 +180,7 @@ def MakeWindows(CONTIG, FASTA, window):
     # only allow canonical contigs -- might update to parameters later... 
     contigs = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','X','Y']
     ref_contigs = inFasta.references
-    if 'chr1' in ref_contigs:
+    if any(contig.startswith('chr') for contig in ref_contigs):
         contigs = [f'chr{x}' for x in contigs]   
     if (CONTIG != 'all'):
         CONTIG_Names = [contigs[(int(x)-1)] for x in CONTIG]
