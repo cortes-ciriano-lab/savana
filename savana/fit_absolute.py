@@ -192,7 +192,6 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
             for r in fits_r:
                 Line = '\t'.join(str(e) for e in r) + '\n'
                 params_out.write(Line)
-        #sys.exit(1) # Exit the script with a status code of 1 (indicating an error)
         return
     
     solutions_ranked = cnfitter.rank_solutions(solutions,distance_precision)
