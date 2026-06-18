@@ -177,7 +177,7 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
 
     # check if viable solutions were found. If not, terminate script and write out error message and arguments to file for inspection and adjustment
     if len(solutions) == 0:
-        print("No fits found. See No_fit_found_PARAMS_out.tsv in output")
+        print("WARNING: NO FITS FOUND. See No_fit_found_PARAMS.tsv in output directory for potentially rejected solutions and further details.")
         with open(f"{outdir}/No_fit_found_PARAMS.tsv", 'w') as params_out:
             params_out.write(f'No viable solution fullfilling set paramaters was found. \nPerform QC, review parameters and rerun if required/appropriate with adjusted parameters.\n')
             # TODO: add this back in (either manually or one step up)
@@ -192,8 +192,9 @@ def fit_absolute_cn(outdir, log2r_cn_path, allele_counts_bed_path, sample,
             for r in fits_r:
                 Line = '\t'.join(str(e) for e in r) + '\n'
                 params_out.write(Line)
-        sys.exit(1) # Exit the script with a status code of 1 (indicating an error)
-
+        #sys.exit(1) # Exit the script with a status code of 1 (indicating an error)
+        return
+    
     solutions_ranked = cnfitter.rank_solutions(solutions,distance_precision)
     final_fit = solutions_ranked[0]
     print(f"        Data fitted to purity = {final_fit[0]} and ploidy = {final_fit[1]}.")
