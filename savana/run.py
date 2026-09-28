@@ -11,7 +11,7 @@ import os
 import gc
 
 from math import ceil, floor
-from multiprocessing import Array, Pipe, Process, Manager, sharedctypes
+from multiprocessing import Array, Pipe, Process, Manager, Lock, sharedctypes
 
 import numpy as np
 import pysam
@@ -94,7 +94,8 @@ def execute_get_potential_breakpoint_task(task_arg_dict, task_tracker, conn):
 		task_arg_dict['inv_artefact_distance'],
 		task_arg_dict['single_bnd'],
 		task_arg_dict['single_bnd_min_length'],
-		task_arg_dict['single_bnd_max_mapq']
+		task_arg_dict['single_bnd_max_mapq'],
+		coverage_lock=task_arg_dict['coverage_lock']
 		)
 	task_tracker[task_arg_dict['task_id']] = 1
 	conn.send(potential_breakpoints)
@@ -426,6 +427,8 @@ def run_get_potential_breakpoints(aln_files, args):
 	tasks = generate_get_potential_breakpoint_tasks(aln_files, args)
 	task_tracker = Array('h', [0]*len(tasks))
 	shared_cov_arrays = generate_coverage_arrays(aln_files, args)
+	# Reads spanning chunk boundaries can update the same coverage bins.
+	coverage_locks = {(label, contig): Lock() for label, contigs in shared_cov_arrays.items() for contig in contigs}
 
 	results = []
 	pipes = [None] * args.threads
@@ -440,6 +443,7 @@ def run_get_potential_breakpoints(aln_files, args):
 				task_args = tasks.pop(0)
 				# retrieve reference to the relevant contig's coverage array
 				task_args['contig_coverage_array'] = shared_cov_arrays[task_args['label']][task_args['contig']]
+				task_args['coverage_lock'] = coverage_locks[(task_args['label'], task_args['contig'])]
 				# create a new pipe
 				pipes[i] = Pipe(duplex=False)
 				# create a new process and replace it (matching the pipe with its process)

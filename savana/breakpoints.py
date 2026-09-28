@@ -10,6 +10,7 @@ import pysam
 import numpy as np
 import sys
 
+from contextlib import nullcontext
 from math import floor, ceil
 from statistics import median
 
@@ -469,9 +470,11 @@ def get_phasing_from_read(read):
 
 	return haplotype, phase_set
 
-def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, keep_inv_artefact, inv_artefact_distance, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None):
+def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, contig_order, contig, start, end, coverage_binsize, contig_coverage_array, keep_inv_artefact, inv_artefact_distance, single_bnd=False, single_bnd_min_length=None, single_bnd_max_mapq=None, coverage_lock=None):
 	""" iterate through alignment file, tracking potential breakpoints and saving relevant reads to fastq """
 	potential_breakpoints = {}
+	coverage_arrays = {hp: np.frombuffer(array, dtype=np.intc) for hp, array in contig_coverage_array.items()}
+	coverage_lock = coverage_lock if coverage_lock is not None else nullcontext()
 	aln_file = pysam.AlignmentFile(aln_filename, "rc", reference_filename=ref) if is_cram else pysam.AlignmentFile(aln_filename, "rb")
 	# adjust the thresholds depending on sample source
 	args_length = max((length - floor(length/5)), 0) if label == 'normal' else length
@@ -486,8 +489,14 @@ def get_potential_breakpoints(aln_filename, is_cram, ref, length, mapq, label, c
 			end_bin = floor((read.reference_end)/coverage_binsize)
 			# swap if we need to
 			start_bin, end_bin = (end_bin, start_bin) if start_bin > end_bin else (start_bin, end_bin)
-			for i in range(start_bin, end_bin):
-				contig_coverage_array[haplotype][i] += 1
+			with coverage_lock:
+				if start_bin < end_bin:
+					coverage = coverage_arrays[haplotype]
+					if 0 <= start_bin and end_bin <= len(coverage):
+						coverage[start_bin:end_bin] += 1
+					else:
+						for i in range(start_bin, end_bin):
+							contig_coverage_array[haplotype][i] += 1
 
 		except IndexError as _:
 			print(f'Unable to update coverage for contig {contig}')
